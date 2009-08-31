@@ -26,6 +26,12 @@
  * the mbr, or otherwise the bios will happily ignore us */
 #define BOOT_SIGNATURE	0xaa55
 
+/* Print messages to screen */
+#define MSG(msg)		\
+	movw   $msg, %si;  	\
+	call   print_string;	\
+	call   print_nl
+	
 .code16
 
 /* The text section is relocated by the linker to 0x0000, thus
@@ -38,28 +44,11 @@ _start:
 	movw   $0x07c0, %ax
 	movw   %ax, %es
 	movw   %ax, %ss
+	movw   %ax, %ds
 	/* arbitary stack value > bootsector's 512 bytes code */
 	movw   $0x300, %sp
 
-	/* INT 0x10, function 0x03 - read current cursor position
-	 * input  %bh - display page number
-	 * output %dx - %dh: row number, %dl: column number */
-	movb   $0x03, %ah
-	xorb   %bh, %bh		
-	int    $0x10
-
-	/* INT 0x10, function 0x13 - write string
-	 * input  %es:bp - pointer to string start
-	 * input  %bh    - page number
-	 * input  %cx    - length of string
-	 * input  %bl    - characters' attribute (*)
-	 * input  %dx    - cursor position (see above)
-	 * input  %al    - 01 = move cursor */
-	movw   $(string), %bp
-	movw   $14, %cx
-	movb   $0x03, %bl
-	movw   $0x1301, %ax
-	int    $0x10
+	MSG    (welcome)
 
 	/*
 	 * reset hard-disk controllers and recalibrate the
@@ -80,12 +69,15 @@ _start:
 	jmp    .
 
 /*
- * print %dx value in hexadecimal.
+ * Print methods
  *
  * INT 0x10, function 0x0e - write teletype to active page
  * input  %al    - character to write
  * input  %bh    - page number
+ * input  %bl    - characters' attribute (*)
  */
+
+/* print %dx value in hexadecimal */
 print_hex:
 	xorb    %bh, %bh
 	movw	$4, %cx		     # 4 hex digits (2bytes)
@@ -104,11 +96,30 @@ digit:
 	loop	print_digit
 	ret
 
-string:
-	/* 14 bytes */
-	.byte   '\r', '\n'
-	.ascii "Loading .."
-	.byte   '\r', '\n'
+/* print string pointed by %ds:si */
+print_string:
+	xorb   %bh, %bh
+	movb   $0x0e, %ah
+	lodsb
+	cmpb   $0, %al
+	je     end
+	int    $0x10
+	jmp    print_string
+end:
+	ret
+
+/* print newline */
+print_nl:
+	xorb    %bh, %bh
+	movw    $((0x0e << 8) | '\r'), %ax
+	int     $0x10
+	movb    $'\n', %al
+	int     $0x10
+	ret
+
+welcome:
+	.asciz "Loading .."
+
 
 .org 510
 boot_flag:
