@@ -27,8 +27,8 @@
 #define BOOT_SIGNATURE	0xaa55
 
 /* Real-mode segment where the kernel will be copied to from
- * disk. 512KB (0x10000-0x90000) will be more than enough for
- * the time-being */
+ * disk. An available space of 512KB, 0x10000 - 0x90000, will
+ * be more than enough for the time-being */
 #define KERNEL_SEGMENT  0x1000
 
 /* Print messages to screen */
@@ -77,9 +77,9 @@ _start:
 	jnc    no_ebios
 
 	/* Copy the kernel from disk to its destined starting address
-	 * 0x10000. For the sake of simplicity, we'll copy the disk's
-	 * first 512KB after the mbr regardless of the real kernel
-	 * size. We may optimize later.
+	 * at 0x10000. For simplicity, we'll copy the disk's first
+	 * 1024 sectors post the mbr to ram regardless of the real
+	 * kernel size. We may optimize later.
 	 *
 	 * INT 0x13, function 0x42 - extended read sectors
 	 * input  %dl     - drive number
@@ -117,21 +117,21 @@ same_segment:
 
 /* print %dx value in hexadecimal */
 print_hex:
-	xorb    %bh, %bh
-	movw	$4, %cx		     # 4 hex digits (2bytes)
+	xorb   %bh, %bh
+	movw   $4, %cx		     # 4 hex digits (2bytes)
 print_digit:
 	/* extract leftmost digit in %al */
-	rolw	$4, %dx
-	movw	$0x0e0f, %ax
-	andb	%dl, %al
+	rolw   $4, %dx
+	movw   $0x0e0f, %ax
+	andb   %dl, %al
 	/* transform extracted digit to ascii */
-	cmpb    $0x0a, %al
-	jl      digit
-	addb    $0x07, %al
+	cmpb   $0x0a, %al
+	jl     digit
+	addb   $0x07, %al
 digit:
-	addb    $0x30, %al
-	int	$0x10
-	loop	print_digit
+	addb   $0x30, %al
+	int    $0x10
+	loop   print_digit
 	ret
 
 /* print string pointed by %ds:si */
@@ -148,11 +148,11 @@ end:
 
 /* print newline */
 print_nl:
-	xorb    %bh, %bh
-	movw    $((0x0e << 8) | '\r'), %ax
-	int     $0x10
-	movb    $'\n', %al
-	int     $0x10
+	xorb   %bh, %bh
+	movw   $((0x0e << 8) | '\r'), %ax
+	int    $0x10
+	movb   $'\n', %al
+	int    $0x10
 	ret
 
 /*
