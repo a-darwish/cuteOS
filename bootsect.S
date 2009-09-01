@@ -26,6 +26,11 @@
  * the mbr, or otherwise the bios will happily ignore us */
 #define BOOT_SIGNATURE	0xaa55
 
+/* Real-mode segment where the kernel will be copied to from
+ * disk. 512KB (0x10000-0x90000) will be more than enough for
+ * the time-being */
+#define KERNEL_SEGMENT  0x1000
+
 /* Print messages to screen */
 #define MSG(msg)		\
 	movw   $msg, %si;  	\
@@ -50,21 +55,54 @@ _start:
 
 	MSG    (welcome)
 
-	/*
-	 * reset hard-disk controllers and recalibrate the
-	 * read/write head positions (seek to cylinder 0).
+	/* Check for enhanced bios services to move beyond the 8GB
+	 * limit with LBA, or the 504MB limit with no LBA (CHS).
+	 * If no enhanced services exist (a pre-1995 bios), we'll
+	 * gracefully exit.
 	 *
-	 * INT 0x13, function 0x00 - reset hard disk system
-	 * input  %dl    - drive number (#zero = 0x80)
-	 * output %ah    - error code
-	 * output CF     - boolean error flag
-	 */
-	movb   $0x01, %ah
+	 * INT 0x13, function 0x41
+	 * input  %bx     - 0x55aa (defined by ebios standard)
+	 * input  %dl     - drive number (#zero = 0x80)
+	 * output success - carry = 0 && bx = 0xaa55 &&
+	 *                  cx bit 0 = 1 (enhanced drive access)
+	 * output failure - carry = 1 || bx != 0xaa55 */
+	movb   $0x41, %ah
 	movb   $0x80, %dl
+	movw   $0x55aa, %bx
 	int    $0x13
-	xorw   %dx, %dx
-	movb   %ah, %dh
-	call   print_hex
+	jc     no_ebios
+	cmpw   $0xaa55, %bx
+	jne    no_ebios
+	shrw   $1, %cx
+	jnc    no_ebios
+
+	/* Copy the kernel from disk to its destined starting address
+	 * 0x10000. For the sake of simplicity, we'll copy the disk's
+	 * first 512KB after the mbr regardless of the real kernel
+	 * size. We may optimize later.
+	 *
+	 * INT 0x13, function 0x42 - extended read sectors
+	 * input  %dl     - drive number
+	 * input  %ds:si  - pointer to the Disk Address Packet
+	 * output %ah     - error code (if any)
+	 * output CF      - error flag (true = error) */
+	movw   $16, %cx			# 16 * 64 sector = 512K
+	movb   $0x80, %dl
+	movw   $disk_address_packet, %si
+	movw   $KERNEL_SEGMENT, buffer_seg
+	movw   $1, sector		# mbr is sector 0
+next_sectors:
+	movb   $64, sectors_cnt
+	movb   $0x42, %ah
+	int    $0x13
+	jc     disk_error
+	addw   $64, sector
+	addw   $0x8000, buffer_offset   # 32K copied, 0x8000 bytes
+	jnc    same_segment
+	addw   $0x1000, buffer_seg	# 64K copied, move to next segment
+	movw   $0x0000, buffer_offset
+same_segment:
+	loop   next_sectors
 
 	jmp    .
 
@@ -117,9 +155,59 @@ print_nl:
 	int     $0x10
 	ret
 
+/*
+ * Error conditions
+ */
+
+disk_error:
+	pushw  %ax
+	MSG    (disk)
+	popw   %dx
+	call   print_hex
+	call   print_nl
+	jmp    halt
+no_ebios:
+	MSG    (old_bios)
+halt:
+	MSG    (exiting)
+	jmp    .
+
+/*
+ * Disk Address Packet
+ */
+
+disk_address_packet:
+/* packet size in bytes */
+packet_size:
+	.byte 0x10
+unused:
+	.byte 0x00
+/* number of blocks to transfer [1 - 127] */
+sectors_cnt:
+	.byte 0x00
+unused2:
+	.byte 0x00
+/* read/write buffer address */
+buffer_offset:
+	.word 0x00
+buffer_seg:
+	.word 0x00
+/* logical sector number */
+sector:
+	.quad 0x00
+
+/*
+ * Strings
+ */
+
+disk:
+	.asciz "Error reading disk's sectors"
+old_bios:
+	.asciz "A BIOS from the dawn of time!"
+exiting:
+	.asciz "EXITING"
 welcome:
 	.asciz "Loading .."
-
 
 .org 510
 boot_flag:
