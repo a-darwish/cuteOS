@@ -176,6 +176,16 @@ start_copy:
 	jmp    start_copy
 
 end_copy:
+
+	/* Enable the A20. The story goes that IBM, to achive backward
+	 * compatibility with the 8086s, used a three-state multiplexer
+	 * to gate the A20 line output from its 80286 CPUs before it
+	 * reached the rest of the machine. A tri-state mux can either
+	 * produce 0, efficively killing the a20 line, or go to a high
+	 * impedence state where it just acts as a wire. They used an
+	 * unused pin in the keyboard controller to control that mux */
+	call   enable_a20
+
 	/* Set the protected mode PE flag */
 	movl   %cr0, %eax
 	orl    $0x1, %eax
@@ -193,7 +203,7 @@ end_copy:
 	 * code32 block where the %cs selector is updated. A short jump
 	 * is ideal cause it's the same in real mode and 16-bit
 	 * protected mode. It's also the suggested method in Intel
-	 * documents. Thanks to bcos@#osdev for this valuable `short
+	 * documents. Thanks to bcos@#osdev for this valuable 'short
 	 * jump' info */
 	jmp    flush_prefetch
 
@@ -201,7 +211,7 @@ flush_prefetch:
 	/* Setup the data segments and the stack pointer. Note that
 	 * the segment descriptors index is 8bytes aligned, thus
 	 * Intel uses the least significant 3 bits in the segment
-	 * selector to decode the DPL and the TI bit */
+	 * selector to decode the DPL and the TI bits */
 	movw   $(gdt_ds - gdt), %ax
 	movw   %ax, %ds
 	movw   %ax, %es
@@ -212,6 +222,89 @@ flush_prefetch:
 	movl   $0xcccccccc, %ecx
 
 	jmp    .
+
+/*
+ * A20 line methods
+ *
+ * There's usually a controller in the keyboard itself and
+ * a motherboard keyboard controller responsible for buffering,
+ * data validity checking, and translation form Kscan codes
+ * provided by the in-keyboard controller to scan codes.
+ *
+ * On AT+ machines, ports 0x60 and 0x64 communicate with the
+ * motherboard keyboard controller. What's relative to us is
+ * port 0x64 which is used to read status from the
+ * motherboard keyboard controller and to send commands to it
+ *
+ * Port 0x64 input:
+ *
+ * bit1: If clear, the motherboard controller's input buffer
+ * is empty. A write can be made to port 0x60 or port 0x64.
+ * If set, the motherboard controller's input buffer is full.
+ * Until the motherboard controller has emptied the buffer,
+ * no writes should occur to ports 0x60/0x64 or the command
+ * will be lost.
+ *
+ * bit0: If clear, the motherboard controller's output buffer
+ * is empty. A read from port 0x60 will not be valid.
+ * If set, the motherboard controller's output buffer has
+ * a byte available. Use port 0x60 to read that byte.
+ *
+ * Port 0x64 output:
+ * (send commands to motherboard's keyboard controller)
+ *
+ * 0xD0: Read the controller's state/output-port. The byte can
+ * be read by reading from 0x60 afterwards.
+ * bit1: if set, A20 line is on. The opposite if clear.
+ *
+ * 0xD1: The next byte written to 0x60 is transfered to the
+ * controller's state/output-port
+ * same bit values semantics as the read state command
+ */
+
+	.equ   KCOMM, 0x64		# controller command io port
+	.equ   KDATA, 0x60		# controller data io port
+	.equ   KCOMM_GETSTATE, 0xD0
+	.equ   KCOMM_SETSTATE, 0xD1
+
+enable_a20:
+	/* First we read the controller state and save it. To avoid
+	 * affecting other system functions, we want to keep the
+	 * other state bits intact while setting the A20 bit */
+	call   kpoll_empty
+	movb   $KCOMM_GETSTATE, %al
+	outb   $KCOMM
+	call   kpoll_output		# wait for output
+	xorw   %ax, %ax
+	inb    $KDATA
+	pushw  %ax
+	/* Then we write the new state with the A20 bit set */
+	call   kpoll_empty
+	movb   $KCOMM_SETSTATE, %al
+	outb   $KCOMM
+	call   kpoll_empty
+	popw   %ax
+	orw    $0x02, %ax
+	outb   $KDATA
+	ret				# done (hopefully)
+
+/* loop till the motherboard controller's input buffer
+ * is empty. You can write to 0x64 or 0x60 afterwards */
+kpoll_empty:
+	xorw   %ax, %ax
+	inb    $KCOMM
+	btw    $1, %ax
+	jc     kpoll_empty
+	ret
+
+/* loop till the motherboard controller's output buffer
+ * has an available byte to read from 0x60 */
+kpoll_output:
+	xorw   %ax, %ax
+	inb    $KCOMM
+	btw    $0, %ax
+	jnc    kpoll_output
+	ret
 
 /*
  * Print methods
