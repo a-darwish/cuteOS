@@ -10,8 +10,8 @@
  *          segment:offset                physical
  *  0x0000:0x0000 -> 0x0030:0x00ff  (0x00000 -> 0x003ff) real mode interrupt vector table
  *  0x0040:0x0000 -> 0x0040:0x00ff  (0x00400 -> 0x004ff) bios data area, 256 bytes
- *  0x0050:0x0000 -> 0x9000:0xfbff  (0x00500 -> 0x9fbff) free memory, 630K
- *  0x9000:0xfc00 -> 0x9000:0xffff  (0x9fc00 -> 0x9ffff) usually Extended BIOS Data Area
+ *  0x0050:0x0000 -> 0x8000:0xffff  (0x00500 -> 0x8ffff) free memory
+ *  0x9000:0x0000 -> 0x9000:0xffff  (0x90000 -> 0x9ffff) usually Extended BIOS Data Area
  *  0xa000:0x0000 -> 0xb000:0xffff  (0xa0000 -> 0xbffff) VGA frame buffer
  *  0xc000:0x0000 -> 0xc000:0x7fff  (0xc0000 -> 0xc7fff) video bios, 32K
  *  0xc000:0x8000 -> 0xe000:0xffff  (0xc8000 -> 0xeffff) empty
@@ -26,11 +26,6 @@
  * the mbr, or otherwise the bios will happily ignore us */
 #define BOOT_SIGNATURE	0xaa55
 
-/* Real-mode segment where the kernel will be copied to from
- * disk. An available space of 512KB, 0x10000 - 0x90000, will
- * be more than enough for the time-being */
-#define KERNEL_SEGMENT  0x1000
-
 /* Print messages to screen */
 #define MSG(msg)		\
 	movw   $msg, %si;  	\
@@ -42,14 +37,43 @@
 /* The text section is relocated by the linker to 0x0000, thus
  * when we send an address of a string, we're actually sending
  * its offset from whatever segment currently setup in the
- * segment registers */
+ * code segment register */
 .text
 .global _start
-_start:	
-	movw   $0x07c0, %ax
+_start:
+	/* All BIOSes load the mbr to the same 0x07c00 physical
+	 * address. The difference is that some load it using the
+	 * 0x07c0:0x00 scheme while others load it as 0x00:0x7c00.
+	 * For certainity, we force our own realmode code segment
+	 * value using a far jump */
+	.equ   MBR_SEG, 0x07c0
+	ljmp   $MBR_SEG, $real_start
+
+real_start:
+	/* We want to run the actual kernel beginning from the 512KB
+	 * [0x00000-0x7ffff] range. The bios loads the mbr at
+	 * [0x07c00-0x07dff] which is inside the destined kernel range.
+	 * This makes kernel loading impossible without relocation as
+	 * the mbr code which does the copying will overwrite itself
+	 * in the process. To avoid this, move the bootsector code out
+	 * of the way to physical address 0x80500 */
+	.equ   DST_SEG, 0x8050
+	movw   $MBR_SEG, %ax
+	movw   %ax, %ds			# %ds -> %es (si = di = 0)
+	movw   $DST_SEG, %ax
+	movw   %ax, %es
+	xorw   %si, %si
+	xorw   %di, %di
+	movw   $256, %cx
+	rep    movsw
+	ljmp   $DST_SEG, $relocated
+
+relocated:
+	movw   $DST_SEG, %ax
 	movw   %ax, %es
 	movw   %ax, %ss
 	movw   %ax, %ds
+	movw   %ax, %es
 	/* arbitary stack value > bootsector's 512 bytes code */
 	movw   $0x300, %sp
 
@@ -77,15 +101,24 @@ _start:
 	jnc    no_ebios
 
 	/* Copy the kernel from disk to its destined starting address
-	 * at 0x10000. For simplicity, we'll copy the disk's first
+	 * at 0x00500. For simplicity, we'll copy the disk's first
 	 * 1024 sectors post the mbr to ram regardless of the real
-	 * kernel size. We may optimize later.
+	 * kernel size; we may optimize later. The kernel will be in
+	 * the range [0x00500-0x804ff].
+	 *
+	 * Note that we currently copy to 0x500 and not 0x00 as the
+	 * latter will invalidate the bios and real-mode ivt which
+	 * are still needed to copy the disk sectors to RAM. Once
+	 * we're sure we won't need the bios anymore, we'll copy the
+	 * kernel to 0x0, enable protected mode, and run it.
 	 *
 	 * INT 0x13, function 0x42 - extended read sectors
 	 * input  %dl     - drive number
 	 * input  %ds:si  - pointer to the Disk Address Packet
 	 * output %ah     - error code (if any)
 	 * output CF      - error flag (true = error) */
+	.equ   KERNEL_SEGMENT, 0x0050
+	.equ   KERNEL_SEGMENT_END, 0x8050
 	movw   $16, %cx			# 16 * 64 sector = 512K
 	movb   $0x80, %dl
 	movw   $disk_address_packet, %si
@@ -97,12 +130,86 @@ next_sectors:
 	int    $0x13
 	jc     disk_error
 	addw   $64, sector
-	addw   $0x8000, buffer_offset   # 32K copied, 0x8000 bytes
+	addw   $0x8000, buffer_offset   # 32K copied; 0x8000 bytes
 	jnc    same_segment
 	addw   $0x1000, buffer_seg	# 64K copied, move to next segment
 	movw   $0x0000, buffer_offset
 same_segment:
 	loop   next_sectors
+
+	/* Now we prepare moving to protected mode
+	 *
+	 * we disable interrupts cause the interrupt table format
+	 * for protected mode and real-mode differs. It is inevitable
+	 * that if IDTR selects an interrupt table, it  will have the
+	 * wrong format at some time which can lead to unpredictable
+	 * behvaior (horrors)
+	 *
+	 * The processor will still attempt to access the interrupt
+	 * table if an exception or nonmaskable interrupt (NMI) occurs;
+	 * change the limit value in the IDTR to zero, which will force
+	 * a shutdown if an exception or a malice NMI occurs: already
+	 * unrecoverable events at this stage. */
+	cli
+	lidt   idtdesc			# null
+	lgdt   gdtdesc			# pmode cs and ds descriptors
+
+	/* We copy the kernel to physical address 0x0 cause this will
+	 * be the protected mode code segment base. This will
+	 * completely strike out the bios and the real-mode IVT, but
+	 * it should be fine as we already have interrupts disabled */
+	cld
+	movw   $0x00000, %ax
+start_copy:
+	movw   %ax, %es			# %ds -> %es
+	/* dst always prcedes src $(KERN_SEGMENT<<4) bytes */
+	addw   $KERNEL_SEGMENT, %ax
+	movw   %ax, %ds
+	cmpw   $KERNEL_SEGMENT_END, %ax	# 512KB copied?
+	je     end_copy
+	xorw   %si, %si
+	xorw   %di, %di
+	movw   $0x8000, %cx
+	/*  move to the next 0x1000<<4 (64K) bytes */
+	addw   $(0x1000 - KERNEL_SEGMENT), %ax
+	rep    movsw
+	jmp    start_copy
+
+end_copy:
+	/* Set the protected mode PE flag */
+	movl   %cr0, %eax
+	orl    $0x1, %eax
+	movl   %eax, %cr0
+
+	/* Flush the processor's instruction prefetch queue by
+	 * executing a jump instruction. The 80386 fetches and decodes
+	 * instructions and addresses before they are used; however,
+	 * after a change into protected mode, the prefetched
+	 * instruction information is no longer valid. A JMP forces
+	 * the processor to discard the invalid information.
+	 *
+	 * Note that a short jump to a code32 block won't work. It's
+	 * either a short jump to a code16 block, or a long jump to
+	 * code32 block where the %cs selector is updated. A short jump
+	 * is ideal cause it's the same in real mode and 16-bit
+	 * protected mode. It's also the suggested method in Intel
+	 * documents. Thanks to bcos@#osdev for this valuable `short
+	 * jump' info */
+	jmp    flush_prefetch
+
+flush_prefetch:
+	/* Setup the data segments and the stack pointer. Note that
+	 * the segment descriptors index is 8bytes aligned, thus
+	 * Intel uses the least significant 3 bits in the segment
+	 * selector to decode the DPL and the TI bit */
+	movw   $(gdt_ds - gdt), %ax
+	movw   %ax, %ds
+	movw   %ax, %es
+	movw   %ax, %ss
+
+	movl   $0xaaaaaaaa, %eax
+	movl   $0xbbbbbbbb, %ebx
+	movl   $0xcccccccc, %ecx
 
 	jmp    .
 
@@ -179,22 +286,56 @@ halt:
 disk_address_packet:
 /* packet size in bytes */
 packet_size:
-	.byte 0x10
+	.byte  0x10
 unused:
-	.byte 0x00
+	.byte  0x00
 /* number of blocks to transfer [1 - 127] */
 sectors_cnt:
-	.byte 0x00
+	.byte  0x00
 unused2:
-	.byte 0x00
+	.byte  0x00
 /* read/write buffer address */
 buffer_offset:
-	.word 0x00
+	.word  0x00
 buffer_seg:
-	.word 0x00
+	.word  0x00
 /* logical sector number */
 sector:
-	.quad 0x00
+	.quad  0x00
+
+/*
+ * Protected mode GDT
+ *
+ * Refer to attached Intel i686 documentation, vol. 3:
+ * 2.4 Memory-management registers
+ * 3.4.3 Segment descriptors
+ * 3.4.3.1 Code and data segment descriptor types
+ */
+
+gdt:
+	/* null descriptor */
+	.word  0, 0, 0, 0	# NULL gdt descriptor
+gdt_cs:
+	/* code segment descriptor */
+	.word  0xffff		# limit = 0xfffff
+	.word  0x0000		# base address = 0x00
+	.byte  0x00, 0x9A	# P=1, DPL=00, S=1, TYPE=0xA (execute/read)
+	.byte  0xcf, 0x00	# granularity=4K, D=1
+gdt_ds:
+	/* data segment descriptor */
+	.word  0xffff		# limit = 0xfffff
+	.word  0x0000		# base address = 0x00
+	.byte  0x00, 0x92	# P=1, DPL=00, S=1, TYPE=0x2 (read/write)
+	.byte  0xcf, 0x00	# granularity=4K, B=1
+gdt_end:
+
+gdtdesc:
+	.word  gdt_end - gdt	# limit: size of gdt table in bytes
+	.long  DST_SEG<<4 + gdt	# NOTE! protected mode flat address
+
+idtdesc:
+	.word  0
+	.long  0
 
 /*
  * Strings
@@ -245,3 +386,4 @@ boot_flag:
  * location with the correct color value'' -- System BIOS for IBM PCs,
  * compatibles, and EISA computers, second edition, Phoenix press
  */
+
