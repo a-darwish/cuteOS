@@ -405,6 +405,10 @@ sector:
  * 3.4.3.1 Code and data segment descriptor types
  */
 
+/* As said by linux x86 boot code, there are machines which are
+ * known not to boot with the GDT being 8-byte unaligned. Intel
+ * also recommends 16 byte alignment, so let it be */
+.align 4
 gdt:
 	/* null descriptor */
 	.word  0, 0, 0, 0	# NULL gdt descriptor
