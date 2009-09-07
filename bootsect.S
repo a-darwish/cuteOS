@@ -29,8 +29,7 @@
 /* Print messages to screen */
 #define MSG(msg)		\
 	movw   $msg, %si;  	\
-	call   print_string;	\
-	call   print_nl
+	call   print_string
 	
 .code16
 
@@ -152,7 +151,7 @@ same_segment:
 	 * unrecoverable events at this stage. */
 	cli
 	lidt   idtdesc			# null
-	lgdt   gdtdesc			# pmode cs and ds descriptors
+	lgdt   gdt			# pmode cs and ds descriptors
 
 	/* We copy the kernel to physical address 0x0 cause this will
 	 * be the protected mode code segment base. This will
@@ -217,11 +216,9 @@ flush_prefetch:
 	movw   %ax, %es
 	movw   %ax, %ss
 
-	movl   $0xaaaaaaaa, %eax
-	movl   $0xbbbbbbbb, %ebx
-	movl   $0xcccccccc, %ecx
-
-	jmp    .
+	/* GAS should know that $(gdt_cs - gdt) which equals 0x08 *is*
+	 * an absoulte code segment value, but it doesn't */
+	DATA32 ljmp $0x08, $0
 
 /*
  * A20 line methods
@@ -346,15 +343,6 @@ print_string:
 end:
 	ret
 
-/* print newline */
-print_nl:
-	xorb   %bh, %bh
-	movw   $((0x0e << 8) | '\r'), %ax
-	int    $0x10
-	movb   $'\n', %al
-	int    $0x10
-	ret
-
 /*
  * Error conditions
  */
@@ -364,12 +352,11 @@ disk_error:
 	MSG    (disk)
 	popw   %dx
 	call   print_hex
-	call   print_nl
 	jmp    halt
 no_ebios:
 	MSG    (old_bios)
 halt:
-	MSG    (exiting)
+	MSG    (error)
 	jmp    .
 
 /*
@@ -410,8 +397,11 @@ sector:
  * also recommends 16 byte alignment, so let it be */
 .align 4
 gdt:
-	/* null descriptor */
-	.word  0, 0, 0, 0	# NULL gdt descriptor
+	/* since the null descriptor values are not used, we
+	 * save the gdt table descriptor here at its place */
+	.word  gdt_end - gdt	# limit: size of gdt table in bytes
+	.long  DST_SEG<<4 + gdt	# NOTE! protected mode flat address
+	.word  0x0000		# padding
 gdt_cs:
 	/* code segment descriptor */
 	.word  0xffff		# limit = 0xfffff
@@ -426,10 +416,6 @@ gdt_ds:
 	.byte  0xcf, 0x00	# granularity=4K, B=1
 gdt_end:
 
-gdtdesc:
-	.word  gdt_end - gdt	# limit: size of gdt table in bytes
-	.long  DST_SEG<<4 + gdt	# NOTE! protected mode flat address
-
 idtdesc:
 	.word  0
 	.long  0
@@ -439,13 +425,13 @@ idtdesc:
  */
 
 disk:
-	.asciz "Error reading disk's sectors"
+	.asciz "Disk "
 old_bios:
-	.asciz "A BIOS from the dawn of time!"
-exiting:
-	.asciz "EXITING"
+	.asciz "Old BIOS"
+error:
+	.asciz " error; EXITING"
 welcome:
-	.asciz "Loading .."
+	.asciz "Loading..\r\n"
 
 .org 510
 boot_flag:
