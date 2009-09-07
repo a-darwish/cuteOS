@@ -85,12 +85,11 @@ relocated:
 	 *
 	 * INT 0x13, function 0x41
 	 * input  %bx     - 0x55aa (defined by ebios standard)
-	 * input  %dl     - drive number (#zero = 0x80)
+	 * input  %dl     - drive number (provided by bios in %dl)
 	 * output success - carry = 0 && bx = 0xaa55 &&
 	 *                  cx bit 0 = 1 (enhanced drive access)
 	 * output failure - carry = 1 || bx != 0xaa55 */
 	movb   $0x41, %ah
-	movb   $0x80, %dl
 	movw   $0x55aa, %bx
 	int    $0x13
 	jc     no_ebios
@@ -112,14 +111,13 @@ relocated:
 	 * kernel to 0x0, enable protected mode, and run it.
 	 *
 	 * INT 0x13, function 0x42 - extended read sectors
-	 * input  %dl     - drive number
+	 * input  %dl     - drive number (provided by bios in %dl)
 	 * input  %ds:si  - pointer to the Disk Address Packet
 	 * output %ah     - error code (if any)
 	 * output CF      - error flag (true = error) */
 	.equ   KERNEL_SEGMENT, 0x0050
 	.equ   KERNEL_SEGMENT_END, 0x8050
 	movw   $16, %cx			# 16 * 64 sector = 512K
-	movb   $0x80, %dl
 	movw   $disk_address_packet, %si
 	movw   $KERNEL_SEGMENT, buffer_seg
 	movw   $1, sector		# mbr is sector 0
