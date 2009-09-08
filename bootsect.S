@@ -49,32 +49,13 @@ _start:
 	ljmp   $MBR_SEG, $real_start
 
 real_start:
-	/* We want to run the actual kernel beginning from the 512KB
-	 * [0x00000-0x7ffff] range. The bios loads the mbr at
-	 * [0x07c00-0x07dff] which is inside the destined kernel range.
-	 * This makes kernel loading impossible without relocation as
-	 * the mbr code which does the copying will overwrite itself
-	 * in the process. To avoid this, move the bootsector code out
-	 * of the way to physical address 0x80500 */
-	.equ   DST_SEG, 0x8050
-	movw   $MBR_SEG, %ax
-	movw   %ax, %ds			# %ds -> %es (si = di = 0)
-	movw   $DST_SEG, %ax
+	movw   %cs, %ax
 	movw   %ax, %es
-	xorw   %si, %si
-	xorw   %di, %di
-	movw   $256, %cx
-	rep    movsw
-	ljmp   $DST_SEG, $relocated
-
-relocated:
-	movw   $DST_SEG, %ax
-	movw   %ax, %es
-	movw   %ax, %ss
 	movw   %ax, %ds
 	movw   %ax, %es
+	movw   %ax, %ss
 	/* arbitary stack value > bootsector's 512 bytes code */
-	movw   $0x300, %sp
+	movw   $0x3000, %sp
 
 	MSG    (welcome)
 
@@ -98,25 +79,31 @@ relocated:
 	shrw   $1, %cx
 	jnc    no_ebios
 
+	/* Extended BIOS Data Area grows down the top of low memory
+	 * at 0x9ffff and usually spans to 0x9a000 these days. We load
+	 * our kernel up to 0x8ffff, so we won't run on any BIOS that
+	 * expands its data area lower than 0x90000. INT 0x12 reports
+	 * the size of low memory beginning from 0x00000 in kilobytes */
+	.equ   $MIN_MEMSIZE, 0x90000
+	.equ   $KILOBYTE, 0x400
+	xor    %ax, %ax
+	int    $0x12
+	cmpw   $($MIN_MEMSIZE / $KILOBYTE), %ax
+	jl     huge_ebda
+
 	/* Copy the kernel from disk to its destined starting address
-	 * at 0x00500. For simplicity, we'll copy the disk's first
+	 * at 0x10000. For simplicity, we'll copy the disk's first
 	 * 1024 sectors post the mbr to ram regardless of the real
 	 * kernel size; we may optimize later. The kernel will be in
-	 * the range [0x00500-0x804ff].
-	 *
-	 * Note that we currently copy to 0x500 and not 0x00 as the
-	 * latter will invalidate the bios and real-mode ivt which
-	 * are still needed to copy the disk sectors to RAM. Once
-	 * we're sure we won't need the bios anymore, we'll copy the
-	 * kernel to 0x0, enable protected mode, and run it.
+	 * the range (0x10000-0x90000].
 	 *
 	 * INT 0x13, function 0x42 - extended read sectors
 	 * input  %dl     - drive number (provided by bios in %dl)
 	 * input  %ds:si  - pointer to the Disk Address Packet
 	 * output %ah     - error code (if any)
 	 * output CF      - error flag (true = error) */
-	.equ   KERNEL_SEGMENT, 0x0050
-	.equ   KERNEL_SEGMENT_END, 0x8050
+	.equ   KERNEL_SEGMENT, 0x1000
+	.equ   KERNEL_SEGMENT_END, 0x9000
 	movw   $16, %cx			# 16 * 64 sector = 512K
 	movw   $disk_address_packet, %si
 	movw   $KERNEL_SEGMENT, buffer_seg
@@ -150,29 +137,6 @@ same_segment:
 	cli
 	lidt   idtdesc			# null
 	lgdt   gdt			# pmode cs and ds descriptors
-
-	/* We copy the kernel to physical address 0x0 cause this will
-	 * be the protected mode code segment base. This will
-	 * completely strike out the bios and the real-mode IVT, but
-	 * it should be fine as we already have interrupts disabled */
-	cld
-	movw   $0x00000, %ax
-start_copy:
-	movw   %ax, %es			# %ds -> %es
-	/* dst always prcedes src $(KERN_SEGMENT<<4) bytes */
-	addw   $KERNEL_SEGMENT, %ax
-	movw   %ax, %ds
-	cmpw   $KERNEL_SEGMENT_END, %ax	# 512KB copied?
-	je     end_copy
-	xorw   %si, %si
-	xorw   %di, %di
-	movw   $0x8000, %cx
-	/*  move to the next 0x1000<<4 (64K) bytes */
-	addw   $(0x1000 - KERNEL_SEGMENT), %ax
-	rep    movsw
-	jmp    start_copy
-
-end_copy:
 
 	/* Enable the A20. The story goes that IBM, to achive backward
 	 * compatibility with the 8086s, used a three-state multiplexer
@@ -345,6 +309,12 @@ end:
  * Error conditions
  */
 
+huge_ebda:
+	pushw  %ax
+	MSG    (ebda)
+	popw   %dx
+	call   print_hex
+	jmp    halt
 disk_error:
 	pushw  %ax
 	MSG    (disk)
@@ -398,19 +368,19 @@ gdt:
 	/* since the null descriptor values are not used, we
 	 * save the gdt table descriptor here at its place */
 	.word  gdt_end - gdt	# limit: size of gdt table in bytes
-	.long  DST_SEG<<4 + gdt	# NOTE! protected mode flat address
+	.long  MBR_SEG<<4 + gdt	# NOTE! protected mode flat address
 	.word  0x0000		# padding
 gdt_cs:
 	/* code segment descriptor */
 	.word  0xffff		# limit = 0xfffff
-	.word  0x0000		# base address = 0x00
-	.byte  0x00, 0x9A	# P=1, DPL=00, S=1, TYPE=0xA (execute/read)
+	.word  0x0000		# base address = 0x10000
+	.byte  0x01, 0x9a	# P=1, DPL=00, S=1, TYPE=0xA (execute/read)
 	.byte  0xcf, 0x00	# granularity=4K, D=1
 gdt_ds:
 	/* data segment descriptor */
 	.word  0xffff		# limit = 0xfffff
-	.word  0x0000		# base address = 0x00
-	.byte  0x00, 0x92	# P=1, DPL=00, S=1, TYPE=0x2 (read/write)
+	.word  0x0000		# base address = 0x10000
+	.byte  0x01, 0x92	# P=1, DPL=00, S=1, TYPE=0x2 (read/write)
 	.byte  0xcf, 0x00	# granularity=4K, B=1
 gdt_end:
 
@@ -422,6 +392,8 @@ idtdesc:
  * Strings
  */
 
+ebda:
+	.asciz "Huge EBDA = "
 disk:
 	.asciz "Disk "
 old_bios:
