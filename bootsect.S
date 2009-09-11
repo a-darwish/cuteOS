@@ -180,7 +180,7 @@ flush_prefetch:
 
 	/* GAS should know that $(gdt_cs - gdt) which equals 0x08 *is*
 	 * an absoulte code segment value, but it doesn't */
-	DATA32 ljmp $0x08, $0
+	DATA32 ljmp $0x08, $(KERNEL_SEGMENT << 4)
 
 /*
  * A20 line methods
@@ -373,14 +373,14 @@ gdt:
 gdt_cs:
 	/* code segment descriptor */
 	.word  0xffff		# limit = 0xfffff
-	.word  0x0000		# base address = 0x10000
-	.byte  0x01, 0x9a	# P=1, DPL=00, S=1, TYPE=0xA (execute/read)
+	.word  0x0000		# base address = 0x00000
+	.byte  0x00, 0x9a	# P=1, DPL=00, S=1, TYPE=0xA (execute/read)
 	.byte  0xcf, 0x00	# granularity=4K, D=1
 gdt_ds:
 	/* data segment descriptor */
 	.word  0xffff		# limit = 0xfffff
-	.word  0x0000		# base address = 0x10000
-	.byte  0x01, 0x92	# P=1, DPL=00, S=1, TYPE=0x2 (read/write)
+	.word  0x0000		# base address = 0x00000
+	.byte  0x00, 0x92	# P=1, DPL=00, S=1, TYPE=0x2 (read/write)
 	.byte  0xcf, 0x00	# granularity=4K, B=1
 gdt_end:
 
