@@ -178,9 +178,29 @@ flush_prefetch:
 	movw   %ax, %es
 	movw   %ax, %ss
 
-	/* GAS should know that $(gdt_cs - gdt) which equals 0x08 *is*
-	 * an absoulte code segment value, but it doesn't */
-	DATA32 ljmp $0x08, $(KERNEL_SEGMENT << 4)
+	/* Long jump to protected mode. GAS should know that
+	 * $(gdt_cs - gdt) which equals 0x08 *is* an absoulte code
+	 * segment value, but it doesn't */
+	DATA32 ljmp $0x08, $(reloc-_start + 0x7c00)
+
+.code32
+
+reloc:	
+	/* Goodbye the 80's; welcome the 90's!
+	 * Relocate the kernel above the one mege-byte point at
+	 * 0x100000. We should have directly done so using multiple
+	 * stages, but we're still very simple (read: braindead) */
+	.equ   KERNEL_RELOC, 0x100000
+	.equ   KERNEL_SIZE, 0x80000
+	movl   $(KERNEL_SEGMENT << 4), %esi
+	movl   $KERNEL_RELOC, %edi
+	movl   $(KERNEL_SIZE / 4), %ecx
+	rep    movsl
+
+	/* Run our kernel */
+	ljmp   $0x08, $KERNEL_RELOC
+
+.code16
 
 /*
  * A20 line methods
