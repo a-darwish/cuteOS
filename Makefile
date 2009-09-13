@@ -15,14 +15,15 @@ bootsect.o: bootsect.S
 	rm bootsect.s
 
 # current bootsector load the kernel at 0x100000
-kernel.bin: kernel.o
-	$(LD) -Ttext 0x100000 -s --oformat binary $< -o $@
-kernel.o: head.S
-	$(CPP) -traditional $< -o kernel.s
-	$(AS) kernel.s -o $@
-	rm kernel.s
+kernel.bin: head_asm.o
+	$(LD) -Ttext 0x100000 -s --oformat binary $^ -o $@
+head_asm.o: head.S
+	$(CPP) -traditional $< -o head.s
+	$(AS) head.s -o $@
+	rm head.s
 
 clean:
+	rm -f image
 	rm -f *.s
 	rm -f *.o
 	rm -f *.bin

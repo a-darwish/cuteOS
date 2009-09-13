@@ -33,59 +33,33 @@ _start:
 	bts    $CR4_PAE, %eax
 	movl   %eax, %cr4
 
-	/* Load a 64-bit(L=1) code segment */
+	/* Load a 64-bit (L=1) code segment */
 	lgdt   gdt
 
 	/*
-	 * Identity-map the first 8MB region (0x000000-0x800000)
-	 * CRITICAL: pgtable must be 4KB page aligned.
+	 * Identity map the first physical 2MBs using a single 2MB
+	 * page. We should map more once the kernel get larger; kernel
+	 * size shouldn't exceed one megabyte for now.
 	 */
 
-	/* Zero the entire page tables area; processor won't tolerate
-	 * any garbage there (P bit leading to pagefaults, etc) */
+	/* Zero the entire init pagetables area */
 	xorl   %eax, %eax
-	movl   $pgtable, %edi
-	movl   $(PGTABLES_AREA/4), %ecx
+	movl   $init_pgt, %edi
+	movl   $(INITPGT_AREA / 4), %ecx
 	rep    stosl
 
-	/* Single PML4 entry for 0x0; P=1, R/W=1, U/S=1, PWT=0,
-	 * PDP base = pgtable + 0x1000 */
-	movl   $(pgtable + 0x1007), pgtable
+	/* pml4 entry: P = R/W = U/S = 1 PDP base = pml4 + 0x1000 */
+	movl   $(init_pgt + 0x1007), init_pgt
 
-	/* Single PDP entry for 0x0; P=1, R/W=1, U/S=1, PWT=0
-	 * PD base = pgtable + 0x2000 */
-	movl   $(pgtable + 0x1000), %ebx
-	movl   $(pgtable + 0x2007), (%ebx)
+	/* pdp entry: P = R/W = U/S = 1 PD base = pml4 + 0x2000 */
+	movl   $(init_pgt + 0x2007), (init_pgt + 0x1000)
 
-	/* 4 Page Directory (PD) entries for range (0b0-0b0100)
-	 * P=1, R/W=1, U/S=1, PWT=0.
-	 * PT base = pgtable + (0x3000, 0x4000, ..., 0x6000) */
-	movl   $(pgtable + 0x2000), %ebx
-	movl   $(pgtable + 0x3007), %edx
-	movl   $4, %ecx			# 4 PD entries
-1:	movl   %edx, (%ebx)
-	addl   $0x1000, %edx		# next Page Table
-	addl   $8, %ebx			# next PDE
-	decl   %ecx
-	jnz    1b
-
-	/* Set the 4 Page Tables pointed by the 4 PDEs above. The
-	 * first entry of the first Page Table based at pgtable+0x3000
-	 * point to page 0x0; second entry points to page 0x1, and so on
-	 * spanning the four tables and covering the 8MB range */
-	movl   $(pgtable + 0x3000), %ebx
-	xorl   %ecx, %ecx
-1:	movl   %ecx, %eax
-	shl    $12, %eax		# page address = page-num<<12
-	addl   $0x003, %eax		# P=1, R/W=1, U/S=0
-	movl   %eax, (%ebx)
-	addl   $8, %ebx			# next PTE
-	incl   %ecx			# next page number
-	cmpl   $2048, %ecx		# 4 tables * 512 entries = 2048
-	jne    1b
+	/* pd entry: P = R/W = 1, U/S = 0, 2MB page flag: bit7 = 1,
+	 * page base = 0x0 */
+	movl   $0x083, (init_pgt + 0x2000)
 
 	/* Final step: store PML4 base adderss */
-	movl   $pgtable, %eax
+	movl   $init_pgt, %eax
 	movl   %eax, %cr3
 
 	/* Enable long mode */
@@ -101,6 +75,7 @@ _start:
 	bts    $31, %eax
 	movl   %eax, %cr0
 
+	/* clear prefetch and jump to 64bit code */
 	ljmp   $0x08, $startup_64
 
 no_longmode:
@@ -150,16 +125,67 @@ no_amd64:
 /*
  * 64-bit code entry!
  */
+
+#define VIRTUAL_START     0xffffffff80000000
+#define VIRTUAL(address)  (VIRTUAL_START + address)
+
 .code64
 startup_64:
-	movq   $0xdeadbeefdeadbeef, %rax
+	/* Reset the stack */
+	movq   $stack_end, %rsp
+
+	/*
+	 * We already have the first physical 2MBs identity mapped;
+	 * setup page tables for running the kernel beginning from
+	 * virtual address 0xffff80100000.
+	 *
+	 * Map the 768M 0xffff80000000-0xffffb0000000 region to
+	 * to physical addresses 0x0000-0x30000000 using 2MB pages.
+	 */
+
+	/* pml4 entry. We only need one entry for 0b111111111, which
+	 * will be typically located at the very end of the table.
+	 * P = R/W = U/S = 1 as usual. For PDP base, we use the same
+	 * PDP table we used for identity mapping */
+	movq   $(init_pgt + 0x1007), (init_pgt + 511 * 8)
+
+	/* pdp entry. We also only need a single entry for 0b111111110
+	 * which is one entry before the end of PDP. P = R/W = U/S = 1
+	 * PD base for the entry is a new table */
+	movq   $(init_pgt + 0x3007), (init_pgt + 0x1000 + 510 * 8)
+
+	/* OK, now we setup the new PD table that is going to do all
+	 * the work. We map entry 0 to page 0, entry 1 to page 1 and
+	 * so on till the end of the table. P = R/W = 1, U/S = 0,
+	 * bit7 (2MB page flage) = 1 */
+	movq   $(init_pgt + 0x3000), %rbx
+	xorq   %rcx, %rcx		# first page num = 0x0
+1:	movq   %rcx, %rax
+	shl    $21, %rax		# page address = page-num<<21
+	addq   $0x083, %rax		# flags: P, R/W, 2M
+	movq   %rax, (%rbx)
+	addq   $8, %rbx			# next PDE
+	incq   %rcx			# next page
+	cmpq   $(init_pgt + 0x4000), %rbx
+	jne    1b
+
+	/* Done; apply the page tables */
+	movq   $init_pgt, %rax
+	movq   %rax, %cr3
+
+	/* Run using high half virtual addresses from now on */
+	movq   $VIRTUAL(1f), %rax
+	jmpq   *%rax
+1:
+
+	/* Viola! */
 	jmp    .
 
 /*
  * 64-bit GDT and GDT descriptor. Elements ignored in long-mode
  * are not set: we won't support compatibility mode by design
  */
-.align 4
+.align 8
 gdt:
 	/* GDT descriptor in place of NULL */
 	.word  gdt_end - gdt            # limit
@@ -178,7 +204,8 @@ gdt_end:
 /*
  * Booting stack
  */
-	.equ   STACK_SIZE, 0x2000
+.align 8
+	.equ   STACK_SIZE, 0x4000
 stack:
 	.fill  STACK_SIZE, 1, 0
 stack_end:
@@ -187,10 +214,10 @@ stack_end:
  * Boot Page tables. Shouldn't this be a BSS section relocated
  * by a linker script to save executable size?
  */
-	.equ  PAGE_SIZE, 0x1000
-	.equ  PGTABLES_CNT, 7		# 4 PT + 1 PD + 1PDP + 1PML4
-	.equ  PGTABLES_AREA, PAGE_SIZE * PGTABLES_CNT
+	.equ   PAGE_SIZE, 4096
+	.equ   INITPGT_PGCNT, 4
+	.equ   INITPGT_AREA, INITPGT_PGCNT * PAGE_SIZE
 
 .balign 4096
-pgtable:
-	.fill PGTABLES_AREA, 1, 0
+init_pgt:
+	.fill  INITPGT_AREA, 1, 0
