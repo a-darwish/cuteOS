@@ -188,7 +188,7 @@ startup_64:
  * 64-bit GDT and GDT descriptor. Elements ignored in long-mode
  * are not set: we won't support compatibility mode by design
  */
-.align 8
+.align 16
 gdt:
 	/* GDT descriptor in place of NULL */
 	.word  gdt_end - gdt            # limit

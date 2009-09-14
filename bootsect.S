@@ -383,7 +383,7 @@ sector:
 /* As said by linux x86 boot code, there are machines which are
  * known not to boot with the GDT being 8-byte unaligned. Intel
  * also recommends 16 byte alignment, so let it be */
-.align 4
+.align 16
 gdt:
 	/* since the null descriptor values are not used, we
 	 * save the gdt table descriptor here at its place */
