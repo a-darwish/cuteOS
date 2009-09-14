@@ -16,7 +16,7 @@ bootsect.o: bootsect.S
 
 # current bootsector load the kernel at 0x100000
 kernel.bin: head_asm.o
-	$(LD) -Ttext 0x100000 -s --oformat binary $^ -o $@
+	$(LD) -T kernel.ld $^ -o $@
 head_asm.o: head.S
 	$(CPP) -traditional $< -o head.s
 	$(AS) head.s -o $@

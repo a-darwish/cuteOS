@@ -8,14 +8,15 @@
  *  the Free Software Foundation, version 2.
  */
 
+.text
 .code32
 
 /*
  * 32-bit kernel entry point. We run with the only pre-condition
  * of being loaded within a flat-memory model.
  */
-.globl _start
-_start:
+.globl startup_32
+startup_32:
 	/* Setup a boot stack and assure amd64 support */
 	movl   $stack_end, %esp
 	call   check_cpu64
@@ -181,6 +182,8 @@ startup_64:
 	/* Viola! */
 	jmp    .
 
+.data
+
 /*
  * 64-bit GDT and GDT descriptor. Elements ignored in long-mode
  * are not set: we won't support compatibility mode by design
@@ -200,6 +203,8 @@ gdt:
 	/* Data segment */
 	.quad  0x0000000000000000	# null; %ds is ignored in LM
 gdt_end:
+
+.bss
 
 /*
  * Booting stack
