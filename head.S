@@ -180,7 +180,7 @@ startup_64:
 1:
 
 	/* Viola! */
-	jmp    .
+	call   kernel_start
 
 .data
 
