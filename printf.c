@@ -14,7 +14,6 @@
 /*
  * Basic string methods till we finish lib/string.c
  * which is going to be written in inline x86-64.
- * We also cheat and use GCC's builtin memcpy for now :)
  */
 int strlen(const char *str)
 {
@@ -38,7 +37,11 @@ void strncpy(char *dst, const char *src, int n)
 }
 void memcpy(void *dst, void *src, int len)
 {
-	__builtin_memcpy(dst, src, len);
+	char *csrc = (char *)src;
+	char *cdst = (char *)dst;
+
+	while (len--)
+		*cdst++ = *csrc++;
 }
 
 /*
@@ -241,29 +244,41 @@ static int kvsnprintf(char *buf, int size, const char *fmt, va_list args)
 }
 
 /*
- * Definitions for writing to VGA memory (0xb8000-0xbffff)
+ * VGA text-mode memory (0xb8000-0xbffff) access
  * @vga_xpos and @vga_ypos forms the current cursor position
+ * @vga_buffer: used to access vga ram in a write-only mode. For
+ * scrolling, we need to copy the last 24 rows up one row, but
+ * reading from vga ram is pretty darn slow and buggy[1], thus the
+ * need for a dedicated buffer. "It's also much easier to support
+ * multiple terminals that way since we'll have everything on the
+ * screen backed up." Thanks travis!
+ * [1] 20 seconds to write and scroll 53,200 rows on my core2duo
+ * laptop.
  */
+
 #define VGA_BASE    ((char *)(0xb8000))
 #define VGA_MAXROWS 25
 #define VGA_MAXCOLS 80
 #define VGA_COLOR   0x0f
-static int vga_xpos, vga_ypos = VGA_MAXROWS;
+#define VGA_AREA    (VGA_MAXROWS * VGA_MAXCOLS * 2)
+static int vga_xpos, vga_ypos;
+static char vga_buffer[VGA_AREA];
 
 /*
  * Scroll the screen up by one row.
  */
 void vga_scrollup(void) {
-	char *src = VGA_BASE + 2*VGA_MAXCOLS;
-	char *dst = VGA_BASE;
+	char *src = vga_buffer + 2*VGA_MAXCOLS;
+	char *dst = vga_buffer;
 	int len = 2*((VGA_MAXROWS - 1) * VGA_MAXCOLS);
-	unsigned short *p = (unsigned short *)(VGA_BASE + len);
+	unsigned short *p = (unsigned short *)(vga_buffer + len);
 
-	while (len--)
-		*dst++ = *src++;
+	memcpy(dst, src, len);
+
 	for (int i = 0; i < VGA_MAXCOLS; i++)
 		*p++ = (VGA_COLOR << 8) + ' ';
 
+	memcpy(VGA_BASE, vga_buffer, VGA_AREA);
 	vga_xpos = 0;
 	vga_ypos--;
 }
@@ -276,14 +291,20 @@ void vga_write(char *buf, int n)
 {
 	int max_xpos = VGA_MAXCOLS;
 	int max_ypos = VGA_MAXROWS;
+	int old_xpos = vga_xpos;
+	int old_ypos = vga_ypos;
+	int area, offset;
 
 	while (*buf && n--) {
-		if (vga_ypos == max_ypos)
+		if (vga_ypos == max_ypos) {
 			vga_scrollup();
+			old_ypos = vga_ypos;
+			old_xpos = vga_xpos;
+		}
 
 		if (*buf != '\n') {
 			writew((VGA_COLOR << 8) + *buf,
-			       (VGA_BASE + 2*(vga_xpos + vga_ypos * max_xpos)));
+			       vga_buffer + 2*(vga_xpos + vga_ypos * max_xpos));
 			++vga_xpos;
 		}
 
@@ -294,6 +315,10 @@ void vga_write(char *buf, int n)
 
 		buf++;
 	}
+
+	offset = 2*(old_ypos * max_xpos + old_xpos);
+	area = 2*((vga_ypos - old_ypos) * max_xpos + vga_xpos);
+	memcpy(VGA_BASE + offset, vga_buffer + offset, area);
 }
 
 /*
