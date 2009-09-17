@@ -6,7 +6,11 @@
  *  the Free Software Foundation, version 2.
  */
 
+#include <kernel.h>
+
 void kernel_start(void)
 {
+	printk ("Cute 0.0\n");
+
 	for (;;);
 }

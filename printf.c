@@ -8,20 +8,13 @@
  *  the Free Software Foundation, version 2.
  */
 
+#include <kernel.h>
 #include <stdarg.h>			/* provided by GCC */
-
-/*
- * Semi type-safe min macro using GNU extensions
- */
-#define min(x, y) ({		    \
-        typeof(x) _m1 = (x);	    \
-	typeof(y) _m2 = (y);	    \
-	(void) (&_m1 == &_m2);	    \
-	_m1 < _m2 ? _m1 : _m2; })
 
 /*
  * Basic string methods till we finish lib/string.c
  * which is going to be written in inline x86-64.
+ * We also cheat and use GCC's builtin memcpy for now :)
  */
 int strlen(const char *str)
 {
@@ -42,6 +35,21 @@ void strncpy(char *dst, const char *src, int n)
 		tmp++;
 		n--;
 	}
+}
+void memcpy(void *dst, void *src, int len)
+{
+	__builtin_memcpy(dst, src, len);
+}
+
+/*
+ * The casts from (char *) to (unsigned short *) looks
+ * ugly; this should do the trick. Maybe we should
+ * implement this as an x86 'movw' someday.
+ */
+static void writew(unsigned short val, void *addr)
+{
+	unsigned short *p = addr;
+	*p = val;
 }
 
 /*
@@ -233,16 +241,72 @@ static int kvsnprintf(char *buf, int size, const char *fmt, va_list args)
 }
 
 /*
+ * Definitions for writing to VGA memory (0xb8000-0xbffff)
+ * @vga_xpos and @vga_ypos forms the current cursor position
+ */
+#define VGA_BASE    ((char *)(0xb8000))
+#define VGA_MAXROWS 25
+#define VGA_MAXCOLS 80
+#define VGA_COLOR   0x0f
+static int vga_xpos, vga_ypos = VGA_MAXROWS;
+
+/*
+ * Scroll the screen up by one row.
+ */
+void vga_scrollup(void) {
+	char *src = VGA_BASE + 2*VGA_MAXCOLS;
+	char *dst = VGA_BASE;
+	int len = 2*((VGA_MAXROWS - 1) * VGA_MAXCOLS);
+	unsigned short *p = (unsigned short *)(VGA_BASE + len);
+
+	while (len--)
+		*dst++ = *src++;
+	for (int i = 0; i < VGA_MAXCOLS; i++)
+		*p++ = (VGA_COLOR << 8) + ' ';
+
+	vga_xpos = 0;
+	vga_ypos--;
+}
+
+/*
+ * Write given buffer to VGA ram and scroll the screen
+ * up as necessary.
+ */
+void vga_write(char *buf, int n)
+{
+	int max_xpos = VGA_MAXCOLS;
+	int max_ypos = VGA_MAXROWS;
+
+	while (*buf && n--) {
+		if (vga_ypos == max_ypos)
+			vga_scrollup();
+
+		if (*buf != '\n') {
+			writew((VGA_COLOR << 8) + *buf,
+			       (VGA_BASE + 2*(vga_xpos + vga_ypos * max_xpos)));
+			++vga_xpos;
+		}
+
+		if (vga_xpos == max_xpos || *buf == '\n') {
+			vga_xpos = 0;
+			vga_ypos++;
+		}
+
+		buf++;
+	}
+}
+
+/*
  * Main kernel print method
  */
 void printk(const char *fmt, ...)
 {
 	va_list args;
-	char buf[80];
+	char buf[256];
 	int n;
 
 	va_start(args, fmt);
 	n = kvsnprintf(buf, sizeof(buf), fmt, args);
-	/* FIXME: VGA code here */
+	vga_write(buf, n);
 	va_end(args);
 }

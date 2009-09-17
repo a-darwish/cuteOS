@@ -7,7 +7,8 @@ LD	= ld
 # After using -nostdinc, add compiler's specific
 # includes back (stdarg.h, etc) using -iwithprefix
 CFLAGS  = -m64 --std=gnu99 -fno-builtin -nostdinc -nostdlib \
-	  -iwithprefix include
+	  -iwithprefix include -I include \
+	  -Wall -Wstrict-prototypes
 
 all: bootsect.bin kernel.bin
 	cat bootsect.bin kernel.bin > image
