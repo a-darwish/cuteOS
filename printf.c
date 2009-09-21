@@ -10,39 +10,7 @@
 
 #include <kernel.h>
 #include <stdarg.h>			/* provided by GCC */
-
-/*
- * Basic string methods till we finish lib/string.c
- * which is going to be written in inline x86-64.
- */
-int strlen(const char *str)
-{
-	const char *tmp;
-
-	for (tmp = str; *tmp; tmp++)
-		;
-	return tmp - str;
-}
-void strncpy(char *dst, const char *src, int n)
-{
-	char *tmp = dst;
-
-	while (n) {
-		*tmp = *src;
-		if (*tmp)
-			src++;
-		tmp++;
-		n--;
-	}
-}
-void memcpy(void *dst, void *src, int len)
-{
-	char *csrc = (char *)src;
-	char *cdst = (char *)dst;
-
-	while (len--)
-		*cdst++ = *csrc++;
-}
+#include <string.h>
 
 /*
  * The casts from (char *) to (unsigned short *) looks

@@ -8,6 +8,9 @@
  *  the Free Software Foundation, version 2.
  */
 
+#include <segment.h>
+#include <idt.h>
+
 .text
 .code32
 
@@ -77,7 +80,7 @@ startup_32:
 	movl   %eax, %cr0
 
 	/* clear prefetch and jump to 64bit code */
-	ljmp   $0x08, $startup_64
+	ljmp   $KERNEL_CS, $startup_64
 
 no_longmode:
 	/* we should print something here once the VGA
@@ -126,9 +129,6 @@ no_amd64:
 /*
  * 64-bit code entry!
  */
-
-#define VIRTUAL_START     0xffffffff80000000
-#define VIRTUAL(address)  (VIRTUAL_START + address)
 
 .code64
 startup_64:
@@ -182,6 +182,65 @@ startup_64:
 	/* Viola! */
 	call   kernel_start
 
+/*
+ * Use virtual addresses from now on; low memory identity
+ * mappings can be zapped at any time.
+ */
+
+/*
+ * Those "stub" handlers catch the vector number using their
+ * position in the entries table and then jump to the real
+ * fallback idt handler.
+ *
+ * NOTE! don't change this code without changing the stub
+ * code size macro at idt.h
+ */
+.globl default_idt_stubs
+default_idt_stubs:
+        i = 0
+	.rept  EXCEPTION_GATES
+	movq   $i, %rsi
+	jmp    default_idt_handler
+	i = i + 1
+	.endr
+
+ /*
+  * The default/fallback interrupt handler; print a verbose
+  * error message and halt
+  *
+  * Exception vectors that return error code are:
+  * 8  - 1<<8  = 0x100
+  * 10 - 1<<10 = 0x400
+  * 11 - 1<<11 = 0x800
+  * ---
+  * 12 - 1<<12 = 0x1000
+  * 13 - 1<<13 = 0x2000
+  * 14 - 1<<14 = 0x4000
+  * ---
+  * 17 - 1<<17 = 0x20000
+  * which leads to a mask of 0x27d00 for such vector numbers
+  */
+.globl default_idt_handler
+default_idt_handler:
+	xorq   %r9, %r9			# zero if no error code
+	movl   %esi, %ecx
+	movl   $1, %eax
+	shl    %cl, %eax
+	andl   $0x27d00, %eax		# returns error code?
+	jz     0f
+	popq   %r9			# error code
+0:	movq   24(%rsp), %r8		# %rsp
+	movq   16(%rsp), %rcx		# %rflags
+	movq   0(%rsp), %rdx            # %rip
+	movq   $VIRTUAL(idt_msg), %rdi
+	call   printk
+1:	hlt
+	jmp    1b
+
+idt_msg:
+	.ascii "Exception; vector=%d, %%rip=0x%x, %%rflags=0x%x "
+	.asciz "%%rsp=0x%x, errcode=%d\n"
+
 .data
 
 /*
@@ -204,6 +263,14 @@ gdt:
 	.quad  0x0000000000000000	# null; %ds is ignored in LM
 gdt_end:
 
+/*
+ * 64-bit IDT descriptor
+ */
+.globl idtdesc
+idtdesc:
+	.word  idt_end - idt		# limit
+	.quad  idt			# base
+
 .bss
 
 /*
@@ -212,17 +279,24 @@ gdt_end:
 .align 8
 	.equ   STACK_SIZE, 0x4000
 stack:
-	.fill  STACK_SIZE, 1, 0
+	.skip  STACK_SIZE
 stack_end:
 
 /*
- * Boot Page tables. Shouldn't this be a BSS section relocated
- * by a linker script to save executable size?
+ * Boot Page tables
  */
+.balign 4096
 	.equ   PAGE_SIZE, 4096
 	.equ   INITPGT_PGCNT, 4
 	.equ   INITPGT_AREA, INITPGT_PGCNT * PAGE_SIZE
-
-.balign 4096
 init_pgt:
-	.fill  INITPGT_AREA, 1, 0
+	.skip  INITPGT_AREA
+
+/*
+ * IDT Table
+ */
+.align 16
+.globl idt
+idt:
+	.skip  IDT_GATES * 16
+idt_end:

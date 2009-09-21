@@ -7,9 +7,21 @@
  */
 
 #include <kernel.h>
+#include <segment.h>
+#include <idt.h>
+
+void setup_idt(void)
+{
+	for (int i = 0; i < EXCEPTION_GATES; i ++)
+		set_intr_gate(i, VIRTUAL(&default_idt_stubs[i]));
+
+	load_idt(idtdesc);
+}
 
 void kernel_start(void)
 {
+	setup_idt();
+
 	printk ("Cute 0.0\n");
 
 	for (;;);
