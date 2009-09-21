@@ -175,6 +175,7 @@ startup_64:
 	movq   %rax, %cr3
 
 	/* Run using high half virtual addresses from now on */
+	leaq   VIRTUAL_START(%rsp), %rsp
 	movq   $VIRTUAL(1f), %rax
 	jmpq   *%rax
 1:
