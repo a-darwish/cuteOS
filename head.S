@@ -9,7 +9,6 @@
  */
 
 #include <segment.h>
-#include <idt.h>
 
 .text
 .code32
@@ -181,66 +180,13 @@ startup_64:
 1:
 
 	/* Viola! */
-	call   kernel_start
+	movq   $kernel_start, %rax
+	jmpq   *%rax
 
 /*
  * Use virtual addresses from now on; low memory identity
  * mappings can be zapped at any time.
  */
-
-/*
- * Those "stub" handlers catch the vector number using their
- * position in the entries table and then jump to the real
- * fallback idt handler.
- *
- * NOTE! don't change this code without changing the stub
- * code size macro at idt.h
- */
-.globl default_idt_stubs
-default_idt_stubs:
-        i = 0
-	.rept  EXCEPTION_GATES
-	movq   $i, %rsi
-	jmp    default_idt_handler
-	i = i + 1
-	.endr
-
- /*
-  * The default/fallback interrupt handler; print a verbose
-  * error message and halt
-  *
-  * Exception vectors that return error code are:
-  * 8  - 1<<8  = 0x100
-  * 10 - 1<<10 = 0x400
-  * 11 - 1<<11 = 0x800
-  * ---
-  * 12 - 1<<12 = 0x1000
-  * 13 - 1<<13 = 0x2000
-  * 14 - 1<<14 = 0x4000
-  * ---
-  * 17 - 1<<17 = 0x20000
-  * which leads to a mask of 0x27d00 for such vector numbers
-  */
-.globl default_idt_handler
-default_idt_handler:
-	xorq   %r9, %r9			# zero if no error code
-	movl   %esi, %ecx
-	movl   $1, %eax
-	shl    %cl, %eax
-	andl   $0x27d00, %eax		# returns error code?
-	jz     0f
-	popq   %r9			# error code
-0:	movq   24(%rsp), %r8		# %rsp
-	movq   16(%rsp), %rcx		# %rflags
-	movq   0(%rsp), %rdx            # %rip
-	movq   $VIRTUAL(idt_msg), %rdi
-	call   printk
-1:	hlt
-	jmp    1b
-
-idt_msg:
-	.ascii "Exception; vector=%d, %%rip=0x%x, %%rflags=0x%x "
-	.asciz "%%rsp=0x%x, errcode=%d\n"
 
 .data
 
@@ -264,14 +210,6 @@ gdt:
 	.quad  0x0000000000000000	# null; %ds is ignored in LM
 gdt_end:
 
-/*
- * 64-bit IDT descriptor
- */
-.globl idtdesc
-idtdesc:
-	.word  idt_end - idt		# limit
-	.quad  idt			# base
-
 .bss
 
 /*
@@ -292,12 +230,3 @@ stack_end:
 	.equ   INITPGT_AREA, INITPGT_PGCNT * PAGE_SIZE
 init_pgt:
 	.skip  INITPGT_AREA
-
-/*
- * IDT Table
- */
-.align 16
-.globl idt
-idt:
-	.skip  IDT_GATES * 16
-idt_end:

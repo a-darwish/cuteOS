@@ -11,6 +11,7 @@
 #include <kernel.h>
 #include <stdarg.h>			/* provided by GCC */
 #include <string.h>
+#include <segment.h>
 
 /*
  * The casts from (char *) to (unsigned short *) looks
@@ -224,7 +225,7 @@ static int kvsnprintf(char *buf, int size, const char *fmt, va_list args)
  * laptop.
  */
 
-#define VGA_BASE    ((char *)(0xb8000))
+#define VGA_BASE    ((char *)VIRTUAL(0xb8000))
 #define VGA_MAXROWS 25
 #define VGA_MAXCOLS 80
 #define VGA_COLOR   0x0f
