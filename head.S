@@ -233,9 +233,7 @@ physical_gdtdesc:
  * Interrupt handlers processor logic re-fetch the code segment
  * from the GDT instead of depending on the value in the
  * segment cache descriptors, thus the need of a GDT descriptor
- * with a virtual address of the GDT base. Otherwise, exception
- * handlers will induce page faults cause the low physical 2MB
- * identity mapping will no longer be available.
+ * with a virtual address of the GDT base.
  */
 virtual_gdtdesc:
 	.word  gdt_end - gdt            # limit
