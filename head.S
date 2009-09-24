@@ -37,7 +37,7 @@ startup_32:
 	movl   %eax, %cr4
 
 	/* Load a 64-bit (L=1) code segment */
-	lgdt   gdt
+	lgdt   physical_gdtdesc
 
 	/*
 	 * Identity map the first physical 2MBs using a single 2MB
@@ -175,6 +175,7 @@ startup_64:
 
 	/* Run using high half virtual addresses from now on */
 	leaq   VIRTUAL_START(%rsp), %rsp
+	lgdt   virtual_gdtdesc
 	movq   $VIRTUAL(1f), %rax
 	jmpq   *%rax
 1:
@@ -204,15 +205,12 @@ zap_identity:
 .data
 
 /*
- * 64-bit GDT and GDT descriptor. Elements ignored in long-mode
- * are not set: we won't support compatibility mode by design
+ * 64-bit GDT. Elements ignored in long-mode are not
+ * set: we won't support compatibility mode by design
  */
 .align 16
 gdt:
-	/* GDT descriptor in place of NULL */
-	.word  gdt_end - gdt            # limit
-	.long  gdt			# Base
-	.word  0x0000			# padding
+	.quad  0x0000000000000000
 
 	/* long mode Code segment */
 	.long  0x00000000		# base/limit; ignored in LM
@@ -222,6 +220,26 @@ gdt:
 	/* Data segment */
 	.quad  0x0000000000000000	# null; %ds is ignored in LM
 gdt_end:
+
+/*
+ * The GDT descriptor to use in the case of no paging or
+ * when using identity mappings.
+ */
+physical_gdtdesc:
+	.word  gdt_end - gdt            # limit
+	.long  gdt			# Base
+
+/*
+ * Interrupt handlers processor logic re-fetch the code segment
+ * from the GDT instead of depending on the value in the
+ * segment cache descriptors, thus the need of a GDT descriptor
+ * with a virtual address of the GDT base. Otherwise, exception
+ * handlers will induce page faults cause the low physical 2MB
+ * identity mapping will no longer be available.
+ */
+virtual_gdtdesc:
+	.word  gdt_end - gdt            # limit
+	.quad  VIRTUAL(gdt)		# Base
 
 .bss
 
