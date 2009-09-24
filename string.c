@@ -11,10 +11,6 @@
  * let's just have them for now.
  */
 
-/*
- * This should be written as inline x86-64.
- */
-
 int strlen(const char *str)
 {
 	const char *tmp;
@@ -35,11 +31,21 @@ void strncpy(char *dst, const char *src, int n)
 		n--;
 	}
 }
+
+/*
+ * Optimized `movsq' memcpy
+ */
 void memcpy(void *dst, void *src, int len)
 {
-	char *csrc = (char *)src;
-	char *cdst = (char *)dst;
-
-	while (len--)
-		*cdst++ = *csrc++;
+	int tmp;
+	asm("cld;"
+	    "movl %[len], %[tmp];"
+	    "andl $7, %[len];"
+	    "rep  movsb;"
+	    "movl %[tmp], %[len];"
+	    "shrl $3, %[len];"
+	    "rep  movsq;"
+	    :
+	    : "S"(src), "D"(dst), [len] "c"(len), [tmp] "r"(tmp)
+	    : "memory");
 }
