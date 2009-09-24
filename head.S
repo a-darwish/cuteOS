@@ -180,6 +180,7 @@ startup_64:
 1:
 
 	/* Viola! */
+	call   zap_identity
 	movq   $kernel_start, %rax
 	jmpq   *%rax
 
@@ -187,6 +188,18 @@ startup_64:
  * Use virtual addresses from now on; low memory identity
  * mappings can be zapped at any time.
  */
+
+/*
+ * Avoid physical addresses dependent code and let NULL
+ * pointers segfault: zero the identity-mapping page table
+ * entries. Thanks to 2MB pages, only three of 'em exist.
+ */
+.type zap_identity, @function
+zap_identity:
+	movq   $0, VIRTUAL(init_pgt)
+	movq   $0, (VIRTUAL(init_pgt) + 0x1000)
+	movq   $0, (VIRTUAL(init_pgt) + 0x2000)
+	ret
 
 .data
 
