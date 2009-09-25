@@ -47,7 +47,7 @@ void *memcpy(void *dst, void *src, int len)
 {
 	int tmp;
 
-	asm("cld;"
+	asm(
 	    "movl %[len], %[tmp];"
 	    "andl $7, %[len];"
 	    "rep  movsb;"
@@ -68,7 +68,7 @@ void *memset(void *dst, int ch, int len)
 	uint64_t ulen = len;
 
 	uch &= 0xff;
-	asm("cld;"
+	asm(
 	    "mov %[len], %[tmp];"
 	    "and $7, %[len];"
 	    "rep  stosb;"
