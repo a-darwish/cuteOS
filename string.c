@@ -61,27 +61,33 @@ void *memcpy(void *dst, void *src, int len)
 	return dst;
 }
 
+/*
+ * Fill memory with the constant byte @ch. Returns pointer
+ * to memory area @dst; no return value reserved for error
+ */
 void *memset(void *dst, int ch, int len)
 {
 	uint64_t tmp;
 	uint64_t uch = ch;
 	uint64_t ulen = len;
+	uintptr_t d0;
 
 	uch &= 0xff;
-	asm(
-	    "mov %[len], %[tmp];"
-	    "and $7, %[len];"
+	asm volatile (
+	    "mov  %[len], %[tmp];"
+	    "and  $7, %[len];"
 	    "rep  stosb;"
-	    "mov %[tmp], %[len];"
-	    "shr $3, %[len];"
-	    /* Copy the right-most byte to the rest 7 bytes
-	     * value extracted by: 0xffffffffffffffff/0xff */
+	    "mov  %[tmp], %[len];"
+	    "shr  $3, %[len];"
+	    /* Copy the right-most byte to the rest 7 bytes.
+	     * multiplier extracted by 0xffffffffffffffff/0xff */
 	    "mov  %[ch], %[tmp];"
 	    "mov  $0x0101010101010101, %[ch];"
 	    "mul  %[tmp];"
 	    "rep  stosq;"
-	    :
-	    : "D"(dst), [ch] "a"(uch), [len] "c"(ulen), [tmp] "r"(tmp)
+	    : [tmp] "=&r"(tmp), [dst] "=&D"(d0), [ch] "=&a"(uch),
+	      [len] "=&c"(ulen)
+	    : "[dst]"(dst), "[ch]"(uch), "[len]"(ulen), "[tmp]"(tmp)
 	    : "memory");
 
 	return dst;
