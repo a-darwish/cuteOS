@@ -38,24 +38,28 @@ char *strncpy(char *dst, const char *src, int n)
 }
 
 /*
- * Optimized mem* methods
  * For more speed, we should let movsq and stosq read
  * arguments (source) be 8 byte aligned.
  */
 
+/*
+ * Copy @len bytes from @src to @dst. Return a pointer
+ * to @dst
+ */
 void *memcpy(void *dst, void *src, int len)
 {
 	int tmp;
+	uintptr_t d0;
 
-	asm(
+	asm volatile (
 	    "movl %[len], %[tmp];"
 	    "andl $7, %[len];"
 	    "rep  movsb;"
 	    "movl %[tmp], %[len];"
 	    "shrl $3, %[len];"
 	    "rep  movsq;"
-	    :
-	    : "S"(src), "D"(dst), [len] "c"(len), [tmp] "r"(tmp)
+	    : [dst] "=&D"(d0), [len] "=&c"(len), [tmp] "=&r"(tmp)
+	    : "S"(src), "[dst]"(dst), "[len]"(len), "[tmp]"(tmp)
 	    : "memory");
 
 	return dst;
