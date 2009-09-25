@@ -11,6 +11,8 @@
  * let's just have them for now.
  */
 
+#include <stdint.h>
+
 int strlen(const char *str)
 {
 	const char *tmp;
@@ -20,7 +22,7 @@ int strlen(const char *str)
 	return tmp - str;
 }
 
-void strncpy(char *dst, const char *src, int n)
+char *strncpy(char *dst, const char *src, int n)
 {
 	char *tmp = dst;
 
@@ -31,6 +33,8 @@ void strncpy(char *dst, const char *src, int n)
 		tmp++;
 		n--;
 	}
+
+	return dst;
 }
 
 /*
@@ -39,9 +43,10 @@ void strncpy(char *dst, const char *src, int n)
  * arguments (source) be 8 byte aligned.
  */
 
-void memcpy(void *dst, void *src, int len)
+void *memcpy(void *dst, void *src, int len)
 {
 	int tmp;
+
 	asm("cld;"
 	    "movl %[len], %[tmp];"
 	    "andl $7, %[len];"
@@ -52,15 +57,17 @@ void memcpy(void *dst, void *src, int len)
 	    :
 	    : "S"(src), "D"(dst), [len] "c"(len), [tmp] "r"(tmp)
 	    : "memory");
+
+	return dst;
 }
 
-char *memset(void *dst, int ch, int len)
+void *memset(void *dst, int ch, int len)
 {
-	unsigned long tmp;
-	unsigned long c = ch;
-	unsigned long l = len;
+	uint64_t tmp;
+	uint64_t uch = ch;
+	uint64_t ulen = len;
 
-	ch &= 0xff;
+	uch &= 0xff;
 	asm("cld;"
 	    "mov %[len], %[tmp];"
 	    "and $7, %[len];"
@@ -74,7 +81,8 @@ char *memset(void *dst, int ch, int len)
 	    "mul  %[tmp];"
 	    "rep  stosq;"
 	    :
-	    : "D"(dst), [ch] "a"(c), [len] "c"(l), [tmp] "r"(tmp)
+	    : "D"(dst), [ch] "a"(uch), [len] "c"(ulen), [tmp] "r"(tmp)
 	    : "memory");
+
 	return dst;
 }
