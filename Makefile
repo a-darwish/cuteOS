@@ -28,11 +28,11 @@ bootsect.o: bootsect.S
 
 # Current bootsector load the kernel at 0x100000
 # We may use --print-map for a final kernel LMA map
-kernel.elf: head.o head_c.o printf.o string.o idt.o
+kernel.elf: head.o main.o printf.o string.o idt.o
 	$(LD) -T kernel.ld $^ -o $@
 head.o: head.S
 	$(CC) $(CPPFLAGS) -c $< -o $@
-head_c.o: head.c
+main.o: main.c
 	$(CC) $(CFLAGS) -c $< -o $@
 printf.o: printf.c
 	$(CC) $(CFLAGS) -c $< -o $@
