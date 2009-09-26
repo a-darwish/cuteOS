@@ -1,0 +1,46 @@
+#
+# Subset of linux-2.6.30 gitignore file; check gitignore(5)
+# 
+# Don't add files that are generated in specific
+# subdirectories here. Add them in the ".gitignore" file
+# in that subdirectory instead.
+#
+# NOTE! Use 'git-ls-files -i --exclude-standard' command
+# after changing this file, to see if there are any tracked
+# files which get ignored after the change.
+#
+
+#
+# Binary files
+#
+*.o
+*.o.*
+*.a
+*.bin
+image
+
+#
+# Build process Auto generated files
+#
+*.s
+*.d
+
+#
+# Hidden files +
+# Files of patch, vim, emacs, etc
+#
+.*
+*.orig
+*~
+\#*#
+
+#
+# Don't ignore us
+#
+# `!' negates the pattern; any matching file excluded by
+# a previous pattern will become included again. Note that
+# per precedence rules, adding this above the `.*' hidden
+# files pattern won't work.
+#
+!.gitignore
+
