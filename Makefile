@@ -16,9 +16,11 @@ CFLAGS  = -m64 --std=gnu99 -mcmodel=kernel \
 CPPFLAGS = -D__KERNEL__
 AFLAGS = -D__ASSEMBLY__
 
+LIB_OBJS = lib/string.o lib/printf.o
+
 # Bootsector object won't be linked with the kernel;
 # handle it differently
-KERN_OBJS = head.o main.o printf.o string.o idt.o
+KERN_OBJS = head.o main.o idt.o $(LIB_OBJS)
 OBJS = bootsect.o $(KERN_OBJS)
 
 # Control output verbosity
@@ -32,10 +34,11 @@ else
 	Q =
 endif
 
-# GCC-generated object files dependencies folder
+# GCC-generated object files dependencies folders
 # See `-MM' and `-MT' at gcc(1)
 DEPS_DIR = .deps
-BUILD_DIRS = $(DEPS_DIR)
+DEPS_LIB = $(DEPS_DIR)/lib
+BUILD_DIRS = $(DEPS_DIR) $(DEPS_LIB)
 
 all: $(BUILD_DIRS) image
 	$(E) "Kernel ready"
@@ -68,7 +71,7 @@ kernel.elf: $(KERN_OBJS)
 # Needed build directories
 $(BUILD_DIRS):
 	$(E) "  MKDIR    " $@
-	$(Q) mkdir $@
+	$(Q) mkdir -p $@
 
 .PHONY: clean
 clean:
@@ -84,3 +87,4 @@ clean:
 # `-': no error, not even a warning, if any of the given
 # filenames do not exist
 -include $(DEPS_DIR)/*.d
+-include $(DEPS_LIB)/*.d
