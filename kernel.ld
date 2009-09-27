@@ -27,10 +27,18 @@ SECTIONS
 	 * sections already consumed, but I'm not ready
 	 * for any surprises */
 	.varea : {
+	       __text_start = .;
 	       *(EXCLUDE_FILE (*head.o) .text)
+	       __text_end = .;
+
+	       __data_start = .;
 	       *(EXCLUDE_FILE (*head.o) .data)
 	       *(EXCLUDE_FILE (*head.o) .rodata)
+	       __data_end = .;
+
+		__bss_start = .;
 	       *(EXCLUDE_FILE (*head.o) .bss)
+		__bss_end = .;
 	}
 
 	/DISCARD/ : {

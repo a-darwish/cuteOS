@@ -9,6 +9,8 @@
 #include <kernel.h>
 #include <segment.h>
 #include <idt.h>
+#include <string.h>
+#include <sections.h>
 
 void setup_idt(void)
 {
@@ -18,11 +20,42 @@ void setup_idt(void)
 	load_idt(idtdesc);
 }
 
+/*
+ * Zero bss section; As said by C99: "All objects with static
+ * storage duration shall be initialized before program
+ * startup", and that implicit initialization is done with
+ * zero. Also kernel assembly code assumes a zeroed bss space
+ */
+void clear_bss(void)
+{
+	memset(__bss_start , 0, __bss_end - __bss_start);
+}
+
+void print_sections(void)
+{
+	printk("Text start = 0x%lx\n", __text_start);
+	printk("Text end   = 0x%lx\n", __text_end);
+	printk("Text size  = %d bytes\n\n", __text_end - __text_start);
+
+	printk("Data start = 0x%lx\n", __data_start);
+	printk("Data end   = 0x%lx\n", __data_end);
+	printk("Data size  = %d bytes\n\n", __data_end - __data_start);
+
+	printk("BSS start  = 0x%lx\n", __bss_start);
+	printk("BSS end    = 0x%lx\n", __bss_end);
+	printk("BSS size   = %d bytes\n\n", __bss_end - __bss_start);
+}
+
 void kernel_start(void)
 {
+	/* before anything else */
+	clear_bss();
+
 	setup_idt();
 
-	printk("Cute 0.0\n");
+	printk("Cute 0.0\n\n");
+
+	print_sections();
 
 	for (;;);
 }
