@@ -54,7 +54,7 @@ bootsect.elf: bootsect.o
 	$(E) "  LD       " $@
 	$(Q) $(LD) -Ttext 0x0  $< -o $@
 
-kernel.elf: $(KERN_OBJS)
+kernel.elf: $(KERN_OBJS) kernel.ld
 	$(E) "  LD       " $@
 	$(Q) $(LD) -T kernel.ld $(KERN_OBJS) -o $@
 
