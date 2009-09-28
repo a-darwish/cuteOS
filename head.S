@@ -19,6 +19,14 @@
  */
 .globl startup_32
 startup_32:
+	/* Relocate kernel code away from our bss section.
+	 * See the linker script for more details */
+	.equ   KERNEL_SIZE, 0x80000
+	movl   $__headbss_start, %esi
+	movl   $__phys_start, %edi
+	movl   $(KERNEL_SIZE / 4), %ecx
+	rep    movsl
+
 	/* Setup a boot stack and assure amd64 support */
 	movl   $stack_end, %esp
 	call   check_cpu64

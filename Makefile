@@ -46,9 +46,8 @@ all: $(BUILD_DIRS) image
 image: bootsect.elf kernel.elf
 	$(E) "  OBJCOPY  " $@
 	$(Q) objcopy -O binary bootsect.elf bootsect.bin
-	$(Q) objcopy -O binary --only-section '.iarea' kernel.elf head.bin
-	$(Q) objcopy -O binary --only-section '.varea' kernel.elf kernel.bin
-	$(Q) cat bootsect.bin head.bin kernel.bin > $@
+	$(Q) objcopy -O binary kernel.elf kernel.bin
+	$(Q) cat bootsect.bin kernel.bin > $@
 
 bootsect.elf: bootsect.o
 	$(E) "  LD       " $@

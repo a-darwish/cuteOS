@@ -1,7 +1,17 @@
 /* 
- * Baby linker script for our baby kernel
+ * Kernel linker script
+ *
+ * Copyright (C) 2009 Ahmed S. Darwish <darwish.07@gmail.com>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, version 2.
+ *
  * Refer to official LD documentation "Using LD - the GNU linker"
- * for more information
+ * for more information.
+ *
+ * Symbols prefixed by `__' are used by our C and assembly files;
+ * modify them cautiously
  */
 
 OUTPUT_FORMAT("elf64-x86-64")
@@ -13,29 +23,42 @@ SECTIONS
 {
 	/* Where the bootsector loads us */
 	. = 0x100000;
-	.iarea : {
+
+	.text.head : {
 	      head.o(.text)
+	}
+
+	.data.head : {
 	      head.o(.data)
 	      head.o(.rodata)
+	}
+
+	__headbss_start = .;
+	.bss.head (NOLOAD) : {
 	      head.o(.bss)
 	}
 
-	/* Virtual area code and data */
-	. += 0xffffffff80000000;
+	/* High virtual-area mapped kernel code and data start */
+	__phys_start = .;
+	PROVIDE(virt_start = __phys_start + 0xffffffff80000000);
 
-	/* '*' should've been enough as LD won't repeat
-	 * sections already consumed, but I'm not ready
-	 * for any surprises */
-	.varea : {
+	/* We override the head.o bss section to save executable
+	 * size. On the very start, we'll move the code away to
+	 * phys_start to let head.S use its bss section freely */
+	.text virt_start : AT(__headbss_start) {
 	       __text_start = .;
 	       *(EXCLUDE_FILE (*head.o) .text)
 	       __text_end = .;
+	}
 
+	.data : {
 	       __data_start = .;
 	       *(EXCLUDE_FILE (*head.o) .data)
 	       *(EXCLUDE_FILE (*head.o) .rodata)
 	       __data_end = .;
+        }
 
+	.bss : {
 		__bss_start = .;
 	       *(EXCLUDE_FILE (*head.o) .bss)
 		__bss_end = .;

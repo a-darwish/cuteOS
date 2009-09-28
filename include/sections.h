@@ -13,7 +13,9 @@
 
 /*
  * ELF section boundaries are provided by the kernel
- * linker script kernel.ld
+ * linker script kernel.ld. We could've declared them as
+ * char -- not char[] -- and use the symbols as &symbol,
+ * but the current method is more convenient.
  */
 
 extern char __text_start[];
