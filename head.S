@@ -9,6 +9,7 @@
  */
 
 #include <segment.h>
+#include <apic.h>
 
 .text
 .code32
@@ -189,9 +190,23 @@ startup_64:
 1:
 
 	/* Viola! */
+	call   map_apic
 	call   zap_identity
 	movq   $kernel_start, %rax
 	jmpq   *%rax
+
+/*
+ * Map the apic registers i/o mapped at APIC_BASE to the
+ * top of the address space using a 2MB page. Add a 0x1FF
+ * entry to the init_pgt+0x1000 PDP table to point to
+ * apic_pd, which has a 0x1FF entry pointing to the base.
+ * Apic address space must be strong uncacheable (PCD=1)
+ */
+.type map_apic, @function
+map_apic:
+	movq   $(apic_pd + 0x007), (init_pgt + 0x1000 + 511 * 8)
+	movl   $(APIC_PHBASE + 0x093), (apic_pd + 511 * 8)
+	ret
 
 /*
  * Use virtual addresses from now on; low memory identity
@@ -267,3 +282,10 @@ stack_end:
 	.equ   INITPGT_AREA, INITPGT_PGCNT * PAGE_SIZE
 init_pgt:
 	.skip  INITPGT_AREA
+
+/*
+ * APIC mappings Page Directory
+ */
+.balign 4096
+apic_pd:
+	.skip  PAGE_SIZE

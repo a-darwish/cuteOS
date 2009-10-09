@@ -20,7 +20,7 @@ LIB_OBJS = lib/string.o lib/printf.o
 
 # Bootsector object won't be linked with the kernel;
 # handle it differently
-KERN_OBJS = head.o main.o idt.o $(LIB_OBJS)
+KERN_OBJS = head.o main.o idt.o apic.o $(LIB_OBJS)
 OBJS = bootsect.o $(KERN_OBJS)
 
 # Control output verbosity

@@ -1,5 +1,5 @@
 #ifndef STDINT_H
-#define STDINT_Y
+#define STDINT_H
 
 /*
  * Standard C99 integer types
@@ -32,5 +32,19 @@ typedef unsigned long uint64_t;
  */
 typedef signed long int	intptr_t;
 typedef unsigned long int uintptr_t;
+
+/*
+ * MAXs and MINs
+ */
+
+#define INT8_MAX	(0x7f)
+#define INT16_MAX	(0x7fff)
+#define INT32_MAX	(0x7fffffff)
+#define INT64_MAX	(0x7fffffffffffffffL)
+
+#define UINT8_MAX	(0xff)
+#define UINT16_MAX	(0xffff)
+#define UINT32_MAX	(0xffffffff)
+#define UINT64_MAX	(0xffffffffffffffffUL)
 
 #endif

@@ -7,10 +7,11 @@
  */
 
 #include <kernel.h>
-#include <segment.h>
-#include <idt.h>
 #include <string.h>
 #include <sections.h>
+#include <segment.h>
+#include <idt.h>
+#include <apic.h>
 
 void setup_idt(void)
 {
@@ -56,6 +57,8 @@ void kernel_start(void)
 	printk("Cute 0.0\n\n");
 
 	print_sections();
+
+	apic_init();
 
 	for (;;);
 }
