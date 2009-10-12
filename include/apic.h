@@ -2,7 +2,7 @@
 #define _APIC_H
 
 /*
- * Local APIC definitions
+ * Local APIC definitions, 8259A PIC ports, ..
  *
  * Copyright (C) 2009 Ahmed S. Darwish <darwish.07@gmail.com>
  *
@@ -101,6 +101,26 @@ static inline uint32_t apic_read(uint32_t reg)
 }
 
 void apic_init(void);
+
+/*
+ * 8259A PIC definitions.
+ */
+
+/*
+ * Map the 8259As IRQs to to the top of the vector
+ * table
+ */
+#define PIC_IRQ0_VECTOR 240
+#define PIC_IRQ8_VECTOR (PIC_IRQ0_VECTOR + 8)
+
+/*
+ * Ports for an 8259A-equivalent chip
+ */
+#define PIC_MASTER_CMD	0x20
+#define PIC_SLAVE_CMD	0xa0
+#define PIC_MASTER_DATA	0x21
+#define PIC_SLAVE_DATA	0xa1
+#define PIC_CASCADE_IRQ	2
 
 #endif /* !__ASSEMBLY__ */
 #endif /* _APIC_H */
