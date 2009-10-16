@@ -61,66 +61,125 @@ static inline void msr_apicbase_enable(void)
 
 #define APIC_ID		0x20	/* APIC ID Register */
 #define APIC_LVR	0x30	/* APIC Version Register */
+
 #define APIC_TPR	0x80    /* Task Priority Register */
+union apic_tpr {
+	unsigned subclass:4, priority:4, reserved:24;
+	uint32_t value;
+}__attribute__((packed));
+
 #define APIC_APR	0x90	/* Arbitration Priority Register */
 #define APIC_PPR	0xa0	/* Processor Priority Register */
 #define APIC_EOI	0xb0	/* End of Interrupt Register */
 #define APIC_RRR	0xc0	/* Remote Read Register */
 #define APIC_LDR	0xd0	/* Logical Desitination Register */
 #define APIC_DFR	0xe0	/* Destination Format Register */
+
 #define APIC_SPIV	0xf0	/* Spurious Interrupt Vector Register */
-#define APIC_SPIV_ENABLE (1<<8) /* APIC Software Enable bit */
+union apic_spiv {
+	unsigned vector:8, apic_enable:1, focus:1, reserved:22;
+	uint32_t value;
+}__attribute__((packed));
 
 #define APIC_ESR	0x280   /* Error Status Register */
 #define APIC_ICRL	0x300   /* Interrupt Command Register Low [31:0] */
 #define APIC_ICRH	0x310   /* Interrupt Command Register High [63:32] */
 
-#define APIC_LVTT	0x320   /* Timer LVT (Local Vector Table) Entry */
+/*
+ * Local Vector Table entries
+ */
+
+#define APIC_LVTT	0x320   /* Timer LVT Entry */
+union apic_lvt_timer {
+	unsigned vector:8, reserved0:4, delivery_status:1, reserved1:3,
+		mask:1, timer_mode:1, reserved2:14;
+	uint32_t value;
+}__attribute__((packed));
+
 #define APIC_LVTTHER	0x330   /* Thermal LVT Entry */
+union apic_lvt_thermal {
+	unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
+		reserved1:3, mask:1, reserved3:15;
+	uint32_t value;
+}__attribute__((packed));
+
 #define APIC_LVTPC	0x340   /* Performance Counter LVT Entry */
+union apic_lvt_perfc {
+	unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
+		reserved1:3, mask:1, reserved3:15;
+	uint32_t value;
+}__attribute__((packed));
+
 #define APIC_LVT0	0x350	/* Local Interrupt 0 LVT Entry */
 #define APIC_LVT1	0x360	/* Local Interrupt 1 LVT Entry */
+union apic_lvt_lint {
+	unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
+		reserved1:1, remote_irr:1, trigger_mode:1, mask:1,
+		reserved3:15;
+	uint32_t value;
+}__attribute__((packed));
+
 #define APIC_LVTERR	0x370   /* Error LVT Entry */
+union apic_lvt_error {
+	unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
+		reserved1:3, mask:1, reserved3:15;
+	uint32_t value;
+}__attribute__((packed));
+
+/*
+ * LVT entries fields values
+ */
+
+#define APIC_LVT_MASK	1
+#define APIC_LVT_UNMASK	0
+
+#define APIC_TM_LEVEL	1	/* Trigger Mode: level */
+#define APIC_TM_EDGE	0	/* Trigger Mode: edge */
+
+#define APIC_MT_FIXED	0x0	/* Message Type: fixed */
+#define APIC_MT_SMI	0x2	/* Message Type: SMI; vector = 00 */
+#define APIC_MT_NMI	0x4	/* Message Type: NMI; vector ignored */
+#define APIC_MT_EXTINT	0x7	/* Message Type: external interrupt */
 
 /*
  * APIC registers accessors
  */
 
-extern void *apic_baseaddr;
-
 static inline void apic_write(uint32_t reg, uint32_t val)
 {
-	volatile uint32_t *addr = apic_baseaddr + reg;
+	volatile uint32_t *addr = (uint32_t *)(APIC_VRBASE + reg);
 	*addr = val;
 }
 
 static inline uint32_t apic_read(uint32_t reg)
 {
-	volatile uint32_t *addr = apic_baseaddr + reg;
+	volatile uint32_t *addr = (uint32_t *)(APIC_VRBASE + reg);
 	return *addr;
 }
 
 void apic_init(void);
 
 /*
- * 8259A PIC definitions.
- */
-
-/*
- * Map the 8259As IRQs to to the top of the vector
- * table
- */
-#define PIC_IRQ0_VECTOR 240
-#define PIC_IRQ8_VECTOR (PIC_IRQ0_VECTOR + 8)
-
-/*
- * Ports for an 8259A-equivalent chip
+ * Ports for an 8259A-equivalent PIC chip
  */
 #define PIC_MASTER_CMD	0x20
 #define PIC_SLAVE_CMD	0xa0
 #define PIC_MASTER_DATA	0x21
 #define PIC_SLAVE_DATA	0xa1
 #define PIC_CASCADE_IRQ	2
+
+/*
+ * Vector numbers for all IRQ types
+ * FIXME: meaningless placeholder values set till we have
+ * the big picture on assigning vector numbers to IRQs.
+ */
+
+#define PIC_IRQ0_VECTOR	240
+#define PIC_IRQ8_VECTOR (PIC_IRQ0_VECTOR + 8)
+
+#define APIC_TIMER_VECTOR   0
+#define APIC_THERMAL_VECTOR 0
+#define APIC_PERFC_VECTOR   0
 
 #endif /* !__ASSEMBLY__ */
 #endif /* _APIC_H */

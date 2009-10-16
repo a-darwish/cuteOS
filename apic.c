@@ -14,8 +14,6 @@
 #include <apic.h>
 #include <io.h>
 
-void *apic_baseaddr;
-
 /*
  * As said in a linux kernel comment, delay for access to PIC on
  * motherboard or in chipset must be at least one microsecnod.
@@ -28,11 +26,11 @@ static inline void outb_pic(uint8_t val, uint16_t port)
 }
 
 /*
- * Mask the 8259A PIC: we'll exclusively use the APICs
+ * Mask the now-obsolete 8259A PICs
  * Unfortunately spuruious PIC interrupts do occur even if the
  * PIC is entirely masked. Thus, we remap the chip away from
  * IBM programmed reserved Intel exception numbers 0x8-0xF to
- * saner values at 0xF0.
+ * saner values at IRQ0_VECTOR.
  */
 static void mask_8259A(void)
 {
@@ -45,8 +43,9 @@ static void mask_8259A(void)
 	outb_pic(0x11, PIC_MASTER_CMD);
 	outb_pic(0x11, PIC_SLAVE_CMD);
 
-	/* Init command 2, switch IRQs programmed vector number
-	 * to desired pic_irq0_vector + irq-number-offset */
+	/* Init command 2, set the most significant five bits
+	 * of the vectoring byte. The PIC sets the least three
+	 * bits accoding to the interrupt level */
 	outb_pic(PIC_IRQ0_VECTOR, PIC_MASTER_DATA);
 	outb_pic(PIC_IRQ8_VECTOR, PIC_SLAVE_DATA);
 
@@ -76,17 +75,66 @@ static void mask_8259A(void)
 
 void apic_init(void)
 {
-	uint64_t val;
+	union apic_tpr tpr = { .value = 0 };
+	union apic_lvt_timer timer = { .value = 0 };
+	union apic_lvt_thermal thermal = { .value = 0 };
+	union apic_lvt_perfc perfc = { .value = 0 };
+	union apic_lvt_lint lint0 = { .value = 0 };
+	union apic_lvt_lint lint1 = { .value = 0 };
+	union apic_spiv spiv = { .value = 0 };
 
+	/* No need for the 8259A PIC, we'll exclusivly use
+	 * the I/O APIC for interrupt control */
 	mask_8259A();
 
-	apic_baseaddr = (char *)APIC_VRBASE;
+	/* Before doing any apic operation, assure the APIC
+	 * registers base address is set as we expect it */
 	msr_apicbase_setaddr(APIC_PHBASE);
+
+	/* No complexitis; set the task priority register to
+	 * zero: "all interrupts are allowed" */
+	tpr.subclass = 0;
+	tpr.priority = 0;
+	apic_write(APIC_TPR, tpr.value);
+
+	/*
+	 * Intialize LVT entries
+	 */
+
+	timer.vector = APIC_TIMER_VECTOR;
+	timer.mask = APIC_LVT_MASK;
+	apic_write(APIC_LVTT, timer.value);
+
+	thermal.vector = APIC_THERMAL_VECTOR;
+	thermal.mask = APIC_LVT_MASK;
+	apic_write(APIC_LVTTHER, thermal.value);
+
+	perfc.vector = APIC_PERFC_VECTOR;
+	perfc.mask = APIC_LVT_MASK;
+	apic_write(APIC_LVTPC, perfc.value);
+
+	lint0.vector = 0;
+	lint0.trigger_mode = APIC_TM_EDGE;
+	lint0.message_type = APIC_MT_EXTINT;
+	lint0.mask = APIC_LVT_UNMASK;
+	apic_write(APIC_LVT0, lint0.value);
+
+	lint1.vector = 0;
+	lint1.trigger_mode = APIC_TM_EDGE;
+	lint1.message_type = APIC_MT_NMI;
+	lint1.mask = APIC_LVT_UNMASK;
+	apic_write(APIC_LVT1, lint1.value);
+
+	/*
+	 * Enable local APIC
+	 */
+
+	spiv.value = apic_read(APIC_SPIV);
+	spiv.apic_enable = 1;
+	apic_write(APIC_SPIV, spiv.value);
+
 	msr_apicbase_enable();
 
-	val = apic_read(APIC_SPIV);
-	val |= APIC_SPIV_ENABLE;
-	apic_write(APIC_SPIV, val);
-
-	printk("APIC: bootstrap core local apic enabled\n");
+	printk("APIC: bootstrap core local apic enabled; ID = %d\n",
+	       apic_read(APIC_ID));
 }
