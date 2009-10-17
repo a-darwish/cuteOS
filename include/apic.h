@@ -12,10 +12,20 @@
  */
 
 /*
- * Base addresses for the APIC register set
+ * I/O APIC memory-mapped registers base
  */
-#define APIC_PHBASE 0xfee00000		/* Physical */
-#define APIC_VRBASE 0xffffffffffe00000	/* Virtual; mapped at head.S */
+#define IOAPIC_PHBASE 0xfec00000
+#define IOAPIC_VRBASE 0xffffffffffc00000
+
+/*
+ * Local APIC registers base addresses = the I/O APIC
+ * registers physical and virtual base + 2MB.
+ */
+//#define APIC_PHBASE (IOAPIC_PHBASE + 0x200000) /* Physical */
+//#define APIC_VRBASE (IOAPIC_VRBASE + 0x200000) /* Virtual; head.S */
+
+#define APIC_PHBASE 0xfee00000
+#define APIC_VRBASE 0xffffffffffe00000
 
 #ifndef __ASSEMBLY__
 

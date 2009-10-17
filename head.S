@@ -196,16 +196,18 @@ startup_64:
 	jmpq   *%rax
 
 /*
- * Map the apic registers i/o mapped at APIC_BASE to the
- * top of the address space using a 2MB page. Add a 0x1FF
- * entry to the init_pgt+0x1000 PDP table to point to
- * apic_pd, which has a 0x1FF entry pointing to the base.
- * Apic address space must be strong uncacheable (PCD=1)
+ * Map the local and i/o apic registers i/o mapped at
+ * *_phbase to the top 4MB of the address space. Add a 0x1FF
+ * entry to the init_pgt+0x1000 PDP table pointing to the
+ * APIC Page Directory apic_pd, which has a 0x1FF entry
+ * pointing to the local apic base, and an 0x1FE entry for
+ * i/o apic base. Apic space must be strong uncacheable (UC)
  */
 .type map_apic, @function
 map_apic:
 	movq   $(apic_pd + 0x007), (init_pgt + 0x1000 + 511 * 8)
-	movl   $(APIC_PHBASE + 0x093), (apic_pd + 511 * 8)
+	movl   $(APIC_PHBASE + 0x09b), (apic_pd + 511 * 8)
+	movl   $(IOAPIC_PHBASE + 0x09b), (apic_pd + 510 * 8)
 	ret
 
 /*
