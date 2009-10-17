@@ -14,15 +14,15 @@
 /*
  * I/O APIC memory-mapped registers base
  */
-#define IOAPIC_PHBASE 0xfec00000
-#define IOAPIC_VRBASE 0xffffffffffc00000
+#define IOAPIC_PHBASE 0xfec00000		/* Physical */
+#define IOAPIC_VRBASE 0xffffffffffc00000	/* Virtual; head.S */
 
 /*
  * Local APIC registers base addresses = the I/O APIC
  * registers physical and virtual base + 2MB.
  */
-#define APIC_PHBASE (IOAPIC_PHBASE + 0x200000) /* Physical */
-#define APIC_VRBASE (IOAPIC_VRBASE + 0x200000) /* Virtual; head.S */
+#define APIC_PHBASE (IOAPIC_PHBASE + 0x200000)	/* Physical */
+#define APIC_VRBASE (IOAPIC_VRBASE + 0x200000)	/* Virtual; head.S */
 
 #ifndef __ASSEMBLY__
 
@@ -149,7 +149,7 @@ union apic_lvt_error {
 #define APIC_MT_EXTINT	0x7	/* Message Type: external interrupt */
 
 /*
- * APIC registers accessors
+ * APIC register accessors
  */
 
 static inline void apic_write(uint32_t reg, uint32_t val)
@@ -165,6 +165,46 @@ static inline uint32_t apic_read(uint32_t reg)
 }
 
 void apic_init(void);
+
+/*
+ * I/O APIC registers and register accessors
+ */
+
+#define IOAPIC_ID	0x00
+union ioapic_id {
+	uint32_t reserved0:24, id:8;
+	uint32_t value;
+};
+
+#define IOAPIC_VER	0x01
+union ioapic_ver {
+	uint32_t version:8, reserved0:8, max_entry:8, reserved1:8;
+	uint32_t value;
+};
+
+#define IOAPIC_ARB	0x02
+union ioapic_arb {
+	uint32_t reserved0:24, arbitration:4, reserved1:4;
+	uint32_t value;
+};
+
+static inline uint32_t ioapic_read(uint8_t reg)
+{
+	volatile uint32_t *ioregsel = (uint32_t *)IOAPIC_VRBASE;
+	volatile uint32_t *iowin = (uint32_t *)(IOAPIC_VRBASE + 0x10);
+	*ioregsel = reg;
+	return *iowin;
+}
+
+static inline void ioapic_write(uint8_t reg, uint32_t value)
+{
+	volatile uint32_t *ioregsel = (uint32_t *)IOAPIC_VRBASE;
+	volatile uint32_t *iowin = (uint32_t *)(IOAPIC_VRBASE + 0x10);
+	*ioregsel = reg;
+	*iowin = value;
+}
+
+void ioapic_init(void);
 
 /*
  * Ports for an 8259A-equivalent PIC chip

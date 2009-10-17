@@ -135,6 +135,17 @@ void apic_init(void)
 
 	msr_apicbase_enable();
 
-	printk("APIC: bootstrap core local apic enabled; ID = %d\n",
+	printk("APIC: bootstrap core local apic enabled; ID = 0x%x\n",
 	       apic_read(APIC_ID));
+}
+
+void ioapic_init(void)
+{
+	union ioapic_id id = { .value = 0 };
+	union ioapic_ver version = { .value = 0 };
+
+	id.value = ioapic_read(IOAPIC_ID);
+	printk("APIC: I/O APIC ID = 0x%x\n", id.id);
+	version.value = ioapic_read(IOAPIC_VER);
+	printk("APIC: I/O APIC version = 0x%x\n", version.version);
 }

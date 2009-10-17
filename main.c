@@ -59,6 +59,7 @@ void kernel_start(void)
 	print_sections();
 
 	apic_init();
+	ioapic_init();
 
 	for (;;);
 }
