@@ -15,6 +15,10 @@
 #include <io.h>
 
 /*
+ * 8259A
+ */
+
+/*
  * As said in a linux kernel comment, delay for access to PIC on
  * motherboard or in chipset must be at least one microsecnod.
  * FIXME: use a time-based delay function once it's ready.
@@ -73,6 +77,10 @@ static void mask_8259A(void)
 	outb_pic(0xff, PIC_SLAVE_DATA);
 }
 
+/*
+ * Local APIC
+ */
+
 void apic_init(void)
 {
 	union apic_tpr tpr = { .value = 0 };
@@ -82,10 +90,6 @@ void apic_init(void)
 	union apic_lvt_lint lint0 = { .value = 0 };
 	union apic_lvt_lint lint1 = { .value = 0 };
 	union apic_spiv spiv = { .value = 0 };
-
-	/* No need for the 8259A PIC, we'll exclusivly use
-	 * the I/O APIC for interrupt control */
-	mask_8259A();
 
 	/* Before doing any apic operation, assure the APIC
 	 * registers base address is set as we expect it */
@@ -139,13 +143,48 @@ void apic_init(void)
 	       apic_read(APIC_ID));
 }
 
+/*
+ * I/O APIC
+ */
+
+/*
+ * Search where of the I/O APIC irq pins the 8259A interrupt
+ * pin is connected. The 8259A irq entry will usually be enabled,
+ * and set as ExtInt mode. Give the final say to the MP table
+ * and warn the user if I/O APIC entries and MP data differs.
+ * FIXME: write real code once MP parsing code is ready :)
+ */
+static int ioapic_get_8259A_pin(void)
+{
+	return -1;
+}
+
 void ioapic_init(void)
 {
 	union ioapic_id id = { .value = 0 };
 	union ioapic_ver version = { .value = 0 };
+	int i8259A_pin;
+
+	/* No need for the 8259A PIC, we'll exclusivly use
+	 * the I/O APIC for interrupt control */
+	mask_8259A();
+
+	/* The PIC mode described in the MP specification is an
+	 * outdated way to configure the APICs that was used on
+	 * some early MP boards. It's not supported in the ACPI
+	 * model and is unlikely to be ever configured by any
+	 * x86-64 system, thus ignore setting the IMCR */
+
+	/* Find the I/O APIC pin where the 8259A is connected to
+	 * and mask this pin's IRQ, if any */
+	i8259A_pin = ioapic_get_8259A_pin();
+	if (i8259A_pin >= 0)
+		ioapic_mask_irq(i8259A_pin);
 
 	id.value = ioapic_read(IOAPIC_ID);
 	printk("APIC: I/O APIC ID = 0x%x\n", id.id);
 	version.value = ioapic_read(IOAPIC_VER);
 	printk("APIC: I/O APIC version = 0x%x\n", version.version);
+
+	/* Route legacy ISA interrupts (IRQ0-IRQ15) to 0x20+. */
 }

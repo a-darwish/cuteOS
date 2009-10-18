@@ -204,6 +204,82 @@ static inline void ioapic_write(uint8_t reg, uint32_t value)
 	*iowin = value;
 }
 
+#define IOAPIC_REDTBL0	0x10
+/* Don't use a single uint64_t element here. All APIC registers are
+ * accessed using 32 bit loads and stores. Registers that are
+ * described as 64 bits wide are accessed as multiple independent
+ * 32 bit registers -- Intel 82093AA datasheet */
+union ioapic_irqentry {
+	struct {
+		uint32_t vector:8, delivery_mode:3, dest_mode:1,
+			delivery_status:1, polarity:1, remote_irr:1,
+			trigger:1, mask:1, reserved0:15;
+
+		uint32_t reserved1:24, dest:8;
+	}__attribute__((packed));
+	struct {
+		uint32_t value_low;
+		uint32_t value_high;
+	}__attribute__((packed));
+	uint64_t value;
+};
+/* Delivery mode (R/W) */
+enum {
+	IOAPIC_DELMOD_FIXED = 0x0,
+	IOAPIC_DELMOD_LOWPR = 0x1,
+	IOAPIC_DELMOD_SMI   = 0x2,
+	IOAPIC_DELMOD_NMI   = 0x4,
+	IOAPIC_DELMOD_INIT  = 0x5,
+	IOAPIC_DELMOD_EXTINT= 0x7,
+};
+/* Destination mode (R/W) */
+enum {
+	IOAPIC_DESTMOD_PHYSICAL = 0x0,
+	IOAPIC_DESTMOD_LOGICAL  = 0x1,
+};
+/* Interrupt Input Pin Polarity (R/W) */
+enum {
+	IOAPIC_POLARITY_HIGH = 0x0,
+	IOAPIC_POLARITY_LOW  = 0x1,
+};
+/* Trigger Mode (R/W) */
+enum {
+	IOAPIC_TRIGGER_EDGE  = 0x0,
+	IOAPIC_TRIGGER_LEVEL = 0x1,
+};
+/* Interrupt Mask (R/W) */
+enum {
+	IOAPIC_UNMASK = 0x0,
+	IOAPIC_MASK   = 0x1,
+};
+
+static inline union ioapic_irqentry ioapic_read_irqentry(uint8_t irq)
+{
+	union ioapic_irqentry entry = { .value = 0 };
+	entry.value_low = ioapic_read(IOAPIC_REDTBL0 + 2*irq);
+	entry.value_high = ioapic_read(IOAPIC_REDTBL0 + 2*irq + 1);
+	return entry;
+}
+
+/*
+ * NOTE! Write the upper half _before_ writing the lower half.
+ * The low word contains the mask bit, and we want to be sure
+ * of the irq entry integrity if the irq is going to be enabled.
+ */
+static inline void ioapic_write_irqentry(uint8_t irq, union ioapic_irqentry entry)
+{
+	ioapic_write(IOAPIC_REDTBL0 + 2*irq + 1, entry.value_high);
+	ioapic_write(IOAPIC_REDTBL0 + 2*irq, entry.value_low);
+}
+
+static inline void ioapic_mask_irq(uint8_t irq)
+{
+	union ioapic_irqentry entry = { .value = 0 };
+	entry.value_low = ioapic_read(IOAPIC_REDTBL0 + 2*irq);
+	entry.mask = IOAPIC_MASK;
+	ioapic_write(IOAPIC_REDTBL0 + 2*irq, entry.value_low);
+}
+
 void ioapic_init(void);
 
 /*
@@ -227,6 +303,8 @@ void ioapic_init(void);
 #define APIC_TIMER_VECTOR   0
 #define APIC_THERMAL_VECTOR 0
 #define APIC_PERFC_VECTOR   0
+
+#define IOAPIC_IRQ0_VECTOR	0x20
 
 #endif /* !__ASSEMBLY__ */
 #endif /* _APIC_H */
