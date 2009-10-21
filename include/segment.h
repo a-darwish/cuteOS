@@ -17,12 +17,21 @@
 #define VIRTUAL_START     (0xffffffff80000000)
 
 #ifdef __ASSEMBLY__
-#define VIRTUAL(address)  (address + VIRTUAL_START)
+
+#define VIRTUAL(address)  ((address) + VIRTUAL_START)
+
 #else
+
 /* We need a char* cast in case someone gave us an int or long
  * pointer that can mess up the whole summation/transformation */
-#define VIRTUAL(address)  ((char *)address + VIRTUAL_START)
-#endif
+#define VIRTUAL(address)  ((void *)((char *)(address) + VIRTUAL_START))
+#define PHYS(address)     ((void *)((char *)(address) - VIRTUAL_START))
+
+/* Maximum mapped physical address. We should get rid of our
+ * ad-hoc mappings soon */
+#define PHYS_MAX	0x30000000
+
+#endif /* !__ASSEMBLY__ */
 
 #endif
 

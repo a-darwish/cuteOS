@@ -184,7 +184,7 @@ static int print_arg(char *buf, int size, const char *fmt,
  * within at most @size bytes. This version does *NOT* append
  * a NULL to output buffer @buf; it's for internal use only.
  */
-static int kvsnprintf(char *buf, int size, const char *fmt, va_list args)
+int vsnprintf(char *buf, int size, const char *fmt, va_list args)
 {
 	struct printf_argdesc desc = {0};
 	char *str = buf;
@@ -300,7 +300,7 @@ void printk(const char *fmt, ...)
 	int n;
 
 	va_start(args, fmt);
-	n = kvsnprintf(buf, sizeof(buf), fmt, args);
+	n = vsnprintf(buf, sizeof(buf), fmt, args);
 	vga_write(buf, n);
 	va_end(args);
 }

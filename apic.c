@@ -185,6 +185,4 @@ void ioapic_init(void)
 	printk("APIC: I/O APIC ID = 0x%x\n", id.id);
 	version.value = ioapic_read(IOAPIC_VER);
 	printk("APIC: I/O APIC version = 0x%x\n", version.version);
-
-	/* Route legacy ISA interrupts (IRQ0-IRQ15) to 0x20+. */
 }

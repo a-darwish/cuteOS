@@ -11,6 +11,7 @@
 #include <sections.h>
 #include <segment.h>
 #include <idt.h>
+#include <mptables.h>
 #include <apic.h>
 
 void setup_idt(void)
@@ -49,7 +50,7 @@ void print_sections(void)
 
 void kernel_start(void)
 {
-	/* before anything else */
+	/* Before anything else */
 	clear_bss();
 
 	setup_idt();
@@ -58,8 +59,13 @@ void kernel_start(void)
 
 	print_sections();
 
+	/* Parse the MP tables for needed IRQs data
+	 * before initializing the APICs */
+	mptables_init();
+
 	apic_init();
 	ioapic_init();
 
-	for (;;);
+	while (true)
+		asm volatile ("hlt");
 }

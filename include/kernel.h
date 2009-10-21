@@ -11,6 +11,23 @@
  *  the Free Software Foundation, version 2.
  */
 
+#include <stdarg.h>
+
+/*
+ * C99
+ */
+#define NULL ((void *)0)
+enum {
+	true = 1,
+	false = 0,
+};
+
+/*
+ * GCC extensions shorthands
+ */
+#define __unused	__attribute__((__unused__))
+#define __used		__attribute__((__used__))
+
 /*
  * Semi type-safe min macro using GNU extensions
  */
@@ -21,8 +38,20 @@
 	_m1 < _m2 ? _m1 : _m2; })
 
 /*
- * Main kernel print method
+ * Main kernel print methods
  */
+int vsnprintf(char *buf, int size, const char *fmt, va_list args);
 void printk(const char *fmt, ...);
+
+/*
+ * Critical failures
+ */
+void panic(const char *fmt, ...);
+#define assert(condition)					\
+	do {							\
+		if (!(condition))				\
+			panic("%s:%d - !(" #condition ")\n",	\
+			      __FILE__, __LINE__);		\
+	} while (0);
 
 #endif
