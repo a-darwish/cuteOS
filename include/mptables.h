@@ -141,7 +141,28 @@ enum mp_entry {
 	MP_LINTERRUPT,
 };
 
+enum mp_irqtype {
+	MP_INT = 0,			/* IOAPIC provided vector */
+	MP_NMI,
+	MP_SMI,
+	MP_ExtINT,			/* 8259A provided vector */
+};
+
+/*
+ * Parsed MP tables data exported to the rest of
+ * of the system
+ */
+
+extern int mp_isa_busid;
+
+extern int nr_mpcirqs;
+extern struct mpc_irq mp_irqs[];
+
 void mptables_init(void);
+
+/*
+ * Dump tables in case of critical errors
+ */
 
 #ifndef MP_DEBUG
 

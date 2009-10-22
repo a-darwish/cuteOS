@@ -10,6 +10,7 @@
 
 #include <segment.h>
 #include <apic.h>
+#include <ioapic.h>
 
 .text
 .code32

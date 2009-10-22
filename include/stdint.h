@@ -1,5 +1,5 @@
-#ifndef STDINT_H
-#define STDINT_H
+#ifndef _STDINT_H
+#define _STDINT_H
 
 /*
  * Standard C99 integer types

@@ -13,21 +13,21 @@
  * should've been buried alive, but we have to live with it.
  */
 
-#include <mptables.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdarg.h>
 #include <kernel.h>
 #include <segment.h>
+#include <mptables.h>
+#include <apic.h>
+#include <ioapic.h>
 
 /*
  * Parsed MP configuration table entries data to be exported
  * to other subsystems
  */
 
-int nr_ioapics;
-#define MAX_IOAPICS	8
-struct mpc_ioapic mp_ioapics[MAX_IOAPICS];
+int mp_isa_busid = -1;
 
 int nr_mpcirqs;
 #define MAX_IRQS	(0xff - 0x1f)
@@ -171,7 +171,9 @@ static void mpc_dump(struct mpc_table *mpc)
 #endif /* MP_DEBUG */
 
 /*
- * MP conf table entries parsers
+ * MP base conf table entries parsers. Copy all the needed data
+ * to system-wide structures now as we won't parse any of the
+ * tables again.
  */
 
 static void parse_ioapic(void *addr)
@@ -181,10 +183,17 @@ static void parse_ioapic(void *addr)
 	if (!ioapic->enabled)
 		return;
 
-	if (nr_ioapics >= MAX_IOAPICS)
-		panic("Only %d IO APICs supported", MAX_IOAPICS);
+	if (nr_ioapics >= IOAPICS_MAX)
+		panic("Only %d IO APICs supported", IOAPICS_MAX);
 
-	mp_ioapics[nr_ioapics] = *ioapic;
+	if (ioapic->base < IOAPIC_PHBASE ||
+	    ioapic->base > IOAPIC_PHBASE_MAX)
+		panic("Unmapped I/O APIC base at 0x%lx\n", ioapic->base);
+
+	/* In the ioapic init code, we read the id and the
+	 * version from the chip itself instead of reading it
+	 * now from the mptable entries */
+	ioapic_descs[nr_ioapics].base = ioapic->base;
 
 	++nr_ioapics;
 }
@@ -201,6 +210,17 @@ static void parse_irq(void *addr)
 	++nr_mpcirqs;
 }
 
+static void parse_bus(void *addr)
+{
+	struct mpc_bus *bus = addr;
+
+	/* Only the ISA bus is needed for now */
+	if (strncmp("ISA", bus->type, sizeof("ISA")) == 0)
+		mp_isa_busid = bus->id;
+
+	return;
+}
+
 /*
  * Parse the MP configuration table, copying needed data
  * to our own system-wide mp_*[] tables.
@@ -215,6 +235,7 @@ static int parse_mpc(struct mpc_table *mpc)
 			entry += sizeof(struct mpc_processor);
 			break;
 		case MP_BUS:
+			parse_bus(entry);
 			entry += sizeof(struct mpc_bus);
 			break;
 		case MP_IOAPIC:

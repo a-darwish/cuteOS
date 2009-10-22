@@ -12,6 +12,7 @@
  */
 
 #include <stdint.h>
+#include <kernel.h>
 
 int strlen(const char *str)
 {
@@ -35,6 +36,20 @@ char *strncpy(char *dst, const char *src, int n)
 	}
 
 	return dst;
+}
+
+int strncmp(char *s1, char *s2, int n)
+{
+	uint8_t res = 0;
+
+	while (n) {
+		res = *s1 - *s2;
+		if (res != 0 || *s1 == 0)
+			break;
+		n--;
+	}
+
+	return res;
 }
 
 /*
