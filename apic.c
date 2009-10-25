@@ -141,7 +141,7 @@ void apic_init(void)
 
 	msr_apicbase_enable();
 
-	printk("APIC: bootstrap core local apic enabled; ID = 0x%x\n",
+	printk("APIC: bootstrap core lapic enabled, apic_id=0x%x\n",
 	       apic_read(APIC_ID));
 }
 
@@ -156,6 +156,7 @@ void apic_init(void)
  */
 int nr_ioapics;
 struct ioapic_desc ioapic_descs[IOAPICS_MAX];
+struct ioapic_pin i8259_pin = { .apic = -1, .pin = -1 };
 
 /*
  * Find where the 8259 INTR pin is connected to the ioapics
@@ -234,17 +235,29 @@ void ioapic_init(void)
 	 * the I/O APICs for interrupt control */
 	mask_8259A();
 
+	printk("APIC: %d I/O APIC(s) found\n", nr_ioapics);
+
 	/* Initialize the system-wide IO APICs descriptors
-	 * partially initialized using MP table entries */
+	 * partially initialized using MP table parsers */
 	for (int apic = 0; apic < nr_ioapics; apic++) {
 		id.value = ioapic_read(apic, IOAPIC_ID);
-		ioapic_descs[apic].id = id.id;
+		if (id.id != ioapic_descs[apic].id) {
+			printk("IOAPIC[%d]: BIOS tables apic_id=0x%x, "
+			       "chip's apic_id=0x%x\n", apic,
+			       ioapic_descs[apic].id, id.id);
+			printk("IOAPIC[%d]: Writing BIOS value to chip\n",
+			       apic);
+			id.id = ioapic_descs[apic].id;
+			ioapic_write(apic, IOAPIC_ID, id.value);
+		}
 
 		version.value = ioapic_read(apic, IOAPIC_VER);
 		ioapic_descs[apic].version = version.version;
 		ioapic_descs[apic].max_irq = version.max_irq;
 
-		printk("APIC: IOAPIC #%d id = 0x%x\n", apic, id.id);
+		printk("IOAPIC[%d]: apic_id 0x%x, version 0x%x, maxirq %d, "
+		       "address 0x%x\n", apic, id.id, version.version,
+		       ioapic_descs[apic].max_irq, ioapic_descs[apic].base);
 	}
 
 	/* The PIC mode described in the MP specification is an
@@ -259,13 +272,14 @@ void ioapic_init(void)
 	pin2 = ioapic_isa_pin(0, MP_ExtINT);
 
 	if (pin1.apic != -1) {
-		printk("APIC: hardware: i8259 INTR connected to IOAPIC "
-		       "#%d pin %d\n", pin1.apic, pin1.pin);
-		ioapic_mask_irq(pin1.apic , pin1.pin);
+		i8259_pin = pin1;
+		printk("IOAPIC[%d]: ExtINT - i8259 INT connected to pin %d\n",
+		       pin1.apic, pin1.pin);
 	} else if (pin2.apic != -1) {
-		printk("APIC: MPtables: i8259 INTR connected to IOAPIC "
-		       "#%d pin %d\n", pin2.apic, pin2.pin);
-		printk("APIC: Warning: ExtINT was not setup in hardware\n");
-		ioapic_mask_irq(pin2.apic , pin2.pin);
+		i8259_pin = pin2;
+		printk("IOAPIC[%d]: MP - i8259 INT connected to pin %d\n",
+		       pin2.apic, pin2.pin);
+		printk("IOAPIC[%d]: MP tables and routing entries differ\n",
+		       pin2.apic);
 	}
 }

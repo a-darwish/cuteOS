@@ -190,9 +190,9 @@ static void parse_ioapic(void *addr)
 	    ioapic->base > IOAPIC_PHBASE_MAX)
 		panic("Unmapped I/O APIC base at 0x%lx\n", ioapic->base);
 
-	/* In the ioapic init code, we read the id and the
-	 * version from the chip itself instead of reading it
-	 * now from the mptable entries */
+	/* We read the version from the chip itself instead
+	 * of reading it now from the mptable entries */
+	ioapic_descs[nr_ioapics].id = ioapic->id;
 	ioapic_descs[nr_ioapics].base = ioapic->base;
 
 	++nr_ioapics;
@@ -287,6 +287,4 @@ void mptables_init(void)
 		mpc_dump(mpc);
 		panic("Can not parse MP conf table");
 	}
-
-	printk("MP: %d IO APIC(s) found\n", nr_ioapics);
 }
