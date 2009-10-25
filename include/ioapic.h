@@ -194,6 +194,17 @@ static inline void ioapic_mask_irq(int apic, uint8_t irq)
 	ioapic_write(apic, IOAPIC_REDTBL0 + 2*irq, entry.value_low);
 }
 
+/*
+ * Represents where an interrupt source is connected to the
+ * I/O APICs system
+ */
+struct ioapic_pin {
+	int apic;			/* which ioapic? */
+	int pin;			/* which pin in this ioapic */
+};
+
+struct ioapic_pin ioapic_isa_pin(int isa_irq, enum mp_irqtype type);
+
 void ioapic_init(void);
 
 #endif /* __ASSEMBLY__ */

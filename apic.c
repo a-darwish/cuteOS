@@ -158,15 +158,6 @@ int nr_ioapics;
 struct ioapic_desc ioapic_descs[IOAPICS_MAX];
 
 /*
- * In virtual wire mode, this represents where the i8259
- * INTR pin is connected to the IOAPICs.
- */
-struct i8259_ioapic_pin {
-	int apic;			/* which ioapic? */
-	int pin;			/* which pin in this ioapic */
-};
-
-/*
  * Find where the 8259 INTR pin is connected to the ioapics
  * by scanning all the IOAPICs for a BIOS set unmasked routing
  * entry with a delivery mode of ExtInt.
@@ -174,10 +165,10 @@ struct i8259_ioapic_pin {
  * NOTE! Use this after all the IOAPIC descriptors have been
  * fully initialized
  */
-static struct i8259_ioapic_pin ioapic_get_8259A_pin(void)
+static struct ioapic_pin ioapic_get_8259A_pin(void)
 {
 	union ioapic_irqentry entry;
-	struct i8259_ioapic_pin pic = { .apic = -1, .pin = -1 };
+	struct ioapic_pin pic = { .apic = -1, .pin = -1 };
 	int max_irq;
 
 	for (int apic = 0; apic < nr_ioapics; apic++) {
@@ -201,59 +192,47 @@ static struct i8259_ioapic_pin ioapic_get_8259A_pin(void)
 }
 
 /*
- * Find where the 8259 INTR pin is connected to the ioapics
- * by scanning all MP-table IOINTERRUPT (IRQ) entries
- *
- * FIXME: very highly unlikely, but this can return an APIC
- * id = 0xff denoting a "singal connected to all IOAPICs."
+ * Through MP-tables IRQ entries, figure where given ISA
+ * interrupt source is connected to the I/O APICs system
  */
-static struct i8259_ioapic_pin mp_get_8259A_pin(void)
+struct ioapic_pin ioapic_isa_pin(int isa_irq, enum mp_irqtype type)
 {
-	struct i8259_ioapic_pin pic = { .apic = -1, .pin = -1 };
-	struct mpc_irq *mp_irq;
+	struct ioapic_pin pin = { .apic = -1, .pin = -1 };
 	int irq;
 
 	assert(mp_isa_busid != -1);
 
 	for (irq = 0; irq < nr_mpcirqs; irq++) {
-		mp_irq = &mp_irqs[irq];
-
-		if ((mp_irq->src_busid == mp_isa_busid) &&
-		    (mp_irq->type == MP_ExtINT))
+		if ((mp_irqs[irq].src_busid == mp_isa_busid) &&
+		    (mp_irqs[irq].src_busirq == isa_irq) &&
+		    (mp_irqs[irq].type == type))
 			break;
 	}
 
-	/* No ISA ExtINT MP irq entry found */
+	/* No compatible ISA MP irq entry found */
 	if (irq >= nr_mpcirqs)
-		return pic;
+		return pin;
 
 	for (int apic = 0; apic < nr_ioapics; apic++) {
-		if (mp_irq->dst_ioapic == ioapic_descs[apic].id) {
-			pic.apic = apic;
-			pic.pin = mp_irq->dst_ioapicpin;
-
-			return pic;
+		if(mp_irqs[irq].dst_ioapicid == ioapic_descs[apic].id) {
+			pin.apic = apic;
+			pin.pin = mp_irqs[irq].dst_ioapicpin;
+			return pin;
 		}
 	}
 
-	return pic;
+	return pin;
 }
 
 void ioapic_init(void)
 {
 	union ioapic_id id = { .value = 0 };
 	union ioapic_ver version = { .value = 0 };
-	struct i8259_ioapic_pin pin1, pin2;
+	struct ioapic_pin pin1, pin2;
 
 	/* No need for the 8259A PIC, we'll exclusivly use
 	 * the I/O APICs for interrupt control */
 	mask_8259A();
-
-	/* The PIC mode described in the MP specification is an
-	 * outdated way to configure the APICs that was used on
-	 * some early MP boards. It's not supported in the ACPI
-	 * model and is unlikely to be ever configured by any
-	 * x86-64 system, thus ignore setting the IMCR */
 
 	/* Initialize the system-wide IO APICs descriptors
 	 * partially initialized using MP table entries */
@@ -268,15 +247,23 @@ void ioapic_init(void)
 		printk("APIC: IOAPIC #%d id = 0x%x\n", apic, id.id);
 	}
 
+	/* The PIC mode described in the MP specification is an
+	 * outdated way to configure the APICs that was used on
+	 * some early MP boards. It's not supported in the ACPI
+	 * model and is unlikely to be ever configured by any
+	 * x86-64 system, thus ignore setting the IMCR */
+
+	/* Figure where the i8259 INT pin is connected through
+	 * hardware setup and through the MP-tables */
 	pin1 = ioapic_get_8259A_pin();
-	pin2 = mp_get_8259A_pin();
+	pin2 = ioapic_isa_pin(0, MP_ExtINT);
 
 	if (pin1.apic != -1) {
-		printk("APIC: hardware: i8259 INTR conneted to IOAPIC "
+		printk("APIC: hardware: i8259 INTR connected to IOAPIC "
 		       "#%d pin %d\n", pin1.apic, pin1.pin);
 		ioapic_mask_irq(pin1.apic , pin1.pin);
 	} else if (pin2.apic != -1) {
-		printk("APIC: MPtables: i8259 INTR conneted to IOAPIC "
+		printk("APIC: MPtables: i8259 INTR connected to IOAPIC "
 		       "#%d pin %d\n", pin2.apic, pin2.pin);
 		printk("APIC: Warning: ExtINT was not setup in hardware\n");
 		ioapic_mask_irq(pin2.apic , pin2.pin);

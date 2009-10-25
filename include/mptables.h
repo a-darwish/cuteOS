@@ -103,7 +103,7 @@ struct mpc_irq {
 		reserved:12;		/* Reserved */
 	uint8_t src_busid;		/* Interrupt source bus */
 	uint8_t src_busirq;		/* Source bus irq */
-	uint8_t dst_ioapic;		/* Destination I/O APIC ID */
+	uint8_t dst_ioapicid;		/* Destination I/O APIC ID */
 	uint8_t dst_ioapicpin;		/* Destination I/O APIC INTINn pin */
 }__attribute__((packed));
 

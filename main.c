@@ -13,6 +13,7 @@
 #include <idt.h>
 #include <mptables.h>
 #include <apic.h>
+#include <ioapic.h>
 
 void setup_idt(void)
 {
