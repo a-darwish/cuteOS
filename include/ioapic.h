@@ -27,6 +27,9 @@
 #ifndef __ASSEMBLY__
 
 #include <stdint.h>
+#include <kernel.h>
+#include <apic.h>
+#include <mptables.h>
 
 /*
  * System-wide I/O APIC descriptors for each I/O APIC reported
@@ -137,7 +140,7 @@ union ioapic_irqentry {
 	uint64_t value;
 };
 /* Delivery mode (R/W) */
-enum {
+enum ioapic_delmod {
 	IOAPIC_DELMOD_FIXED = 0x0,
 	IOAPIC_DELMOD_LOWPR = 0x1,
 	IOAPIC_DELMOD_SMI   = 0x2,
@@ -146,17 +149,17 @@ enum {
 	IOAPIC_DELMOD_EXTINT= 0x7,
 };
 /* Destination mode (R/W) */
-enum {
+enum ioapic_destmod {
 	IOAPIC_DESTMOD_PHYSICAL = 0x0,
 	IOAPIC_DESTMOD_LOGICAL  = 0x1,
 };
 /* Interrupt Input Pin Polarity (R/W) */
-enum {
+enum ioapic_polarity {
 	IOAPIC_POLARITY_HIGH = 0x0,
 	IOAPIC_POLARITY_LOW  = 0x1,
 };
 /* Trigger Mode (R/W) */
-enum {
+enum ioapic_trigger {
 	IOAPIC_TRIGGER_EDGE  = 0x0,
 	IOAPIC_TRIGGER_LEVEL = 0x1,
 };
@@ -203,8 +206,7 @@ struct ioapic_pin {
 	int pin;			/* which pin in this ioapic */
 };
 
-struct ioapic_pin ioapic_isa_pin(int isa_irq, enum mp_irqtype type);
-
+void ioapic_setup_isairq(uint8_t irq, int vector);
 void ioapic_init(void);
 
 #endif /* __ASSEMBLY__ */

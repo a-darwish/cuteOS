@@ -64,6 +64,7 @@ void kernel_start(void)
 	 * before initializing the APICs */
 	mptables_init();
 
+	i8259_init();
 	apic_init();
 	ioapic_init();
 

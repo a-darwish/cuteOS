@@ -243,8 +243,14 @@ gdt:
 	.byte  0x00, 0x98		# P=1, DPL=0, C/conforming=0
 	.byte  0xa0, 0x00		# L=1, D=0, base[24-31] ignored
 
-	/* Data segment */
-	.quad  0x0000000000000000	# null; %ds is ignored in LM
+	/* FIXME: for some reason, `iretq' triggers a #GP with
+	 * error=16, indicating a misbheving data segment, if DS's
+	 * `Present' or `Writable' bits are not set. Set those bits
+	 * till we know why iretq logic needs this useless segment */
+	.long  0x00000000		# ignored
+	.word  0x9200			# Writable=1, Present=1
+	.word  0x0000			# ignored
+
 gdt_end:
 
 /*

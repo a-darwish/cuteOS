@@ -68,9 +68,11 @@ static inline void msr_apicbase_enable(void)
 
 #define APIC_TPR	0x80    /* Task Priority Register */
 union apic_tpr {
-	unsigned subclass:4, priority:4, reserved:24;
+	struct {
+		uint32_t subclass:4, priority:4, reserved:24;
+	} __attribute__((packed));
 	uint32_t value;
-}__attribute__((packed));
+};
 
 #define APIC_APR	0x90	/* Arbitration Priority Register */
 #define APIC_PPR	0xa0	/* Processor Priority Register */
@@ -81,9 +83,11 @@ union apic_tpr {
 
 #define APIC_SPIV	0xf0	/* Spurious Interrupt Vector Register */
 union apic_spiv {
-	unsigned vector:8, apic_enable:1, focus:1, reserved:22;
+	struct {
+		uint32_t vector:8, apic_enable:1, focus:1, reserved:22;
+	} __attribute__((packed));
 	uint32_t value;
-}__attribute__((packed));
+};
 
 #define APIC_ESR	0x280   /* Error Status Register */
 #define APIC_ICRL	0x300   /* Interrupt Command Register Low [31:0] */
@@ -95,40 +99,50 @@ union apic_spiv {
 
 #define APIC_LVTT	0x320   /* Timer LVT Entry */
 union apic_lvt_timer {
-	unsigned vector:8, reserved0:4, delivery_status:1, reserved1:3,
-		mask:1, timer_mode:1, reserved2:14;
+	struct {
+		unsigned vector:8, reserved0:4, delivery_status:1, reserved1:3,
+			mask:1, timer_mode:1, reserved2:14;
+	} __attribute__((packed));
 	uint32_t value;
-}__attribute__((packed));
+};
 
 #define APIC_LVTTHER	0x330   /* Thermal LVT Entry */
 union apic_lvt_thermal {
-	unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
-		reserved1:3, mask:1, reserved3:15;
+	struct {
+		unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
+			reserved1:3, mask:1, reserved3:15;
+	} __attribute__((packed));
 	uint32_t value;
-}__attribute__((packed));
+};
 
 #define APIC_LVTPC	0x340   /* Performance Counter LVT Entry */
 union apic_lvt_perfc {
-	unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
-		reserved1:3, mask:1, reserved3:15;
+	struct {
+		unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
+			reserved1:3, mask:1, reserved3:15;
+	} __attribute__((packed));
 	uint32_t value;
-}__attribute__((packed));
+};
 
 #define APIC_LVT0	0x350	/* Local Interrupt 0 LVT Entry */
 #define APIC_LVT1	0x360	/* Local Interrupt 1 LVT Entry */
 union apic_lvt_lint {
-	unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
-		reserved1:1, remote_irr:1, trigger_mode:1, mask:1,
-		reserved3:15;
+	struct {
+		unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
+			reserved1:1, remote_irr:1, trigger_mode:1, mask:1,
+			reserved3:15;
+	} __attribute__((packed));
 	uint32_t value;
-}__attribute__((packed));
+};
 
 #define APIC_LVTERR	0x370   /* Error LVT Entry */
 union apic_lvt_error {
-	unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
-		reserved1:3, mask:1, reserved3:15;
+	struct {
+		unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
+			reserved1:3, mask:1, reserved3:15;
+	} __attribute__((packed));
 	uint32_t value;
-}__attribute__((packed));
+};
 
 /*
  * LVT entries fields values

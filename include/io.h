@@ -1,3 +1,6 @@
+#ifndef _IO_H
+#define _IO_H
+
 /*
  * x86-64 I/O instructions
  *
@@ -7,6 +10,8 @@
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
  */
+
+#include <stdint.h>
 
 static inline uint8_t inb(uint16_t port)
 {
@@ -37,3 +42,6 @@ static inline void io_delay(void)
 {
 	asm volatile ("outb %al, $0xed");
 }
+
+#endif /* _IO_H */
+
