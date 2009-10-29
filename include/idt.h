@@ -29,12 +29,12 @@ struct idt_gate {
 	uint16_t offset_middle;
 	uint32_t offset_high;
 	uint32_t reserved1;
-} __attribute__((packed));
+} __packed;
 
 struct idt_descriptor {
 	uint16_t limit;
 	uint64_t base;
-} __attribute__((packed));
+} __packed;
 
 /*
  * Symbols from head.S

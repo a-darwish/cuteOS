@@ -25,6 +25,7 @@ enum {
 /*
  * GCC extensions shorthands
  */
+#define __packed	__attribute__((packed))
 #define __unused	__attribute__((__unused__))
 #define __used		__attribute__((__used__))
 

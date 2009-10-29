@@ -70,7 +70,7 @@ static inline void msr_apicbase_enable(void)
 union apic_tpr {
 	struct {
 		uint32_t subclass:4, priority:4, reserved:24;
-	} __attribute__((packed));
+	} __packed;
 	uint32_t value;
 };
 
@@ -85,7 +85,7 @@ union apic_tpr {
 union apic_spiv {
 	struct {
 		uint32_t vector:8, apic_enable:1, focus:1, reserved:22;
-	} __attribute__((packed));
+	} __packed;
 	uint32_t value;
 };
 
@@ -102,7 +102,7 @@ union apic_lvt_timer {
 	struct {
 		unsigned vector:8, reserved0:4, delivery_status:1, reserved1:3,
 			mask:1, timer_mode:1, reserved2:14;
-	} __attribute__((packed));
+	} __packed;
 	uint32_t value;
 };
 
@@ -111,7 +111,7 @@ union apic_lvt_thermal {
 	struct {
 		unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
 			reserved1:3, mask:1, reserved3:15;
-	} __attribute__((packed));
+	} __packed;
 	uint32_t value;
 };
 
@@ -120,7 +120,7 @@ union apic_lvt_perfc {
 	struct {
 		unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
 			reserved1:3, mask:1, reserved3:15;
-	} __attribute__((packed));
+	} __packed;
 	uint32_t value;
 };
 
@@ -131,7 +131,7 @@ union apic_lvt_lint {
 		unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
 			reserved1:1, remote_irr:1, trigger_mode:1, mask:1,
 			reserved3:15;
-	} __attribute__((packed));
+	} __packed;
 	uint32_t value;
 };
 
@@ -140,7 +140,7 @@ union apic_lvt_error {
 	struct {
 		unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
 			reserved1:3, mask:1, reserved3:15;
-	} __attribute__((packed));
+	} __packed;
 	uint32_t value;
 };
 

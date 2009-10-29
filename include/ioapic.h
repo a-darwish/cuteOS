@@ -59,7 +59,7 @@ union ioapic_id {
 	uint32_t value;
 	struct {
 		uint32_t reserved0:24, id:8;
-	} __attribute__((packed));
+	} __packed;
 };
 
 #define IOAPIC_VER	0x01
@@ -68,7 +68,7 @@ union ioapic_ver {
 	struct {
 		uint32_t version:8, reserved0:8,
 			max_irq:8, reserved1:8;
-	} __attribute__((packed));
+	} __packed;
 };
 
 #define IOAPIC_ARB	0x02
@@ -77,7 +77,7 @@ union ioapic_arb {
 	struct {
 		uint32_t reserved0:24, arbitration:4,
 			reserved1:4;
-	} __attribute__((packed));
+	} __packed;
 };
 
 /*
@@ -132,11 +132,11 @@ union ioapic_irqentry {
 			trigger:1, mask:1, reserved0:15;
 
 		uint32_t reserved1:24, dest:8;
-	}__attribute__((packed));
+	} __packed;
 	struct {
 		uint32_t value_low;
 		uint32_t value_high;
-	}__attribute__((packed));
+	} __packed;
 	uint64_t value;
 };
 /* Delivery mode (R/W) */

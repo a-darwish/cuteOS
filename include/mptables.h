@@ -40,7 +40,7 @@ struct mpf_struct {
 	uint8_t feature3;		/* Reserved */
 	uint8_t feature4;		/* Reserved */
 	uint8_t feature5;		/* Reserved */
-}__attribute__((packed));
+} __packed;
 
 /*
  * MP Configuration table header
@@ -62,7 +62,7 @@ struct mpc_table {
 	uint16_t ext_length;		/* Extended entries length, or 0 */
 	uint8_t ext_checksum;		/* Extended entries checksum, or 0 */
 	uint8_t reserved;
-}__attribute__((packed));
+} __packed;
 
 /*
  * MP Configuration table entries
@@ -78,13 +78,13 @@ struct mpc_processor {
 	uint32_t signature;		/* Signature (stepping, model, family */
 	uint32_t flags;			/* Flags as returned by CPUID */
 	uint64_t reserved;		/* Reserved */
-}__attribute__((packed));
+} __packed;
 
 struct mpc_bus {
 	uint8_t entry;			/* Entry type (bus) */
 	uint8_t id;			/* Bus ID */
 	char type[6];			/* Bus Type string */
-}__attribute__((packed));
+} __packed;
 
 struct mpc_ioapic {
 	uint8_t entry;			/* Entry type (ioapic) */
@@ -93,7 +93,7 @@ struct mpc_ioapic {
 	uint8_t enabled:1,		/* If zero, this I/O APIC is unusable */
 		flags_reserved:7;	/* Reserved */
 	uint32_t base;			/* This I/O APIC base address */
-}__attribute__((packed));
+} __packed;
 
 struct mpc_irq {
 	uint8_t entry;			/* Entry type (I/O interrupt entry) */
@@ -105,7 +105,7 @@ struct mpc_irq {
 	uint8_t src_busirq;		/* Source bus irq */
 	uint8_t dst_ioapicid;		/* Destination I/O APIC ID */
 	uint8_t dst_ioapicpin;		/* Destination I/O APIC INTINn pin */
-}__attribute__((packed));
+} __packed;
 
 struct mpc_linterrupt {
 	uint8_t entry;			/* Entry type (local interrupt entry) */
@@ -117,7 +117,7 @@ struct mpc_linterrupt {
 	uint8_t src_busirq;		/* Source bus irq */
 	uint8_t dst_lapic;		/* Destination local APIC ID */
 	uint8_t dst_lapicpin;		/* Destination local APIC LINTINn pin */
-}__attribute__((packed));
+} __packed;
 
 /* Compile-time MP tables sizes sanity checks */
 static inline void mptables_check(void) {
