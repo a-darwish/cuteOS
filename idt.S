@@ -67,6 +67,35 @@ idt_msg:
 	.ascii "Exception; vector=%d, %%rip=0x%x, %%rflags=0x%x "
 	.asciz "%%rsp=0x%x, errcode=%d\n"
 
+/*
+ * PS/2 keyboard interrupt handler stub.
+ *
+ * AMD64 ABI indicates that only %rbp, %rbx and %r12 through
+ * %r15 needs to be perserved by the callee. FIXME: to be
+ * transformed to a generic IRQ handling stub once needed.
+ */
+.globl kb_handler
+kb_handler:
+	pushq  %rax
+	pushq  %rcx
+	pushq  %rdx
+	pushq  %rdi
+	pushq  %rsi
+	pushq  %r8
+	pushq  %r9
+	pushq  %r10
+	pushq  %r11
+	call   __kb_handler
+	popq   %r11
+	popq   %r10
+	popq   %r9
+	popq   %r8
+	popq   %rsi
+	popq   %rdi
+	popq   %rdx
+	popq   %rcx
+	popq   %rax
+	iretq
 
 .data
 

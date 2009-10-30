@@ -236,7 +236,7 @@ static char vga_buffer[VGA_AREA];
 /*
  * Scroll the screen up by one row.
  */
-void vga_scrollup(void) {
+static void vga_scrollup(void) {
 	char *src = vga_buffer + 2*VGA_MAXCOLS;
 	char *dst = vga_buffer;
 	int len = 2*((VGA_MAXROWS - 1) * VGA_MAXCOLS);
@@ -256,7 +256,7 @@ void vga_scrollup(void) {
  * Write given buffer to VGA ram and scroll the screen
  * up as necessary.
  */
-void vga_write(char *buf, int n)
+static void vga_write(char *buf, int n)
 {
 	int max_xpos = VGA_MAXCOLS;
 	int max_ypos = VGA_MAXROWS;
@@ -288,6 +288,15 @@ void vga_write(char *buf, int n)
 	offset = 2*(old_ypos * max_xpos + old_xpos);
 	area = 2*((vga_ypos - old_ypos) * max_xpos + vga_xpos);
 	memcpy(VGA_BASE + offset, vga_buffer + offset, area);
+}
+
+/*
+ * Without any formatting overhead, write a charactor
+ * to screen
+ */
+void putc(char c)
+{
+	vga_write(&c, 1);
 }
 
 /*

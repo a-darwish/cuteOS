@@ -43,6 +43,7 @@ enum {
  */
 int vsnprintf(char *buf, int size, const char *fmt, va_list args);
 void printk(const char *fmt, ...);
+void putc(char c);
 
 /*
  * Critical failures

@@ -12,8 +12,10 @@
 #include <segment.h>
 #include <idt.h>
 #include <mptables.h>
+#include <i8259.h>
 #include <apic.h>
 #include <ioapic.h>
+#include <keyboard.h>
 
 void setup_idt(void)
 {
@@ -68,6 +70,10 @@ void kernel_start(void)
 	apic_init();
 	ioapic_init();
 
-	while (true)
+	keyboard_init();
+
+	asm volatile ("sti");
+
+	while (true);
 		asm volatile ("hlt");
 }

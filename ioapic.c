@@ -163,4 +163,10 @@ void ioapic_init(void)
 		printk("IOAPIC[%d]: MP tables and routing entries differ\n",
 		       pin2.apic);
 	}
+
+	/* We don't trust the BIOS setup: mask all the system
+	 * IOAPICs irq routing entries */
+	for (int apic = 0; apic < nr_ioapics; apic++)
+		for (int irq = 0; irq < ioapic_descs[apic].max_irq; irq++)
+			ioapic_mask_irq(apic, irq);
 }
