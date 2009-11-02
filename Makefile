@@ -10,7 +10,7 @@ LD	= ld
 CFLAGS  = -m64 --std=gnu99 -mcmodel=kernel \
 	  -fno-builtin -nostdlib \
 	  -nostdinc -iwithprefix include -I include \
-	  -Wall -Wstrict-prototypes
+	  -Wall -Wstrict-prototypes -O2
 
 # Share headers between assembly and C files
 CPPFLAGS = -D__KERNEL__
