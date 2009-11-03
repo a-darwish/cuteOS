@@ -139,6 +139,7 @@ union ioapic_irqentry {
 	} __packed;
 	uint64_t value;
 };
+
 /* Delivery mode (R/W) */
 enum ioapic_delmod {
 	IOAPIC_DELMOD_FIXED = 0x0,

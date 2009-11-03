@@ -16,6 +16,7 @@
 #include <apic.h>
 #include <ioapic.h>
 #include <keyboard.h>
+#include <smpboot.h>
 
 void setup_idt(void)
 {
@@ -72,8 +73,10 @@ void kernel_start(void)
 
 	keyboard_init();
 
+	smpboot_init();
+
 	asm volatile ("sti");
 
-	while (true);
+	while (true)
 		asm volatile ("hlt");
 }

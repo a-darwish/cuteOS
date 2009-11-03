@@ -90,8 +90,27 @@ union apic_spiv {
 };
 
 #define APIC_ESR	0x280   /* Error Status Register */
+
 #define APIC_ICRL	0x300   /* Interrupt Command Register Low [31:0] */
 #define APIC_ICRH	0x310   /* Interrupt Command Register High [63:32] */
+union apic_icr {
+	struct {
+		uint32_t vector:8, delivery_mode:3, dest_mode:1,
+			delivery_status:1, reserved0:1, level:1,
+			trigger:1, reserved1:2, dest_shorthand:2,
+			reserved2:12;
+		uint32_t reserved3:24, dest:8;
+	} __packed;
+
+	/* Writing the low word of the ICR causes the
+	 * Inter-Process Interrupt (IPI) to be sent */
+	struct {
+		uint32_t value_low;
+		uint32_t value_high;
+	} __packed;
+
+	uint32_t value;
+};
 
 /*
  * Local Vector Table entries
@@ -109,8 +128,8 @@ union apic_lvt_timer {
 #define APIC_LVTTHER	0x330   /* Thermal LVT Entry */
 union apic_lvt_thermal {
 	struct {
-		unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
-			reserved1:3, mask:1, reserved3:15;
+		unsigned vector:8, delivery_mode:3, reserved0:1,
+			delivery_status:1, reserved1:3, mask:1, reserved3:15;
 	} __packed;
 	uint32_t value;
 };
@@ -118,8 +137,8 @@ union apic_lvt_thermal {
 #define APIC_LVTPC	0x340   /* Performance Counter LVT Entry */
 union apic_lvt_perfc {
 	struct {
-		unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
-			reserved1:3, mask:1, reserved3:15;
+		unsigned vector:8, delivery_mode:3, reserved0:1,
+			delivery_status:1, reserved1:3, mask:1, reserved3:15;
 	} __packed;
 	uint32_t value;
 };
@@ -128,9 +147,9 @@ union apic_lvt_perfc {
 #define APIC_LVT1	0x360	/* Local Interrupt 1 LVT Entry */
 union apic_lvt_lint {
 	struct {
-		unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
-			reserved1:1, remote_irr:1, trigger_mode:1, mask:1,
-			reserved3:15;
+		unsigned vector:8, delivery_mode:3, reserved0:1,
+			delivery_status:1, reserved1:1, remote_irr:1, trigger:1,
+			mask:1, reserved3:15;
 	} __packed;
 	uint32_t value;
 };
@@ -138,26 +157,46 @@ union apic_lvt_lint {
 #define APIC_LVTERR	0x370   /* Error LVT Entry */
 union apic_lvt_error {
 	struct {
-		unsigned vector:8, message_type:3, reserved0:1, delivery_status:1,
-			reserved1:3, mask:1, reserved3:15;
+		unsigned vector:8, delivery_mode:3, reserved0:1,
+			delivery_status:1, reserved1:3, mask:1, reserved3:15;
 	} __packed;
 	uint32_t value;
 };
 
 /*
- * LVT entries fields values
+ * APIC registers field values
  */
 
-#define APIC_LVT_MASK	1
-#define APIC_LVT_UNMASK	0
+/* Delivery mode for IPI and LVT entries */
+enum {
+	APIC_DELMOD_FIXED = 0x0,	/* deliver to core in vector field */
+	APIC_DELMOD_LOWPR = 0x1,	/* to lowest cpu among dest cores */
+	APIC_DELMOD_SMI   = 0x2,	/* deliver SMI; vector should be zero */
+	APIC_DELMOD_NMI   = 0x4,	/* deliver NMI; vector ignored */
+	APIC_DELMOD_INIT  = 0x5,	/* IPI INIT; vector should be zero */
+	APIC_DELMOD_START = 0x6,	/* Startup IPI; core starts at 0xVV000 */
+	APIC_DELMOD_ExtINT= 0x7,	/* Get IRQ vector by PIC's INTA cycle */
+};
 
-#define APIC_TM_LEVEL	1	/* Trigger Mode: level */
-#define APIC_TM_EDGE	0	/* Trigger Mode: edge */
+/* IPI destination mode */
+enum {
+	APIC_DESTMOD_PHYSICAL = 0x0,
+	APIC_DESTMOD_LOGICAL  = 0x1,
+};
 
-#define APIC_MT_FIXED	0x0	/* Message Type: fixed */
-#define APIC_MT_SMI	0x2	/* Message Type: SMI; vector = 00 */
-#define APIC_MT_NMI	0x4	/* Message Type: NMI; vector ignored */
-#define APIC_MT_EXTINT	0x7	/* Message Type: external interrupt */
+/* Trigger mode for IPI, LINT0, and LINT1
+ * This's only used when delivery mode == `fixed'.
+ * NMI, SMI, and INIT are always edge-triggered */
+enum {
+	APIC_TRIGGER_EDGE  = 0x0,
+	APIC_TRIGGER_LEVEL = 0x1,
+};
+
+/* LVT entries mask bit */
+enum {
+	APIC_UNMASK = 0x0,
+	APIC_MASK   = 0x1,
+};
 
 /*
  * APIC register accessors
@@ -178,28 +217,13 @@ static inline uint32_t apic_read(uint32_t reg)
 void apic_init(void);
 
 /*
- * Ports for an 8259A-equivalent PIC chip
- */
-#define PIC_MASTER_CMD	0x20
-#define PIC_SLAVE_CMD	0xa0
-#define PIC_MASTER_DATA	0x21
-#define PIC_SLAVE_DATA	0xa1
-#define PIC_CASCADE_IRQ	2
-
-/*
- * Vector numbers for all IRQ types
  * FIXME: meaningless placeholder values set till we have
  * the big picture on assigning vector numbers to IRQs.
  */
 
-#define PIC_IRQ0_VECTOR	240
-#define PIC_IRQ8_VECTOR (PIC_IRQ0_VECTOR + 8)
-
 #define APIC_TIMER_VECTOR   0
 #define APIC_THERMAL_VECTOR 0
 #define APIC_PERFC_VECTOR   0
-
-#define IOAPIC_IRQ0_VECTOR	0x20
 
 #endif /* !__ASSEMBLY__ */
 #endif /* _APIC_H */

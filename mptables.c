@@ -21,6 +21,7 @@
 #include <mptables.h>
 #include <apic.h>
 #include <ioapic.h>
+#include <smpboot.h>
 
 /*
  * Parsed MP configuration table entries data to be exported
@@ -176,6 +177,22 @@ static void mpc_dump(struct mpc_table *mpc)
  * tables again.
  */
 
+static void parse_cpu(void *addr)
+{
+	struct mpc_cpu *cpu = addr;
+
+	if (!cpu->enabled)
+		return;
+
+	if (nr_cpus >= CPUS_MAX)
+		panic("Only %d logical CPU cores supported\n", nr_cpus);
+
+	cpu_descs[nr_cpus].apic_id = cpu->lapic_id;
+	cpu_descs[nr_cpus].bsc = cpu->bsc;
+
+	++nr_cpus;
+}
+
 static void parse_ioapic(void *addr)
 {
 	struct mpc_ioapic *ioapic = addr;
@@ -232,7 +249,8 @@ static int parse_mpc(struct mpc_table *mpc)
 	for (int i = 0; i < mpc->entries; i++) {
 		switch (*entry) {
 		case MP_PROCESSOR:
-			entry += sizeof(struct mpc_processor);
+			parse_cpu(entry);
+			entry += sizeof(struct mpc_cpu);
 			break;
 		case MP_BUS:
 			parse_bus(entry);

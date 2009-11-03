@@ -42,27 +42,27 @@ void apic_init(void)
 	 */
 
 	timer.vector = APIC_TIMER_VECTOR;
-	timer.mask = APIC_LVT_MASK;
+	timer.mask = APIC_MASK;
 	apic_write(APIC_LVTT, timer.value);
 
 	thermal.vector = APIC_THERMAL_VECTOR;
-	thermal.mask = APIC_LVT_MASK;
+	thermal.mask = APIC_MASK;
 	apic_write(APIC_LVTTHER, thermal.value);
 
 	perfc.vector = APIC_PERFC_VECTOR;
-	perfc.mask = APIC_LVT_MASK;
+	perfc.mask = APIC_MASK;
 	apic_write(APIC_LVTPC, perfc.value);
 
 	lint0.vector = 0;
-	lint0.trigger_mode = APIC_TM_EDGE;
-	lint0.message_type = APIC_MT_EXTINT;
-	lint0.mask = APIC_LVT_UNMASK;
+	lint0.trigger = APIC_TRIGGER_EDGE;
+	lint0.delivery_mode = APIC_DELMOD_ExtINT;
+	lint0.mask = APIC_UNMASK;
 	apic_write(APIC_LVT0, lint0.value);
 
 	lint1.vector = 0;
-	lint1.trigger_mode = APIC_TM_EDGE;
-	lint1.message_type = APIC_MT_NMI;
-	lint1.mask = APIC_LVT_UNMASK;
+	lint1.trigger = APIC_TRIGGER_EDGE;
+	lint1.delivery_mode = APIC_DELMOD_NMI;
+	lint1.mask = APIC_UNMASK;
 	apic_write(APIC_LVT1, lint1.value);
 
 	/*

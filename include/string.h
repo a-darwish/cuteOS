@@ -16,7 +16,7 @@ int strlen(const char *str);
 char *strncpy(char *dst, const char *src, int n);
 int strncmp(char *s1, char *s2, int n);
 
-void *memcpy(void *dst, void *src, int len);
+void *memcpy(void *dst, const void *src, int len);
 void *memset(void *dst, int ch, int len);
 
 #endif

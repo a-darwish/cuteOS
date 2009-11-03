@@ -15,7 +15,7 @@
  */
 
 #include <io.h>
-#include <apic.h>
+#include <i8259.h>
 
 /*
  * As said in a linux kernel comment, delay for access to PIC on

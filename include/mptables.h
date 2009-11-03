@@ -68,12 +68,12 @@ struct mpc_table {
  * MP Configuration table entries
  */
 
-struct mpc_processor {
+struct mpc_cpu {
 	uint8_t entry;			/* Entry type (processor) */
 	uint8_t lapic_id;		/* This processor's lapic ID */
 	uint8_t lapic_ver;		/* This proecessor's lapic version */
 	uint8_t enabled:1,		/* Set if this processor is usable */
-		bsp:1,			/* Set for the bootstrap processor */
+		bsc:1,			/* Set for the bootstrap processor */
 		flags_reserved:6;	/* Reserved */
 	uint32_t signature;		/* Signature (stepping, model, family */
 	uint32_t flags;			/* Flags as returned by CPUID */
@@ -123,7 +123,7 @@ struct mpc_linterrupt {
 static inline void mptables_check(void) {
 	assert(sizeof(struct mpf_struct) == 4 * 4);
 	assert(sizeof(struct mpc_table) == 11 * 4);
-	assert(sizeof(struct mpc_processor) == 5 * 4);
+	assert(sizeof(struct mpc_cpu) == 5 * 4);
 	assert(sizeof(struct mpc_bus) == 2 * 4);
 	assert(sizeof(struct mpc_ioapic) == 2 * 4);
 	assert(sizeof(struct mpc_irq) == 2 * 4);
