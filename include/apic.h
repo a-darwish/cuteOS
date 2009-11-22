@@ -64,6 +64,13 @@ static inline void msr_apicbase_enable(void)
  */
 
 #define APIC_ID		0x20	/* APIC ID Register */
+union apic_id {
+	struct {
+		uint32_t reserved:24, id:8;
+	} __packed;
+	uint32_t value;
+};
+
 #define APIC_LVR	0x30	/* APIC Version Register */
 
 #define APIC_TPR	0x80    /* Task Priority Register */
@@ -192,6 +199,27 @@ enum {
 	APIC_TRIGGER_LEVEL = 0x1,
 };
 
+/* Destination shorthands for IPIs
+ * When in use, writing the ICR low-word is enough */
+enum {
+	APIC_DEST_SHORTHAND_NONE = 0x0,
+	APIC_DEST_SHORTHAND_SELF = 0x1,
+	APIC_DEST_SHORTHAND_ALL_AND_SELF = 0x2,
+	APIC_DEST_SHORTHAND_ALL_BUT_SELF = 0x3,
+};
+
+/* Intereupt level for IPIs */
+enum {
+	APIC_LEVEL_DEASSERT = 0x0,	/* 82489DX Obsolete. _Never_ use */
+	APIC_LEVEL_ASSERT   = 0x1,	/* Always use assert */
+};
+
+/* Delivery status for IPI and LVT entries */
+enum {
+	APIC_DELSTATE_IDLE    = 0,	/* No IPI action, or last IPI acked */
+	APIC_DELSTATE_PENDING = 1,	/* Last IPI not yet acked */
+};
+
 /* LVT entries mask bit */
 enum {
 	APIC_UNMASK = 0x0,
@@ -215,6 +243,7 @@ static inline uint32_t apic_read(uint32_t reg)
 }
 
 void apic_init(void);
+int apic_ipi_acked(void);
 
 /*
  * FIXME: meaningless placeholder values set till we have

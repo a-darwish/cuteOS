@@ -57,22 +57,22 @@ startup_32:
 
 	/* Zero the entire init pagetables area */
 	xorl   %eax, %eax
-	movl   $init_pgt, %edi
-	movl   $(INITPGT_AREA / 4), %ecx
+	movl   $init_pml4, %edi
+	movl   $((init_pgt_end - init_pml4) / 4), %ecx
 	rep    stosl
 
 	/* pml4 entry: P = R/W = U/S = 1 PDP base = pml4 + 0x1000 */
-	movl   $(init_pgt + 0x1007), init_pgt
+	movl   $(init_pdp + 0x007), init_pml4
 
 	/* pdp entry: P = R/W = U/S = 1 PD base = pml4 + 0x2000 */
-	movl   $(init_pgt + 0x2007), (init_pgt + 0x1000)
+	movl   $(init_pd + 0x007), init_pdp
 
 	/* pd entry: P = R/W = 1, U/S = 0, 2MB page flag: bit7 = 1,
 	 * page base = 0x0 */
-	movl   $0x083, (init_pgt + 0x2000)
+	movl   $0x083, init_pd
 
 	/* Final step: store PML4 base adderss */
-	movl   $init_pgt, %eax
+	movl   $init_pml4, %eax
 	movl   %eax, %cr3
 
 	/* Enable long mode */
@@ -147,7 +147,7 @@ startup_64:
 	/*
 	 * We already have the first physical 2MBs identity mapped;
 	 * setup page tables for running the kernel beginning from
-	 * virtual address 0xffff80100000.
+	 * higher half virtual address 0xffff80100000.
 	 *
 	 * Map the 768M 0xffff80000000-0xffffb0000000 region to
 	 * to physical addresses 0x0000-0x30000000 using 2MB pages.
@@ -155,20 +155,18 @@ startup_64:
 
 	/* pml4 entry. We only need one entry for 0b111111111, which
 	 * will be typically located at the very end of the table.
-	 * P = R/W = U/S = 1 as usual. For PDP base, we use the same
-	 * PDP table we used for identity mapping */
-	movq   $(init_pgt + 0x1007), (init_pgt + 511 * 8)
+	 * P = R/W = U/S = 1 as usual. */
+	movq   $(init_pdp + 0x007), (init_pml4 + 511 * 8)
 
 	/* pdp entry. We also only need a single entry for 0b111111110
-	 * which is one entry before the end of PDP. P = R/W = U/S = 1
-	 * PD base for the entry is a new table */
-	movq   $(init_pgt + 0x3007), (init_pgt + 0x1000 + 510 * 8)
+	 * which is one entry before the end of PDP. P = R/W = U/S = 1 */
+	movq   $(init_pd + 0x007), (init_pdp + 510 * 8)
 
 	/* OK, now we setup the new PD table that is going to do all
 	 * the work. We map entry 0 to page 0, entry 1 to page 1 and
 	 * so on till the end of the table. P = R/W = 1, U/S = 0,
 	 * bit7 (2MB page flage) = 1 */
-	movq   $(init_pgt + 0x3000), %rbx
+	movq   $(init_pd), %rbx
 	xorq   %rcx, %rcx		# first page num = 0x0
 1:	movq   %rcx, %rax
 	shl    $21, %rax		# page address = page-num<<21
@@ -176,11 +174,11 @@ startup_64:
 	movq   %rax, (%rbx)
 	addq   $8, %rbx			# next PDE
 	incq   %rcx			# next page
-	cmpq   $(init_pgt + 0x4000), %rbx
+	cmpq   $(init_pd + PAGE_SIZE), %rbx
 	jne    1b
 
 	/* Done; apply the page tables */
-	movq   $init_pgt, %rax
+	movq   $init_pml4, %rax
 	movq   %rax, %cr3
 
 	/* Run using high half virtual addresses from now on */
@@ -197,16 +195,14 @@ startup_64:
 	jmpq   *%rax
 
 /*
- * Map the local and i/o apic registers i/o mapped at
- * *_phbase to the top 4MB of the address space. Add a 0x1FF
- * entry to the init_pgt+0x1000 PDP table pointing to the
- * APIC Page Directory apic_pd, which has a 0x1FF entry
- * pointing to the local apic base, and an 0x1FE entry for
- * i/o apic base. Apic space must be strong uncacheable (UC)
+ * Map local and i/o apic registers i/o mapped at *_phbase
+ * to the top 4MB of the address space. Add a 0x1FF entry
+ * to the init PDP table pointing to the special APIC Page
+ * Directory. Apic space must be strong uncacheable (UC).
  */
 .type map_apic, @function
 map_apic:
-	movq   $(apic_pd + 0x007), (init_pgt + 0x1000 + 511 * 8)
+	movq   $(apic_pd + 0x007), (init_pdp + 511 * 8)
 	movl   $(APIC_PHBASE + 0x09b), (apic_pd + 511 * 8)
 	movl   $(IOAPIC_PHBASE + 0x09b), (apic_pd + 510 * 8)
 	ret
@@ -223,9 +219,8 @@ map_apic:
  */
 .type zap_identity, @function
 zap_identity:
-	movq   $0, VIRTUAL(init_pgt)
-	movq   $0, (VIRTUAL(init_pgt) + 0x1000)
-	movq   $0, (VIRTUAL(init_pgt) + 0x2000)
+	movq   $0, VIRTUAL(init_pml4)
+	movq   $0, (VIRTUAL(init_pdp))
 	ret
 
 .data
@@ -285,16 +280,26 @@ stack_end:
 /*
  * Boot Page tables
  */
-.balign 4096
-	.equ   PAGE_SIZE, 4096
-	.equ   INITPGT_PGCNT, 4
-	.equ   INITPGT_AREA, INITPGT_PGCNT * PAGE_SIZE
-init_pgt:
-	.skip  INITPGT_AREA
+	.equ   PAGE_SIZE, 0x1000
+
+.balign PAGE_SIZE
+init_pml4:
+	.skip  PAGE_SIZE
+
+init_pdp:
+	.skip  PAGE_SIZE
+
+/* Page Directory of one-to-one mappings
+ * between entry number and physical pages */
+.globl init_pd
+init_pd:
+	.skip  PAGE_SIZE
+
+init_pgt_end:
 
 /*
  * APIC mappings Page Directory
  */
-.balign 4096
+.balign PAGE_SIZE
 apic_pd:
 	.skip  PAGE_SIZE

@@ -12,6 +12,7 @@
 #include <segment.h>
 #include <msr.h>
 #include <apic.h>
+#include <pit.h>
 
 /*
  * Local APIC
@@ -77,4 +78,29 @@ void apic_init(void)
 
 	printk("APIC: bootstrap core lapic enabled, apic_id=0x%x\n",
 	       apic_read(APIC_ID));
+}
+
+/*
+ * Poll the delivery status bit till the latest IPI is acked
+ * by the destination core, or timeout. As advised by Intel,
+ * this should be checked after sending each IPI.
+ *
+ * Return 1 in case of delivery success, else return 0
+ * FIXME: fine-grained timeouts using micro-seconds.
+ */
+int apic_ipi_acked(void)
+{
+	union apic_icr icr = { .value = 0 };
+	int timeout = 100;
+
+	while (timeout--) {
+		icr.value_low = apic_read(APIC_ICRL);
+
+		if (icr.delivery_status == APIC_DELSTATE_IDLE)
+			break;
+
+		mdelay(1);
+	}
+
+	return timeout;
 }

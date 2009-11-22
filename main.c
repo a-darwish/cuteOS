@@ -52,6 +52,9 @@ void print_sections(void)
 	printk("BSS size   = %d bytes\n\n", __bss_end - __bss_start);
 }
 
+/*
+ * Bootstrap core start
+ */
 void kernel_start(void)
 {
 	/* Before anything else */

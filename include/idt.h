@@ -81,7 +81,20 @@ static inline void set_intr_gate(unsigned int n, void *addr)
 
 static inline void load_idt(const struct idt_descriptor *idt_desc)
 {
-	asm("lidt %0"::"m"(*idt_desc));
+	asm volatile("lidt %0"
+		     :
+		     :"m"(*idt_desc));
+}
+
+static inline struct idt_descriptor get_idt(void)
+{
+	struct idt_descriptor idt_desc;
+
+	asm volatile("sidt %0"
+		     :"=m"(idt_desc)
+		     :);
+
+	return idt_desc;
 }
 
 #endif /* !__ASSEMBLY__ */

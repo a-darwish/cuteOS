@@ -38,6 +38,8 @@ enum {
 	(void) (&_m1 == &_m2);	    \
 	_m1 < _m2 ? _m1 : _m2; })
 
+#define offsetof(type, elem)	((uint64_t) &((type *) 0)->elem)
+
 /*
  * Main kernel print methods
  */

@@ -105,7 +105,7 @@ void mdelay(int ms)
 	cmd.counter = 2;
 	outb(cmd.raw, PIT_CONTROL);
 
-	/* 1 / (ms / 1000); */
+	/* freq = 1 / (ms / 1000); */
 	frequency = 1000 / ms;
 	divisor = PIT_CLOCK_RATE / frequency;
 

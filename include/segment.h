@@ -16,11 +16,10 @@
 
 #define VIRTUAL_START     (0xffffffff80000000)
 
-#ifdef __ASSEMBLY__
+#ifndef __ASSEMBLY__
 
-#define VIRTUAL(address)  ((address) + VIRTUAL_START)
-
-#else
+#include <kernel.h>
+#include <stdint.h>
 
 /* We need a char* cast in case someone gave us an int or long
  * pointer that can mess up the whole summation/transformation */
@@ -31,7 +30,51 @@
  * ad-hoc mappings soon */
 #define PHYS_MAX	0x30000000
 
+struct gdt_descriptor {
+	uint16_t limit;
+	uint64_t base;
+} __packed;
+
+static inline void load_gdt(const struct gdt_descriptor *gdt_desc)
+{
+	asm volatile("lgdt %0"
+		     :
+		     :"m"(*gdt_desc));
+}
+
+static inline struct gdt_descriptor get_gdt(void)
+{
+	struct gdt_descriptor gdt_desc;
+
+	asm volatile("sgdt %0"
+		     :"=m"(gdt_desc)
+		     :);
+
+	return gdt_desc;
+}
+
+static inline void load_cr3(uint64_t cr3)
+{
+	asm volatile("mov %0, %%cr3"
+		     :
+		     :"a"(cr3));
+}
+
+static inline uint64_t get_cr3(void)
+{
+	uint64_t cr3;
+
+	asm volatile("mov %%cr3, %0"
+		     :"=a"(cr3)
+		     :);
+
+	return cr3;
+}
+
+#else
+
+#define VIRTUAL(address)  ((address) + VIRTUAL_START)
+
 #endif /* !__ASSEMBLY__ */
 
 #endif
-
