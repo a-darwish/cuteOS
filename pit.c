@@ -110,7 +110,7 @@ void mdelay(int ms)
 	divisor = PIT_CLOCK_RATE / frequency;
 
 	assert(divisor <= UINT16_MAX);
-	div_low = divisor && 0xff;
+	div_low = divisor & 0xff;
 	div_high = divisor >> 8;
 
 	outb(div_low, PIT_TIMER2);
