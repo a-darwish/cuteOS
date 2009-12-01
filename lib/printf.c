@@ -12,6 +12,7 @@
 #include <stdarg.h>			/* provided by GCC */
 #include <string.h>
 #include <segment.h>
+#include <spinlock.h>
 
 /*
  * The casts from (char *) to (unsigned short *) looks
@@ -230,11 +231,14 @@ int vsnprintf(char *buf, int size, const char *fmt, va_list args)
 #define VGA_MAXCOLS 80
 #define VGA_COLOR   0x0f
 #define VGA_AREA    (VGA_MAXROWS * VGA_MAXCOLS * 2)
+
+static spinlock_t vga_lock = SPIN_UNLOCKED();
 static int vga_xpos, vga_ypos;
 static char vga_buffer[VGA_AREA];
 
 /*
  * Scroll the screen up by one row.
+ * NOTE! only call while the vga lock is held
  */
 static void vga_scrollup(void) {
 	char *src = vga_buffer + 2*VGA_MAXCOLS;
@@ -260,9 +264,12 @@ static void vga_write(char *buf, int n)
 {
 	int max_xpos = VGA_MAXCOLS;
 	int max_ypos = VGA_MAXROWS;
-	int old_xpos = vga_xpos;
-	int old_ypos = vga_ypos;
+	int old_xpos, old_ypos;
 	int area, offset;
+
+	spin_lock(&vga_lock);
+	old_xpos = vga_xpos;
+	old_ypos = vga_ypos;
 
 	while (*buf && n--) {
 		if (vga_ypos == max_ypos) {
@@ -288,6 +295,7 @@ static void vga_write(char *buf, int n)
 	offset = 2*(old_ypos * max_xpos + old_xpos);
 	area = 2*((vga_ypos - old_ypos) * max_xpos + vga_xpos);
 	memcpy(VGA_BASE + offset, vga_buffer + offset, area);
+	spin_unlock(&vga_lock);
 }
 
 /*
