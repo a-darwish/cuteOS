@@ -12,13 +12,21 @@
  */
 
 #include <stdint.h>
+#include <x86.h>
 
 typedef int32_t spinlock_t;
 
 #define SPIN_UNLOCKED()		((spinlock_t) 1)
 
-void spin_init(spinlock_t *lock);
-void spin_lock(spinlock_t *lock);
-void spin_unlock(spinlock_t *lock);
+static inline void spin_init(spinlock_t *lock)
+{
+	*lock = 1;
+}
+
+extern inline void spin_lock(spinlock_t *lock);
+extern inline void spin_unlock(spinlock_t *lock);
+
+union x86_rflags spin_lock_irqsave(spinlock_t *lock);
+void spin_unlock_irqrestore(spinlock_t *lock, union x86_rflags flags);
 
 #endif /* _SPINLOCK_H */

@@ -262,12 +262,15 @@ static void vga_scrollup(void) {
  */
 static void vga_write(char *buf, int n)
 {
+	union x86_rflags flags;
 	int max_xpos = VGA_MAXCOLS;
 	int max_ypos = VGA_MAXROWS;
 	int old_xpos, old_ypos;
 	int area, offset;
 
-	spin_lock(&vga_lock);
+	/* We may get called from irq context */
+	flags = spin_lock_irqsave(&vga_lock);
+
 	old_xpos = vga_xpos;
 	old_ypos = vga_ypos;
 
@@ -295,7 +298,7 @@ static void vga_write(char *buf, int n)
 	offset = 2*(old_ypos * max_xpos + old_xpos);
 	area = 2*((vga_ypos - old_ypos) * max_xpos + vga_xpos);
 	memcpy(VGA_BASE + offset, vga_buffer + offset, area);
-	spin_unlock(&vga_lock);
+	spin_unlock_irqrestore(&vga_lock, flags);
 }
 
 /*

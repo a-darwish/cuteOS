@@ -25,12 +25,10 @@
  * from simultaneously modifying data in that area (cache line).
  */
 
+#include <stdint.h>
 #include <spinlock.h>
-
-void spin_init(spinlock_t *lock)
-{
-	*lock = 1;
-}
+#include <idt.h>
+#include <x86.h>
 
 /*
  * Always try to acquire (decrement) the lock while LOCK# is asserted.
@@ -44,6 +42,9 @@ void spin_init(spinlock_t *lock)
  * loops: it serves as a hint to the CPU to avoid memory order
  * violations and to reduce power usage in the busy loop state. It's
  * an agnostic REP NOP for older cores.
+ *
+ * NOTE! To avoid deadlocks, do not use this in any code that may get
+ * invoked in an irq context, see spin_lock_irqsave().
  */
 void spin_lock(spinlock_t *lock)
 {
@@ -75,4 +76,40 @@ void spin_unlock(spinlock_t *lock)
 		: "=m"(*lock)
 		:
 		: "memory");
+}
+
+/*
+ * Spinlocks for code which can be called in irq handlers.
+ *
+ * Using regular spinlocks, it's possible to interrupt the very core
+ * holding the lock: the irq handler will busy-loop waiting for the
+ * core to release the lock, but the core is already interrupted and
+ * can't release the lock till the irq handler finishes [deadlock].
+ *
+ * Disabling local interrupts before holding the lock is enough: it's
+ * ok if another core's interrupt handler tries to acquire the lock.
+ *
+ * FIXME: Performance: if irqs are enabled in %rflags, we should re-
+ * enable them temporarily while spinning.
+ */
+union x86_rflags spin_lock_irqsave(spinlock_t *lock)
+{
+	union x86_rflags flags;
+
+	flags = get_rflags();
+	if (flags.irqs_enabled)
+		local_irq_disable();
+
+	spin_lock(lock);
+
+	return flags;
+}
+
+/*
+ * Restore irqs state after lock release.
+ */
+void spin_unlock_irqrestore(spinlock_t *lock, union x86_rflags flags)
+{
+	spin_unlock(lock);
+	set_rflags(flags);
 }

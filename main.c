@@ -78,7 +78,7 @@ void kernel_start(void)
 
 	smpboot_init();
 
-	asm volatile ("sti");
+	local_irq_enable();
 
 	while (true)
 		asm volatile ("hlt");

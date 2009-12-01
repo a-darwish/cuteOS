@@ -97,6 +97,20 @@ static inline struct idt_descriptor get_idt(void)
 	return idt_desc;
 }
 
+static inline void local_irq_disable(void)
+{
+	asm volatile ("cli"
+		      ::
+		      :"memory");
+}
+
+static inline void local_irq_enable(void)
+{
+	asm volatile ("sti"
+		      ::
+		      :"memory");
+}
+
 #endif /* !__ASSEMBLY__ */
 
 #endif
