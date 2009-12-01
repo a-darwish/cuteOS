@@ -22,7 +22,7 @@ LIB_OBJS = lib/string.o lib/printf.o
 # handle it differently
 KERN_OBJS = head.o common.o main.o idt.o i8259.o apic.o \
             ioapic.o mptables.o keyboard.o smpboot.o \
-            pit.o trampoline.o $(LIB_OBJS)
+            pit.o trampoline.o spinlock.o $(LIB_OBJS)
 OBJS = bootsect.o $(KERN_OBJS)
 
 # Control output verbosity
