@@ -30,6 +30,7 @@
 #include <kernel.h>
 #include <apic.h>
 #include <mptables.h>
+#include <mmio.h>
 
 /*
  * System-wide I/O APIC descriptors for each I/O APIC reported
@@ -104,20 +105,20 @@ static inline uintptr_t ioapic_base(int apic)
 
 static inline uint32_t ioapic_read(int apic, uint8_t reg)
 {
-	volatile uint32_t *ioregsel = (uint32_t *)ioapic_base(apic);
-	volatile uint32_t *iowin = (uint32_t *)(ioapic_base(apic) + 0x10);
+	uint32_t *ioregsel = (uint32_t *)ioapic_base(apic);
+	uint32_t *iowin = (uint32_t *)(ioapic_base(apic) + 0x10);
 
-	*ioregsel = reg;
-	return *iowin;
+	writel(reg, ioregsel);
+	return readl(iowin);
 }
 
 static inline void ioapic_write(int apic, uint8_t reg, uint32_t value)
 {
-	volatile uint32_t *ioregsel = (uint32_t *)ioapic_base(apic);
-	volatile uint32_t *iowin = (uint32_t *)(ioapic_base(apic) + 0x10);
+	uint32_t *ioregsel = (uint32_t *)ioapic_base(apic);
+	uint32_t *iowin = (uint32_t *)(ioapic_base(apic) + 0x10);
 
-	*ioregsel = reg;
-	*iowin = value;
+	writel(reg, ioregsel);
+	writel(value, iowin);
 }
 
 #define IOAPIC_REDTBL0	0x10

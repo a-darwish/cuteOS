@@ -13,17 +13,7 @@
 #include <string.h>
 #include <segment.h>
 #include <spinlock.h>
-
-/*
- * The casts from (char *) to (unsigned short *) looks
- * ugly; this should do the trick. Maybe we should
- * implement this as an x86 'movw' someday.
- */
-static void writew(unsigned short val, void *addr)
-{
-	unsigned short *p = addr;
-	*p = val;
-}
+#include <mmio.h>
 
 /*
  * Convert given unsigned long integer (@num) to ascii using
