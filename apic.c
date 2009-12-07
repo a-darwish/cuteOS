@@ -99,7 +99,7 @@ int apic_ipi_acked(void)
 		if (icr.delivery_status == APIC_DELSTATE_IDLE)
 			break;
 
-		mdelay(1);
+		pit_mdelay(1);
 	}
 
 	return timeout;

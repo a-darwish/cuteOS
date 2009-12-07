@@ -1,9 +1,9 @@
 #ifndef _PIT_H
 #define _PIT_H
 
-/*
- * Delay/busy-loop for @ms milliseconds using PIT.
- */
-void mdelay(int ms);
+#include <stdint.h>
+
+void pit_mdelay(int ms);
+uint64_t pit_calibrate_cpu(int repeat);
 
 #endif /* _PIT_H */

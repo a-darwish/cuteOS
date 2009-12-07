@@ -8,24 +8,45 @@
  *  the Free Software Foundation, version 2.
  *
  * Check Intel's "82C54 CHMOS Programmable Interval Timer" datasheet
- * for more details
+ * for more details.
+ *
+ * In a PC compatible machine, port 0x61 bit 0 controls the PIT's GATE
+ * 2: the gate input pin of counter 2. Bit 5 is the OUT 2 pin: the output
+ * pin of counter 2. Bit 1 is an input pin to a glue AND logic with the
+ * OUT 2 pin, outputting counter 2 ticks to the system speaker if set.
+ *
+ * The 0x61 port is output port B of the 8255 peripheral interface chip.
+ * Ofcourse all of this is just emulated in the mobo southbridge.
+ *
+ * Delays are tested against wall clock time.
  */
 
 #include <kernel.h>
 #include <stdint.h>
 #include <io.h>
+#include <tsc.h>
 
-#define PIT_CLOCK_RATE	1193182ul	/* Hz */
+#define PIT_CLOCK_RATE	1193182ul	/* Hz (ticks per second) */
 
 /*
- * The PIT's system interface: an array of peripheral
- * I/O ports.
+ * PIT-related port 0x61 bits
  */
 enum {
-	PIT_TIMER0  =	0x40,		/* Timer 0 counter latch */
-	PIT_TIMER1  =	0x41,		/* Timer 1 counter latch */
-	PIT_TIMER2  =	0x42,		/* Timer 2 counter latch */
-	PIT_CONTROL =	0x43,		/* Chip's Control Word (modes + cmds) */
+	PIT_GATE2   = 0x1,		/* PIT's GATE 2 pin */
+	PIT_SPEAKER = 0x2,		/* Speaker enabled? */
+	PIT_OUT2    = 0x20,		/* PIT's Counter 2 output pin */
+};
+
+/*
+ * The PIT's system interface: an array of peripheral I/O ports.
+ * The peripherals chip translates accessing below ports to the
+ * right PIT's A0 and A1 address pins, and RD/WR combinations.
+ */
+enum {
+	PIT_COUNTER0 =	0x40,		/* read/write Counter 0 latch */
+	PIT_COUNTER1 =	0x41,		/* read/write Counter 1 latch */
+	PIT_COUNTER2 =	0x42,		/* read/write Counter 2 latch */
+	PIT_CONTROL  =	0x43,		/* read/write Chip's Control Word */
 };
 
 /*
@@ -34,10 +55,10 @@ enum {
 union pit_cmd {
 	uint8_t raw;
 	struct {
-		uint8_t bcd:1,		/* 0: binary counter 16-bits */
+		uint8_t bcd:1,		/* BCD format for counter divisor? */
 			mode:3,		/* Counter modes 0 to 5 */
-			rw:2,		/* Read/Write: latch, LSB, MSB, 16-bit */
-			counter:2;	/* Which counter of the three */
+			rw:2,		/* Read/Write latch, LSB, MSB, or 16-bit */
+			counter:2;	/* Which counter of the three (0-2) */
 	} __packed;
 };
 
@@ -55,47 +76,46 @@ enum {
  * Counters modes
  */
 enum {
-	MODE_0 =	0x0,		/* Interrupt on terminal count */
+	MODE_0 =	0x0,		/* Single interrupt on timeout */
 	MODE_1 =	0x1,		/* Hardware retriggerable one shot */
 	MODE_2 =	0x2,		/* Rate generator */
 	MODE_3 =	0x3,		/* Square-wave mode */
 };
 
 /*
- * Raise the PIT's GATE 2 input pin to enable timer2 counting.
- *
- * Port 0x61 - which was originally output port B of the i8255
- * periphal interface chip - bit0 controls GATE2. We'll also
- * clear bit 1, the glue between timer2 output and the speaker.
+ * Start timer 2 counter: raise the PIT's GATE 2 input pin.
+ * Disable the glue between timer2 output and the speaker in
+ * the process.
  */
-static void timer2_start(void)
+static inline void timer2_start(void)
 {
-	uint8_t port;
+	uint8_t val;
 
-	port = (inb(0x61) & ~0x02) | 0x01;
-	outb(port, 0x61);
+	val = (inb(0x61) | PIT_GATE2) & ~PIT_SPEAKER;
+	outb(val, 0x61);
 }
 
 /*
- * Stop the PIT's timer2 by clearing the GATE2 pin.
+ * Freeze timer 2 counter by clearing the GATE2 pin.
  */
-static void timer2_stop(void)
+static inline void timer2_stop(void)
 {
-	uint8_t port;
+	uint8_t val;
 
-	port = inb(0x61) & 0xfe;
-	outb(port, 0x61);
+	val = inb(0x61) & ~PIT_GATE2;
+	outb(val, 0x61);
 }
 
 /*
- * Delay/busy-loop for @ms milliseconds using PIT. Port
- * 0x61 bit 5 will be set as soon as timer2 overflows.
+ * Delay/busy-loop for @ms milliseconds.
+ * Due to default oscillation frequency and the max counter
+ * size of 16 bits, maximum delay is around 53 milliseconds.
  */
-void mdelay(int ms)
+void pit_mdelay(int ms)
 {
 	union pit_cmd cmd = { .raw = 0 };
-	uint32_t frequency, divisor;
-	uint8_t div_low, div_high;
+	uint32_t counter;
+	uint8_t counter_low, counter_high;
 
 	timer2_stop();
 
@@ -105,18 +125,56 @@ void mdelay(int ms)
 	cmd.counter = 2;
 	outb(cmd.raw, PIT_CONTROL);
 
-	/* freq = 1 / (ms / 1000); */
-	frequency = 1000 / ms;
-	divisor = PIT_CLOCK_RATE / frequency;
+	/* counter = ticks per second * seconds to delay
+	 * counter = PIT_CLOCK_RATE * (ms / 1000)
+	 * We use division to avoid float arithmetic */
+	counter = PIT_CLOCK_RATE / (1000 / ms);
 
-	assert(divisor <= UINT16_MAX);
-	div_low = divisor & 0xff;
-	div_high = divisor >> 8;
+	assert(counter <= UINT16_MAX);
+	counter_low = counter & 0xff;
+	counter_high = counter >> 8;
 
-	outb(div_low, PIT_TIMER2);
-	outb(div_high, PIT_TIMER2);
+	outb(counter_low, PIT_COUNTER2);
+	outb(counter_high, PIT_COUNTER2);
 
 	timer2_start();
 
-	while ((inb(0x61) & 0x20) == 0);
+	while ((inb(0x61) & PIT_OUT2) == 0)
+		asm ("pause");
+}
+
+/*
+ * Calculate the processor clock using the PIT and the time-
+ * stamp counter: it's increased by one for each clock cycle.
+ *
+ * There's a possibility of being hit by a massive SMI, we
+ * repeat the calibration to hope this wasn't the case. Some
+ * SMI handlers can take many milliseconds to complete!
+ *
+ * FIXME: For Intel core2duo cpus and up, ask the architect-
+ * ural event monitoring interface to calculate cpu clock.
+ *
+ * Return cpu clock ticks per second.
+ */
+uint64_t pit_calibrate_cpu(int repeat)
+{
+	uint64_t tsc1, tsc2, diff, diff_min, cpu_clock;
+	int ms_delay;
+
+	ms_delay = 5;
+	diff_min = UINT64_MAX;
+	for (int i = 0; i < repeat; i ++) {
+		tsc1 = read_tsc();
+		pit_mdelay(ms_delay);
+		tsc2 = read_tsc();
+
+		diff = tsc2 - tsc1;
+		if (diff < diff_min)
+			diff_min = diff;
+	}
+
+	/* cpu ticks per 1 second =
+	 * ticks per delay * (1 / delay in seconds) */
+	cpu_clock = diff_min * (1000 / ms_delay);
+	return cpu_clock;
 }

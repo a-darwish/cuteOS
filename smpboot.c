@@ -117,7 +117,7 @@ static int start_secondary_cpus(void)
 
 		timeout = 1000;
 		while (timeout-- && count == nr_alive_cpus)
-			mdelay(1);
+			pit_mdelay(1);
 
 		if (!timeout) {
 			printk("SMP: Timeout waiting for AP core\n");
@@ -173,7 +173,7 @@ void smpboot_init(void)
 	if (!res)
 		panic("Couldn't deliver broadcast INIT IPI\n");
 
-	mdelay(10);
+	pit_mdelay(10);
 
 	/* Send the double SIPI sequence */
 	res = start_secondary_cpus();

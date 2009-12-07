@@ -21,8 +21,9 @@
  * "asm volatile" where gcc won't optimize it away.
  *
  * GCC manual notes that "even a volatile asm instruction can be moved
- * relative to other code, including across jump instructions." To avoid
- * this, we add a volatile data dependency to the asm instruction.
+ * relative to other code, including across jump instructions": another
+ * reason to use the barrier. Parameters are casted to volatile to assert
+ * it's safe to pass a pointer to a volatile object to those accessors.
  *
  * Finally, using those accessors won't clutter the top codebase with
  * volatiles, and will make it explicit we're accessing MMIO.

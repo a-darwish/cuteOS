@@ -13,6 +13,7 @@
 #include <idt.h>
 #include <mptables.h>
 #include <i8259.h>
+#include <pit.h>
 #include <apic.h>
 #include <ioapic.h>
 #include <keyboard.h>
@@ -37,8 +38,12 @@ void clear_bss(void)
 	memset(__bss_start , 0, __bss_end - __bss_start);
 }
 
-void print_sections(void)
+void print_info(void)
 {
+	uint64_t clock;
+
+	printk("Cute 0.0\n\n");
+
 	printk("Text start = 0x%lx\n", __text_start);
 	printk("Text end   = 0x%lx\n", __text_end);
 	printk("Text size  = %d bytes\n\n", __text_end - __text_start);
@@ -50,6 +55,10 @@ void print_sections(void)
 	printk("BSS start  = 0x%lx\n", __bss_start);
 	printk("BSS end    = 0x%lx\n", __bss_end);
 	printk("BSS size   = %d bytes\n\n", __bss_end - __bss_start);
+
+	clock = pit_calibrate_cpu(10);
+	printk("Detected %d.%d MHz processor\n\n", clock / 1000000,
+	       (uint8_t)(clock % 1000000));
 }
 
 /*
@@ -62,9 +71,7 @@ void kernel_start(void)
 
 	setup_idt();
 
-	printk("Cute 0.0\n\n");
-
-	print_sections();
+	print_info();
 
 	/* Parse the MP tables for needed IRQs data
 	 * before initializing the APICs */
