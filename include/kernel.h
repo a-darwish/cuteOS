@@ -16,9 +16,9 @@
 /*
  * C99
  */
-#define NULL ((void *)0)
+#define NULL	((void *)0)
 enum {
-	true = 1,
+	true  = 1,
 	false = 0,
 };
 
@@ -28,6 +28,9 @@ enum {
 #define __packed	__attribute__((packed))
 #define __unused	__attribute__((__unused__))
 #define __used		__attribute__((__used__))
+
+/* Suppress GCC's "var used uninitialized" */
+#define __uninitialized(x)	x = x
 
 /*
  * Semi type-safe min macro using GNU extensions

@@ -63,7 +63,7 @@ int strncmp(char *s1, char *s2, int n)
  */
 void *memcpy(void *dst, void *src, int len)
 {
-	int tmp;
+	int __uninitialized(tmp);
 	uintptr_t d0;
 
 	asm volatile (
@@ -86,7 +86,7 @@ void *memcpy(void *dst, void *src, int len)
  */
 void *memset(void *dst, int ch, int len)
 {
-	uint64_t tmp;
+	uint64_t __uninitialized(tmp);
 	uint64_t uch = ch;
 	uint64_t ulen = len;
 	uintptr_t d0;
