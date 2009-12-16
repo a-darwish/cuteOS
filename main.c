@@ -18,6 +18,7 @@
 #include <ioapic.h>
 #include <keyboard.h>
 #include <smpboot.h>
+#include <e820.h>
 
 void setup_idt(void)
 {
@@ -84,6 +85,8 @@ void kernel_start(void)
 	keyboard_init();
 
 	smpboot_init();
+
+	mmap_init();
 
 	local_irq_enable();
 

@@ -26,16 +26,20 @@ SECTIONS
 
 	.text.head : {
 	      head.o(.text)
+	      e820.o(.text)
 	}
 
 	.data.head : {
 	      head.o(.data)
+	      e820.o(.data)
 	      head.o(.rodata)
+	      e820.o(.rodata)
 	}
 
 	__headbss_start = .;
 	.bss.head (NOLOAD) : {
 	      head.o(.bss)
+	      e820.o(.bss)
 	}
 
 	/* High virtual-area mapped kernel code and data start */
@@ -47,20 +51,20 @@ SECTIONS
 	 * phys_start to let head.S use its bss section freely */
 	.text virt_start : AT(__headbss_start) {
 	       __text_start = .;
-	       *(EXCLUDE_FILE (*head.o) .text)
+	       *(EXCLUDE_FILE (*head.o *e820.o) .text)
 	       __text_end = .;
 	}
 
 	.data : {
 	       __data_start = .;
-	       *(EXCLUDE_FILE (*head.o) .data)
-	       *(EXCLUDE_FILE (*head.o) .rodata)
+	       *(EXCLUDE_FILE (*head.o *e820.o) .data)
+	       *(EXCLUDE_FILE (*head.o *e820.o) .rodata)
 	       __data_end = .;
         }
 
 	.bss : {
 		__bss_start = .;
-	       *(EXCLUDE_FILE (*head.o) .bss)
+	       *(EXCLUDE_FILE (*head.o *e820.o) .bss)
 		__bss_end = .;
 	}
 

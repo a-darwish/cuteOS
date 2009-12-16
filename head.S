@@ -35,6 +35,10 @@ startup_32:
 	testl  %eax, %eax
 	jz     no_longmode
 
+	/* Get what we need from real-mode BIOS services
+	 * before switching to long mode */
+	call   e820
+
 	/*
 	 *  Long mode initialization
 	 */

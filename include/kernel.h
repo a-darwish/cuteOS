@@ -40,6 +40,8 @@ enum {
 
 #define offsetof(type, elem)	((uint64_t) &((type *) 0)->elem)
 
+#define ARRAY_SIZE(array)	(sizeof(array) / sizeof(array[0]))
+
 /*
  * Main kernel print methods
  */

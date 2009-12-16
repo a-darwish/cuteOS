@@ -159,13 +159,10 @@ same_segment:
 	 * instruction information is no longer valid. A JMP forces
 	 * the processor to discard the invalid information.
 	 *
-	 * Note that a short jump to a code32 block won't work. It's
-	 * either a short jump to a code16 block, or a long jump to
-	 * code32 block where the %cs selector is updated. A short jump
-	 * is ideal cause it's the same in real mode and 16-bit
-	 * protected mode. It's also the suggested method in Intel
-	 * documents. Thanks to bcos@#osdev for this valuable 'short
-	 * jump' info */
+	 * Note that a short jump to a code32 block won't work. We
+	 * either continue running in 16-bit potected mode by a short
+	 * jump to a code16 block, or move to 32-bit pmode by a long
+	 * jump to a code32 block where %cs segment cache is updated */
 	jmp    flush_prefetch
 
 flush_prefetch:
