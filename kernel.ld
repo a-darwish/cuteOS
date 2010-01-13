@@ -44,7 +44,7 @@ SECTIONS
 
 	/* High virtual-area mapped kernel code and data start */
 	__phys_start = .;
-	PROVIDE(virt_start = __phys_start + 0xffffffff80000000);
+	PROVIDE_HIDDEN(virt_start = __phys_start + 0xffffffff80000000);
 
 	/* We override the head.o bss section to save executable
 	 * size. On the very start, we'll move the code away to
@@ -65,6 +65,7 @@ SECTIONS
 	.bss : {
 		__bss_start = .;
 	       *(EXCLUDE_FILE (*head.o *e820.o) .bss)
+	       *(EXCLUDE_FILE (*head.o *e820.o) COMMON)
 		__bss_end = .;
 	}
 

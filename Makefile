@@ -12,6 +12,10 @@ CFLAGS  = -m64 --std=gnu99 -mcmodel=kernel \
 	  -nostdinc -iwithprefix include -I include \
 	  -Wall -Wstrict-prototypes -O2
 
+# Warn about the sloppy UNIX linkers practice of
+# merging global common variables
+LDFLAGS = --warn-common -T kernel.ld
+
 # Share headers between assembly and C files
 CPPFLAGS = -D__KERNEL__
 AFLAGS = -D__ASSEMBLY__
@@ -57,7 +61,7 @@ bootsect.elf: bootsect.o
 
 kernel.elf: $(KERN_OBJS) kernel.ld
 	$(E) "  LD       " $@
-	$(Q) $(LD) -T kernel.ld $(KERN_OBJS) -o $@
+	$(Q) $(LD) $(LDFLAGS) $(KERN_OBJS) -o $@
 
 # Patterns for custom implicit rules
 %.o: %.S
