@@ -9,6 +9,7 @@
  */
 
 #include <segment.h>
+#include <paging.h>
 #include <apic.h>
 #include <ioapic.h>
 

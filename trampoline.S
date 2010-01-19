@@ -27,6 +27,7 @@
 
 #include <smpboot.h>
 #include <segment.h>
+#include <paging.h>
 
 .code16
 

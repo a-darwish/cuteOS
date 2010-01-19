@@ -84,7 +84,7 @@ void *memcpy(void *dst, void *src, int len)
  * Fill memory with the constant byte @ch. Returns pointer
  * to memory area @dst; no return value reserved for error
  */
-void *memset(void *dst, int ch, int len)
+void *memset(void *dst, int ch, uint32_t len)
 {
 	uint64_t __uninitialized(tmp);
 	uint64_t uch = ch;
@@ -107,6 +107,28 @@ void *memset(void *dst, int ch, int len)
 	    : [tmp] "=&r"(tmp), [dst] "=&D"(d0), [ch] "=&a"(uch),
 	      [len] "=&c"(ulen)
 	    : "[dst]"(dst), "[ch]"(uch), "[len]"(ulen), "[tmp]"(tmp)
+	    : "memory");
+
+	return dst;
+}
+
+/*
+ * Fill memory with given 4-byte value @val. For easy
+ * implementation, @len is vetoed to be a multiple of 8
+ */
+void *memset32(void *dst, uint32_t val, uint32_t len)
+{
+	uint64_t uval, ulen;
+	uintptr_t d0;
+
+	assert((len % 8) == 0);
+	ulen = len / 8;
+	uval = ((uint64_t)val << 32) + val;
+
+	asm volatile (
+	    "rep stosq"
+	    : [dst] "=&D"(d0)
+	    : "[dst]"(dst), "a"(uval), "c"(ulen)
 	    : "memory");
 
 	return dst;

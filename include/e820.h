@@ -16,7 +16,7 @@
  *             Success                       Failure
  *
  *     -----------------------       -----------------------
- *    |       Checksum        |     |       Checksum        |
+ *    |       Checksum        |     |       Checksum        |	Ignored (for now)
  *     -----------------------       -----------------------
  *    |     Err Code (0)      |     |    Err Code ( > 0)    |	Error code
  *     -----------------------       -----------------------

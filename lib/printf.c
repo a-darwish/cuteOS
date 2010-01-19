@@ -11,7 +11,7 @@
 #include <kernel.h>
 #include <stdarg.h>			/* provided by GCC */
 #include <string.h>
-#include <segment.h>
+#include <paging.h>
 #include <spinlock.h>
 #include <mmio.h>
 

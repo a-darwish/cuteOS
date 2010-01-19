@@ -10,7 +10,7 @@
 
 #include <kernel.h>
 #include <smpboot.h>
-#include <segment.h>
+#include <paging.h>
 #include <string.h>
 #include <apic.h>
 #include <idt.h>

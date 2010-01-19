@@ -69,6 +69,8 @@ SECTIONS
 		__bss_end = .;
 	}
 
+	__kernel_end = .;
+
 	/DISCARD/ : {
 		*(.eh_frame)
 		*(.comment)

@@ -27,4 +27,6 @@ extern char __data_end[];
 extern char __bss_start[];
 extern char __bss_end[];
 
+extern char __kernel_end[];
+
 #endif /* SECTIONS_H */

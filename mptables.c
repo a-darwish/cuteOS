@@ -17,7 +17,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <kernel.h>
-#include <segment.h>
+#include <paging.h>
 #include <mptables.h>
 #include <apic.h>
 #include <ioapic.h>

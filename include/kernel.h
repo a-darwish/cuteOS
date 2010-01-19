@@ -12,6 +12,7 @@
  */
 
 #include <stdarg.h>
+#include <stdint.h>
 
 /*
  * C99
@@ -44,6 +45,21 @@ enum {
 #define offsetof(type, elem)	((uint64_t) &((type *) 0)->elem)
 
 #define ARRAY_SIZE(array)	(sizeof(array) / sizeof(array[0]))
+
+/*
+ * In a binary system, a value 'x' is said to be n-byte
+ * aligned when 'n' is a power of the radix 2, and x is
+ * a multiple of 'n' bytes.
+ *
+ * A n-byte-aligned value has at least a log2n number of
+ * least-significant zeroes.
+ *
+ * Return given x value 'n'-aligned.
+ *
+ * Using two's complement, rounding = (x & (typeof(x))-n)
+ */
+#define round_down(x, n)	(x & ~(typeof(x))(n - 1))
+#define round_up(x, n)		(((x - 1) | (typeof(x))(n - 1)) + 1)
 
 /*
  * Main kernel print methods
