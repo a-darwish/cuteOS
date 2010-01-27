@@ -1,10 +1,10 @@
-#ifndef KERNEL_H
-#define KERNEL_H
+#ifndef _KERNEL_H
+#define _KERNEL_H
 
 /*
  * Common methods and definitions
  *
- * Copyright (C) 2009 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2009-2010 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -26,12 +26,22 @@ enum {
 /*
  * GCC extensions shorthands
  */
+
 #define __packed	__attribute__((packed))
 #define __unused	__attribute__((__unused__))
 #define __used		__attribute__((__used__))
+#define __error(msg)	__attribute__((error(msg)))
+#define __likely(exp)	__builtin_expect((exp), 1)
+#define __unlikely(exp)	__builtin_expect((exp), 0)
+#define __no_inline	__attribute__((noinline))
+
+/* Mark the 'always_inline' attributed function as C99
+ * 'inline' cause the attribute by itself is worthless.
+ * It's "for functions declared inline" -- GCC manual */
+#define __always_inline	inline __attribute__((always_inline))
 
 /* Suppress GCC's "var used uninitialized" */
-#define __uninitialized(x)	x = x
+#define __uninitialized(x)	(x) = (x)
 
 /*
  * Semi type-safe min macro using GNU extensions
@@ -62,6 +72,13 @@ enum {
 #define round_up(x, n)		(((x - 1) | (typeof(x))(n - 1)) + 1)
 
 /*
+ * Check if given 'x' value is 'n'-aligned
+ * 'n' must be power of the radix 2; see round_up()
+ */
+#define __mask(x, n)		((typeof(x))((n) - 1))
+#define is_aligned(x, n)	(((x) & __mask(x, n)) == 0)
+
+/*
  * Main kernel print methods
  */
 int vsnprintf(char *buf, int size, const char *fmt, va_list args);
@@ -72,11 +89,25 @@ void putc(char c);
  * Critical failures
  */
 void panic(const char *fmt, ...);
+
 #define assert(condition)					\
 	do {							\
-		if (!(condition))				\
+		if (__unlikely(!(condition)))			\
 			panic("%s:%d - !(" #condition ")\n",	\
 			      __FILE__, __LINE__);		\
 	} while (0);
 
-#endif
+/*
+ * Compile-time assert for constant-folded expressions
+ *
+ * We would've been better using GCC's error(msg) attribute,
+ * but it doesn't work with my current GCC build :(.
+ */
+void __unused __undefined_method(void);
+#define compiler_assert(condition)				\
+	do {							\
+		if (!(condition))				\
+			__undefined_method();			\
+	} while (0);
+
+#endif /* _KERNEL_H */

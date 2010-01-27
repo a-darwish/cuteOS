@@ -6,51 +6,10 @@
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
- *
- * This should be transformed to inline x86 assembly as appropriate,
- * let's just have them for now.
  */
 
 #include <stdint.h>
 #include <kernel.h>
-
-int strlen(const char *str)
-{
-	const char *tmp;
-
-	for (tmp = str; *tmp; tmp++)
-		;
-	return tmp - str;
-}
-
-char *strncpy(char *dst, const char *src, int n)
-{
-	char *tmp = dst;
-
-	while (n) {
-		*tmp = *src;
-		if (*tmp)
-			src++;
-		tmp++;
-		n--;
-	}
-
-	return dst;
-}
-
-int strncmp(char *s1, char *s2, int n)
-{
-	uint8_t res = 0;
-
-	while (n) {
-		res = *s1 - *s2;
-		if (res != 0 || *s1 == 0)
-			break;
-		n--;
-	}
-
-	return res;
-}
 
 /*
  * For more speed, we should let movsq and stosq read
@@ -132,4 +91,69 @@ void *memset32(void *dst, uint32_t val, uint32_t len)
 	    : "memory");
 
 	return dst;
+}
+
+/*
+ * Yet-to-be-optimized string ops
+ */
+
+int strlen(const char *str)
+{
+	const char *tmp;
+
+	for (tmp = str; *tmp; tmp++)
+		;
+	return tmp - str;
+}
+
+char *strncpy(char *dst, const char *src, int n)
+{
+	char *tmp = dst;
+
+	while (n) {
+		*tmp = *src;
+		if (*tmp)
+			src++;
+		tmp++;
+		n--;
+	}
+
+	return dst;
+}
+
+int strncmp(const char *c1, const char *c2, int n)
+{
+	uint8_t s1, s2, res;
+
+	res = 0;
+	while (n) {
+		s1 = *c1++;
+		s2 = *c2++;
+
+		res = s1 - s2;
+		if (res != 0 || s1 == 0)
+			break;
+		n--;
+	}
+
+	return res;
+}
+
+int memcmp(const void *s1, const void *s2, int n)
+{
+	const uint8_t *v1, *v2;
+	uint8_t res;
+
+	v1 = s1;
+	v2 = s2;
+
+	res = 0;
+	while (n) {
+		res = *v1++ - *v2++;
+		if (res != 0)
+			break;
+		n--;
+	}
+
+	return res;
 }

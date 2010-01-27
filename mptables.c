@@ -232,7 +232,7 @@ static void parse_bus(void *addr)
 	struct mpc_bus *bus = addr;
 
 	/* Only the ISA bus is needed for now */
-	if (strncmp("ISA", bus->type, sizeof("ISA")) == 0)
+	if (memcmp("ISA", bus->type, sizeof("ISA") - 1) == 0)
 		mp_isa_busid = bus->id;
 
 	return;

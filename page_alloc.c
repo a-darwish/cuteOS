@@ -25,15 +25,6 @@
 #include <mm.h>
 
 /*
- * Page frame descriptor
- */
-struct page {
-	uint64_t pfn;			/* Phys addr = pfn << PAGE_SHIFT */
-	struct page *next;		/* If in pfdfree_head, next free page */
-	int free;			/* If 0, this page is not allocated */
-};
-
-/*
  * Each physical page available for us to use and above our
  * kernel memory area is represented by a descriptor in below
  * 'page frame descriptor table' (SVR2 terminology).
@@ -41,11 +32,11 @@ struct page {
  * This table is stored directly after kernel's text, data,
  * and stack.
  *
- * @pfdtable_last: last added entry to the table, or NULL
+ * @pfdtable_top: current table end mark
  * @pfdtable_end: don't exceed this dynamically set mark
  */
 static struct page *pfdtable = (struct page *)__kernel_end;
-static struct page *pfdtable_last;
+static struct page *pfdtable_top = (struct page *)__kernel_end;
 static struct page *pfdtable_end;
 
 /*
@@ -59,6 +50,29 @@ static struct page *pfdfree_head;
 static uint64_t pfdfree_count;
 
 /*
+ * Virtual-address to a page-descriptor map
+ *
+ * This structure aids in reverse-mapping a virtual address
+ * to its relative page descriptor. We store e820 page descs
+ * sequentially, thus a reference to a range and the first
+ * pfdtable cell it's represented by, is enough.
+ */
+struct rmap {
+	struct e820_range range;
+	struct page *pfd_start;
+};
+
+/*
+ * @pfdrmap: The global table used to reverse-map an address
+ * @pfdrmap_top, @pfdrmap_end: similar to @pfdtable above
+ */
+static struct rmap *pfdrmap;
+static struct rmap *pfdrmap_top;
+static struct rmap *pfdrmap_end;
+
+static void rmap_add_range(struct e820_range *, struct page *);
+
+/*
  * Watermak the end of our kernel memory area which is above
  * 1MB and which also contains the pfdtable. NOTE! 4K-align.
  */
@@ -67,10 +81,12 @@ static uint64_t kmem_end = -1;
 /*
  * Create new pfdtable entries for given memory range, which
  * should be e820 available and above our kernel memory area.
+ * @pfdtable_top: current pfdtable end mark
  *
  * NOTE! No need to acquire the pfdfree lock as this should
  * _only_ be called from the serial memory init path.
  *
+ * Return the new new pfdtable top mark.
  * Prerequisite: kernel memory area end calculated
  */
 static void pfdtable_add_range(struct e820_range *range)
@@ -89,9 +105,11 @@ static void pfdtable_add_range(struct e820_range *range)
 	assert(start >= (uintptr_t)PHYS(kmem_end));
 
 	/* New entries shouldn't overflow the table */
-	page = (pfdtable_last) ? pfdtable_last + 1 : pfdtable;
+	page = pfdtable_top;
 	nr_pages = (end - start) / PAGE_SIZE;
 	assert((page + nr_pages) <= pfdtable_end);
+
+	rmap_add_range(range, page);
 
 	while (start != end) {
 		page->free = 1;
@@ -104,7 +122,26 @@ static void pfdtable_add_range(struct e820_range *range)
 		start += PAGE_SIZE;
 	}
 
-	pfdtable_last = page - 1;
+	pfdtable_top = page;
+}
+
+/*
+ * Add a reverse-mapping entry for given e820 range.
+ * @start: first pfdtable cell represenging @range.
+ * NOTE! no locks; access this only from init paths.
+ */
+static void rmap_add_range(struct e820_range *range,
+			   struct page *start)
+{
+	struct rmap *rmap;
+
+	rmap = pfdrmap_top;
+
+	assert(rmap + 1 <= pfdrmap_end);
+	rmap->range = *range;
+	rmap->pfd_start = start;
+
+	pfdrmap_top = rmap + 1;
 }
 
 /*
@@ -146,16 +183,30 @@ static int sanitize_e820_range(struct e820_range *range)
 }
 
 /*
+ * While returning memory pages to the system, we want to be
+ * sure not to override our own pfdtable area, so we need to
+ * know its len first. To solve this chicken-and-egg problem,
+ * we move over the e820 map in two passes. First pass is to
+ * estimate table length by counting e820-availale pages, and
+ * a second pass to actually fill the table.
+ */
+struct e820_setup {
+	uint64_t avail_pages;
+	uint64_t avail_ranges;
+};
+
+/*
+ * First Pass:
  * Get the number of pages marked by the BIOS E820h service
  * as available, by parsing the rmode-returned e820h struct.
- * This is needed to calculate reserved pfdtable area size.
- * Validate the rmode-returned E820h-struct in the process.
+ * Also validate this E820h-struct in the process.
  */
-static int get_e820_avail_pages(void)
+static struct e820_setup get_e820_setup(void)
 {
 	uint32_t *entry, entry_len, err;
-	uint64_t avail_pages, avail_len;
+	uint64_t avail_len, avail_ranges;
 	struct e820_range *range;
+	struct e820_setup setup;
 
 	entry = VIRTUAL(E820_BASE);
 	if (*entry != E820_INIT_SIG)
@@ -163,6 +214,7 @@ static int get_e820_avail_pages(void)
 	entry++;
 
 	avail_len = 0;
+	avail_ranges = 0;
 	while (*entry != E820_END) {
 		if ((uintptr_t)PHYS(entry) >= E820_MAX)
 			panic("E820 - Unterminated buffer structure");
@@ -170,8 +222,11 @@ static int get_e820_avail_pages(void)
 		entry_len = *entry++;
 
 		range = (struct e820_range *)entry;
-		if (range->type == E820_AVAIL)
+		if (range->type == E820_AVAIL) {
 			avail_len += range->len;
+			avail_ranges++;
+		}
+
 		printk("Memory: E820 range: 0x%lx - 0x%lx (%s)\n", range->base,
 		       range->base + range->len, e820_typestr(range->type));
 
@@ -184,8 +239,9 @@ static int get_e820_avail_pages(void)
 		panic("E820 error - %s", e820_errstr(err));
 	assert(entry <= (typeof(entry))VIRTUAL(E820_MAX));
 
-	avail_pages = avail_len / PAGE_SIZE;
-	return avail_pages;
+	setup.avail_pages = avail_len / PAGE_SIZE;
+	setup.avail_ranges = avail_ranges;
+	return setup;
 }
 
 /**
@@ -201,12 +257,12 @@ static int get_e820_avail_pages(void)
 	     entry = (typeof(entry))((char *)entry + entry_len))
 
 /*
+ * Second Pass:
  * Build system's page frame descriptor table (pfdtable), the
- * core structure of the page allocator, by parsing the E820h
- * struct returned by real-mode code (e820.h)
+ * core structure of the page allocator.
  * @avail_pages: number of available pages in the system
  */
-static void pfdtable_init(uint64_t avail_pages)
+static void pfdtable_init(uint64_t avail_pages, uint64_t avail_ranges)
 {
 	uint32_t *entry, entry_len;
 	struct e820_range *range;
@@ -215,7 +271,11 @@ static void pfdtable_init(uint64_t avail_pages)
 	printk("Memory: Page Frame descriptor table size = %d KB\n",
 	       (avail_pages * sizeof(pfdtable[0])) / 1024);
 
-	kmem_end = round_up((uintptr_t)pfdtable_end, PAGE_SIZE);
+	pfdrmap = (struct rmap *)pfdtable_end;
+	pfdrmap_top = pfdrmap;
+	pfdrmap_end = pfdrmap + avail_ranges;
+
+	kmem_end = round_up((uintptr_t)pfdrmap_end, PAGE_SIZE);
 	printk("Memory: Kernel memory area end = 0x%lx\n", kmem_end);
 
 	/* Including add_range(), this loop is O(n), where
@@ -235,7 +295,7 @@ static void pfdtable_init(uint64_t avail_pages)
 
 /*
  * Page allocation and reclamation, in O(1)
- * NOTE! do not call those in IRQ-context
+ * NOTE! do not call those in IRQ-context!
  */
 
 struct page *get_free_page(void)
@@ -275,15 +335,57 @@ void free_page(struct page *page)
 	spin_unlock(&pfdfree_lock);
 }
 
+/*
+ * Return the page descriptor representing @addr.
+ * FIXME: Can't we optimize this more?
+ */
+struct page *addr_to_page(void *addr)
+{
+	struct rmap *rmap;
+	struct page *page;
+	struct e820_range *range;
+	uint64_t paddr, start, end, offset;
+
+	paddr = (uint64_t)PHYS(addr);
+	paddr = round_down(paddr, PAGE_SIZE);
+	for (rmap = pfdrmap; rmap != pfdrmap_top; rmap++) {
+		range = &(rmap->range);
+		start = range->base;
+		end = start + range->len;
+
+		if (paddr < start)
+			continue;
+		if (paddr >= end)
+			continue;
+
+		page = rmap->pfd_start;
+		offset = (paddr - start) / PAGE_SIZE;
+		page += offset;
+		assert((page->pfn << PAGE_SHIFT) < end);
+		return page;
+	}
+
+	panic("Memory - No page descriptor found for given 0x%lx "
+	      "address", addr);
+
+	return NULL;
+}
+
+/* Be happy, OO lovers .. */
+int page_is_free(struct page *page)
+{
+	return page->free;
+}
+
 void pagealloc_init(void)
 {
-	uint64_t pages;
+	struct e820_setup setup;
 
-	pages = get_e820_avail_pages();
+	setup = get_e820_setup();
 	printk("Memory: Available memory for use = %d MB\n",
-	       ((pages * PAGE_SIZE) / 1024) / 1024);
+	       ((setup.avail_pages * PAGE_SIZE) / 1024) / 1024);
 
-	pfdtable_init(pages);
+	pfdtable_init(setup.avail_pages, setup.avail_ranges);
 }
 
 /*
@@ -301,7 +403,7 @@ void pagealloc_init(void)
 /*
  * Keep track of pages we allocate and free
  */
-#define PAGES_COUNT	50000
+#define PAGES_COUNT	10000
 static struct page *pages[PAGES_COUNT];
 static char tmpbuf[PAGE_SIZE];
 
@@ -341,17 +443,35 @@ static int _test_pfdfree_count(void) {
  * by chunking the range additions per page basis, leading to
  * emulating addition of non-contiguous e820 available ranges.
  *
+ * This 'test' messes _heavily_ with the allocator internals.
+ *
  * Prerequisite: rmode E820h-struct previously validated
  */
-static int _test_pfdtable_add_range(void) {
+static int __unused _test_pfdtable_add_range(void) {
 	uint32_t *entry, entry_len;
-	int old_count, repeat;
+	uint64_t old_end, old_count, repeat, ranges;
 	struct e820_range *range, subrange;
+	struct rmap *rmap;
+
+	/* Each range is to be transformed to x ranges, where x =
+	 * the number of pages in that range. Modify the pfdrmap
+	 * table end mark accordingly */
+	ranges = 0;
+	for (rmap = pfdrmap; rmap != pfdrmap_top; rmap++) {
+		range = &(rmap->range);
+		ranges += range->len / PAGE_SIZE;
+	}
+	pfdrmap_top = pfdrmap;
+	pfdrmap_end = pfdrmap + ranges;
+
+	/* The pfdrmap became much larger: extend our memory area */
+	old_count = pfdfree_count;
+	old_end = kmem_end;
+	kmem_end = round_up((uintptr_t)pfdrmap_end, PAGE_SIZE);
 
 	/* Clear pfdtable structures */
-	old_count = pfdfree_count;
+	pfdtable_top = pfdtable;
 	pfdfree_count = 0;
-	pfdtable_last = NULL;
 	pfdfree_head = NULL;
 
 	/* Refill the table, page by page */
@@ -374,8 +494,11 @@ static int _test_pfdtable_add_range(void) {
 		}
 	}
 
+	/* More kernel memory area led to less available pages.
+	 * Compare old and new count with this fact in mind */
+	old_count -= ((kmem_end - old_end) / PAGE_SIZE);
 	if (old_count != pfdfree_count)
-		panic("_Memory: Refilling pfdtable found %d free pages, %d"
+		panic("_Memory: Refilling pfdtable found %d free pages; %d "
 		      "pages originally reported", pfdfree_count, old_count);
 
 	printk("_Memory: %s: Success\n", __FUNCTION__);
@@ -415,12 +538,23 @@ static int _page_is_free(struct page *page)
  * As a way of page allocator disruption, allocate
  * then free a memory page. Is this really effective?
  */
-static void _disrupt(void)
+static inline void _disrupt(void)
 {
-	struct page *p;
+	struct page *p1, *p2;
+	void *addr;
 
-	p = get_free_page();
-	free_page(p);
+	p1 = get_free_page();
+
+	/* Test reverse mapping */
+	addr = VIRTUAL(p1->pfn << PAGE_SHIFT);
+	p2 = addr_to_page(addr);
+	if (p1 != p2)
+		panic("_Memory: FAIL: Reverse mapping addr=0x%lx lead to "
+		      "page descriptor 0x%lx; it's actually for page %lx\n",
+		      addr, p2, p1);
+
+	memset32(addr, 0xffffffffUL, PAGE_SIZE);
+	free_page(p1);
 }
 
 /*
@@ -436,6 +570,7 @@ static int _test_pagealloc_coherency(int nr_pages)
 	int i, res;
 	uint64_t old_pfdfree_count;
 	void *addr;
+	struct page *page;
 
 	old_pfdfree_count = pfdfree_count;
 
@@ -449,6 +584,14 @@ static int _test_pagealloc_coherency(int nr_pages)
 			panic("_Memory: Allocated invalid page address "
 			      "0x%lx\n", pages[i]->pfn << PAGE_SHIFT);
 
+		/* Test reverse mapping */
+		addr = VIRTUAL(pages[i]->pfn << PAGE_SHIFT);
+		page = addr_to_page(addr);
+		if (page != pages[i])
+			panic("_Memory: FAIL: Reverse mapping addr=0x%lx lead to "
+			      "page descriptor 0x%lx, while it's actually on %lx\n",
+			      addr, page, pages[i]);
+
 		addr = VIRTUAL(pages[i]->pfn << PAGE_SHIFT);
 		memset32(addr, i, PAGE_SIZE);
 	}
@@ -456,10 +599,17 @@ static int _test_pagealloc_coherency(int nr_pages)
 	for (i = 0; i < nr_pages; i++) {
 		memset32(tmpbuf, i, PAGE_SIZE);
 		addr = VIRTUAL(pages[i]->pfn << PAGE_SHIFT);
-		res = strncmp(addr, tmpbuf, PAGE_SIZE);
+		res = memcmp(addr, tmpbuf, PAGE_SIZE);
 		if (res)
 			panic("_Memory: FAIL: [%d] page at 0x%lx got corrupted\n",
 			       i, PHYS(addr));
+
+		/* Test reverse mapping */
+		page = addr_to_page(addr);
+		if (page != pages[i])
+			panic("_Memory: FAIL: Reverse mapping addr=0x%lx lead to "
+			      "page descriptor 0x%lx, while it's actually on %lx\n",
+			      addr, page, pages[i]);
 
 		free_page(pages[i]);
 		_disrupt();
@@ -482,7 +632,7 @@ static int _test_pagealloc_coherency(int nr_pages)
  * Consume all system memory then observe the result
  * of overallocation.
  */
-static void _test_pagealloc_exhaustion(void)
+static void __unused _test_pagealloc_exhaustion(void)
 {
 	uint64_t count;
 
@@ -501,21 +651,24 @@ static void _test_pagealloc_exhaustion(void)
  */
 void pagealloc_run_tests(void)
 {
-	uint64_t count;
+	uint64_t count, repeat;
+
+	repeat = 100;
+
+	_test_pfdfree_count();
+	/* _test_pfdtable_add_range(); */
 
 	count = pfdfree_count;
 	if (count > PAGES_COUNT)
 		count = PAGES_COUNT;
 
-	_test_pfdfree_count();
-	_test_pfdtable_add_range();
-
-	for (int i = 0; i < 100; i++) {
+	/* Burn, baby, burn */
+	for (int i = 0; i < repeat; i++) {
 		printk("[%d] ", i);
 		_test_pagealloc_coherency(count);
 	}
 
-	_test_pagealloc_exhaustion();
+	/* _test_pagealloc_exhaustion(); */
 }
 
 #endif /* PAGEALLOC_TEST */

@@ -20,6 +20,7 @@
 #include <smpboot.h>
 #include <e820.h>
 #include <mm.h>
+#include <kmalloc.h>
 
 void setup_idt(void)
 {
@@ -87,9 +88,11 @@ void kernel_start(void)
 	smpboot_init();
 
 	pagealloc_init();
+	kmalloc_init();
 
 	/* Testcases: */
 	/* pagealloc_run_tests(); */
+	/* kmalloc_run_tests(); */
 
 	local_irq_enable();
 

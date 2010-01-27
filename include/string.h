@@ -14,10 +14,12 @@
 
 int strlen(const char *str);
 char *strncpy(char *dst, const char *src, int n);
-int strncmp(char *s1, char *s2, int n);
+int strncmp(const char *s1, const char *s2, int n);
 
 void *memcpy(void *dst, const void *src, int len);
 void *memset(void *dst, int ch, uint32_t len);
 void *memset32(void *dst, uint32_t val, uint32_t len);
+
+#define memcmp(s1, s2, n)	__builtin_memcmp(s1, s2, n)
 
 #endif
