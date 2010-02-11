@@ -96,10 +96,37 @@ startup_32:
 	/* clear prefetch and jump to 64bit code */
 	ljmp   $KERNEL_CS, $startup_64
 
+/*
+ * This x86 CPU has no 64-bit support; inform our
+ * unlucky user and halt
+ */
 no_longmode:
-	/* we should print something here once the VGA
-	 * code is done */
-	jmp    .
+	/* Blank screen */
+	movl   $0xb8000, %edi		# VGA base
+	movl   $0x0f200f20, %eax	# white color + ' '
+	movl   $((80 * 25 * 2) / 4), %ecx
+	rep    stosl
+
+	/* Write our message */
+	movl   $0xb80a0, %edi		# VGA base + 1 row
+	movl   $no64_start, %esi
+	movl   $(no64_end - no64_start), %ecx
+	rep    movsb
+
+1:	hlt
+	jmp    1b
+
+no64_start:
+	/* Message string + VGA color; little-endian */
+	.byte  'N', 0x0f, 'O', 0x0f, ' ', 0x0f, '6', 0x0f, \
+	       '4', 0x0f, '-', 0x0f, 'b', 0x0f, 'i', 0x0f, \
+	       't', 0x0f, ' ', 0x0f, 'C', 0x0f, 'P', 0x0f, \
+	       'U', 0x0f, ' ', 0x0f, 's', 0x0f, 'u', 0x0f, \
+	       'p', 0x0f, 'p', 0x0f, 'o', 0x0f, 'r', 0x0f, \
+	       't', 0x0f, ' ', 0x0f, '-', 0x0f, ' ', 0x0f, \
+	       'h', 0x0f, 'a', 0x0f, 'l', 0x0f, 't', 0x0f, \
+	       'i', 0x0f, 'n', 0x0f, 'g', 0x0f, ' ', 0x0f
+no64_end:
 
 /*
  * Verify we're running on an amd64-compatible cpu
