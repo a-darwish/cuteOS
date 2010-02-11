@@ -92,10 +92,10 @@ startup_32:
 	movl   $((identity_end - identity_pml4) / 4), %ecx
 	rep    stosl
 
-	/* Identity maps: init_pd has 1-to-1 mappings between
+	/* Identity maps: init_pml2 has 1-to-1 mappings between
 	 * its entries and physical pages beginning from page 0 */
-	movl   $(identity_pdp + 0x007), identity_pml4
-	movl   $(init_pd + 0x007), identity_pdp
+	movl   $(identity_pml3 + 0x007), identity_pml4
+	movl   $(init_pml2 + 0x007), identity_pml3
 
 	movl   $identity_pml4, %eax
 	movl   %eax, %cr3
@@ -123,8 +123,8 @@ startup_64:
 	movq   $trampoline_stack, %rsp
 
 	/* As in head.S, setup -2GB virtual mappings */
-	movq   $(identity_pdp + 0x007), (identity_pml4 + 511 * 8)
-	movq   $(init_pd + 0x007), (identity_pdp + 510 * 8)
+	movq   $(identity_pml3 + 0x007), (identity_pml4 + 511 * 8)
+	movq   $(init_pml2 + 0x007), (identity_pml3 + 510 * 8)
 
 	/* Virtualize %rip and %rsp */
 	addq   $VIRTUAL_START, %rsp
@@ -203,8 +203,8 @@ trampoline_end:
 
 .equ	PAGE_SIZE,	0x1000
 .equ	identity_pml4,	SMPBOOT_START + PAGE_SIZE
-.equ	identity_pdp,	identity_pml4 + PAGE_SIZE
-.equ	identity_end,	identity_pdp   + PAGE_SIZE
+.equ	identity_pml3,	identity_pml4 + PAGE_SIZE
+.equ	identity_end,	identity_pml3 + PAGE_SIZE
 
 /*
  * Scratch memory

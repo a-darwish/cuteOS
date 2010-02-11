@@ -66,15 +66,15 @@ startup_32:
 	movl   $((init_pgt_end - init_pml4) / 4), %ecx
 	rep    stosl
 
-	/* pml4 entry: P = R/W = U/S = 1 PDP base = pml4 + 0x1000 */
-	movl   $(init_pdp + 0x007), init_pml4
+	/* pml4 entry 0: P = R/W = U/S = 1 */
+	movl   $(init_pml3 + 0x007), init_pml4
 
-	/* pdp entry: P = R/W = U/S = 1 PD base = pml4 + 0x2000 */
-	movl   $(init_pd + 0x007), init_pdp
+	/* pml3 entry 0: P = R/W = U/S = 1 */
+	movl   $(init_pml2 + 0x007), init_pml3
 
-	/* pd entry: P = R/W = 1, U/S = 0, 2MB page flag: bit7 = 1,
-	 * page base = 0x0 */
-	movl   $0x083, init_pd
+	/* pml2 entry 0: P = R/W = 1, U/S = 0, 2MB
+	 * page flag: bit7 = 1, page base = 0x0 */
+	movl   $0x083, init_pml2
 
 	/* Final step: store PML4 base adderss */
 	movl   $init_pml4, %eax
@@ -161,17 +161,17 @@ startup_64:
 	/* pml4 entry. We only need one entry for 0b111111111, which
 	 * will be typically located at the very end of the table.
 	 * P = R/W = U/S = 1 as usual. */
-	movq   $(init_pdp + 0x007), (init_pml4 + 511 * 8)
+	movq   $(init_pml3 + 0x007), (init_pml4 + 511 * 8)
 
-	/* pdp entry. We also only need a single entry for 0b111111110
-	 * which is one entry before the end of PDP. P = R/W = U/S = 1 */
-	movq   $(init_pd + 0x007), (init_pdp + 510 * 8)
+	/* pml3 entry. We also only need a single entry for 0b111111110
+	 * which is one entry before the end of PML3. P = R/W = U/S = 1 */
+	movq   $(init_pml2 + 0x007), (init_pml3 + 510 * 8)
 
 	/* OK, now we setup the new PD table that is going to do all
 	 * the work. We map entry 0 to page 0, entry 1 to page 1 and
 	 * so on till the end of the table. P = R/W = 1, U/S = 0,
 	 * bit7 (2MB page flage) = 1 */
-	movq   $(init_pd), %rbx
+	movq   $(init_pml2), %rbx
 	xorq   %rcx, %rcx		# first page num = 0x0
 1:	movq   %rcx, %rax
 	shl    $21, %rax		# page address = page-num<<21
@@ -179,7 +179,7 @@ startup_64:
 	movq   %rax, (%rbx)
 	addq   $8, %rbx			# next PDE
 	incq   %rcx			# next page
-	cmpq   $(init_pd + PAGE_SIZE), %rbx
+	cmpq   $(init_pml2 + PAGE_SIZE), %rbx
 	jne    1b
 
 	/* Done; apply the page tables */
@@ -202,14 +202,14 @@ startup_64:
 /*
  * Map local and i/o apic registers i/o mapped at *_phbase
  * to the top 4MB of the address space. Add a 0x1FF entry
- * to the init PDP table pointing to the special APIC Page
+ * to the init PML3 table pointing to the special APIC Page
  * Directory. Apic space must be strong uncacheable (UC).
  */
 .type map_apic, @function
 map_apic:
-	movq   $(apic_pd + 0x007), (init_pdp + 511 * 8)
-	movl   $(APIC_PHBASE + 0x09b), (apic_pd + 511 * 8)
-	movl   $(IOAPIC_PHBASE + 0x09b), (apic_pd + 510 * 8)
+	movq   $(apic_pml2 + 0x007), (init_pml3 + 511 * 8)
+	movl   $(APIC_PHBASE + 0x09b), (apic_pml2 + 511 * 8)
+	movl   $(IOAPIC_PHBASE + 0x09b), (apic_pml2 + 510 * 8)
 	ret
 
 /*
@@ -225,7 +225,7 @@ map_apic:
 .type zap_identity, @function
 zap_identity:
 	movq   $0, VIRTUAL(init_pml4)
-	movq   $0, (VIRTUAL(init_pdp))
+	movq   $0, (VIRTUAL(init_pml3))
 	ret
 
 .data
@@ -291,20 +291,20 @@ stack_end:
 init_pml4:
 	.skip  PAGE_SIZE
 
-init_pdp:
+init_pml3:
 	.skip  PAGE_SIZE
 
 /* Page Directory of one-to-one mappings
  * between entry number and physical pages */
-.globl init_pd
-init_pd:
+.globl init_pml2
+init_pml2:
 	.skip  PAGE_SIZE
 
 init_pgt_end:
 
 /*
- * APIC mappings Page Directory
+ * APIC mappings Page Directory (PML2)
  */
 .balign PAGE_SIZE
-apic_pd:
+apic_pml2:
 	.skip  PAGE_SIZE
