@@ -13,6 +13,8 @@
  * Please check page_alloc.c for context ..
  */
 
+#include <stdint.h>
+
 /*
  * Page frame descriptor; one for each e820-available
  * physical page in the system. Check the @pfdtable.
@@ -37,18 +39,26 @@ struct page {
  */
 
 struct page *get_free_page(void);
+struct page *get_zeroed_page(void);
 void free_page(struct page *page);
 
+void *page_address(struct page *page);
+uintptr_t page_phys_address(struct page *page);
 struct page *addr_to_page(void *addr);
 int page_is_free(struct page *);
 
 void pagealloc_init(void);
 
 /*
+ * Kernel memory maps
+ */
+void memory_map_init(void);
+
+/*
  * Test cases driver
  */
 
-#undef PAGEALLOC_TESTS
+#define PAGEALLOC_TESTS
 
 #ifdef PAGEALLOC_TESTS
 

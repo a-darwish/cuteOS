@@ -1,7 +1,7 @@
 /*
  * Memory management: Page allocator & the pfdtable
  *
- * Copyright (C) 2009 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2009-2010 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
 
 #include <kernel.h>
 #include <stdint.h>
+#include <string.h>
 #include <paging.h>
 #include <sections.h>
 #include <spinlock.h>
@@ -98,9 +99,9 @@ static void pfdtable_add_range(struct e820_range *range)
 
 	start = range->base;
 	end = range->base + range->len;
-	assert(IS_PAGE_ALIGNED(start));
-	assert(IS_PAGE_ALIGNED(end));
-	assert(IS_PAGE_ALIGNED(kmem_end));
+	assert(is_aligned(start, PAGE_SIZE));
+	assert(is_aligned(end, PAGE_SIZE));
+	assert(is_aligned(kmem_end, PAGE_SIZE));
 	assert(start < end);
 	assert(start >= (uintptr_t)PHYS(kmem_end));
 
@@ -170,7 +171,7 @@ static int sanitize_e820_range(struct e820_range *range)
 		return -1;
 	}
 
-	assert(IS_PAGE_ALIGNED(kmem_end));
+	assert(is_aligned(kmem_end, PAGE_SIZE));
 	if (end <= (uintptr_t)PHYS(kmem_end))
 		return -1;
 	if (start < (uintptr_t)PHYS(kmem_end))
@@ -319,6 +320,16 @@ struct page *get_free_page(void)
 	return page;
 }
 
+struct page *get_zeroed_page(void)
+{
+	struct page *page;
+
+	page = get_free_page();
+	memset64(page_address(page), 0, PAGE_SIZE);
+
+	return page;
+}
+
 void free_page(struct page *page)
 {
 	spin_lock(&pfdfree_lock);
@@ -333,6 +344,26 @@ void free_page(struct page *page)
 	page->free = 1;
 
 	spin_unlock(&pfdfree_lock);
+}
+
+/*
+ * Return virtual address of given page
+ */
+void *page_address(struct page *page)
+{
+	return VIRTUAL((uintptr_t)page->pfn << PAGE_SHIFT);
+}
+
+/*
+ * Return physical address of given page
+ *
+ * The return type is intentionally set to int instead of a
+ * pointer; we don't want to have invalid pointers dangling
+ * around.
+ */
+uintptr_t page_phys_address(struct page *page)
+{
+	return (uintptr_t)page->pfn << PAGE_SHIFT;
 }
 
 /*
@@ -411,7 +442,7 @@ static char tmpbuf[PAGE_SIZE];
  * Assure all e820-available memory spaces are covered in
  * pfdtable cells and are marked as free.
  */
-static int _test_pfdfree_count(void) {
+static int __unused _test_pfdfree_count(void) {
 	struct e820_range *range;
 	uint32_t *entry, entry_len;
 	int count;
@@ -543,17 +574,17 @@ static inline void _disrupt(void)
 	struct page *p1, *p2;
 	void *addr;
 
-	p1 = get_free_page();
+	p1 = get_zeroed_page();
 
 	/* Test reverse mapping */
-	addr = VIRTUAL(p1->pfn << PAGE_SHIFT);
+	addr = page_address(p1);
 	p2 = addr_to_page(addr);
 	if (p1 != p2)
 		panic("_Memory: FAIL: Reverse mapping addr=0x%lx lead to "
 		      "page descriptor 0x%lx; it's actually for page %lx\n",
 		      addr, p2, p1);
 
-	memset32(addr, 0xffffffffUL, PAGE_SIZE);
+	memset32(addr, 0xffffffff, PAGE_SIZE);
 	free_page(p1);
 }
 
@@ -585,20 +616,20 @@ static int _test_pagealloc_coherency(int nr_pages)
 			      "0x%lx\n", pages[i]->pfn << PAGE_SHIFT);
 
 		/* Test reverse mapping */
-		addr = VIRTUAL(pages[i]->pfn << PAGE_SHIFT);
+		addr = page_address(pages[i]);
 		page = addr_to_page(addr);
 		if (page != pages[i])
 			panic("_Memory: FAIL: Reverse mapping addr=0x%lx lead to "
 			      "page descriptor 0x%lx, while it's actually on %lx\n",
 			      addr, page, pages[i]);
 
-		addr = VIRTUAL(pages[i]->pfn << PAGE_SHIFT);
+		addr = page_address(pages[i]);
 		memset32(addr, i, PAGE_SIZE);
 	}
 
 	for (i = 0; i < nr_pages; i++) {
 		memset32(tmpbuf, i, PAGE_SIZE);
-		addr = VIRTUAL(pages[i]->pfn << PAGE_SHIFT);
+		addr = page_address(pages[i]);
 		res = memcmp(addr, tmpbuf, PAGE_SIZE);
 		if (res)
 			panic("_Memory: FAIL: [%d] page at 0x%lx got corrupted\n",
@@ -655,7 +686,7 @@ void pagealloc_run_tests(void)
 
 	repeat = 100;
 
-	_test_pfdfree_count();
+	/* _test_pfdfree_count(); */
 	/* _test_pfdtable_add_range(); */
 
 	count = pfdfree_count;

@@ -125,7 +125,7 @@ void kmalloc_init(void);
  * Test cases driver
  */
 
-#undef KMALLOC_TESTS
+#define KMALLOC_TESTS
 
 #ifdef KMALLOC_TESTS
 

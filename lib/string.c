@@ -1,11 +1,14 @@
 /*
  * Standard C string methods
  *
- * Copyright (C) 2009 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2009-2010 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
+ *
+ * Optimized string methods are tested using LD_PRELOAD with
+ * heavy programs like Firefox, Google Chrome and OpenOffice.
  */
 
 #include <stdint.h>
@@ -44,7 +47,7 @@ void *memcpy(void *dst, const void *src, int len)
  * Fill memory with the constant byte @ch. Returns pointer
  * to memory area @dst; no return value reserved for error
  */
-void *memset(void *dst, int ch, uint32_t len)
+void *memset(void *dst, uint8_t ch, uint32_t len)
 {
 	uint64_t __uninitialized(tmp);
 	uint64_t uch = ch;
@@ -76,19 +79,39 @@ void *memset(void *dst, int ch, uint32_t len)
  * Fill memory with given 4-byte value @val. For easy
  * implementation, @len is vetoed to be a multiple of 8
  */
-void *memset32(void *dst, uint32_t val, uint32_t len)
+void *memset32(void *dst, uint32_t val, uint64_t len)
 {
-	uint64_t uval, ulen;
+	uint64_t uval;
 	uintptr_t d0;
 
 	assert((len % 8) == 0);
-	ulen = len / 8;
+	len = len / 8;
 	uval = ((uint64_t)val << 32) + val;
 
 	asm volatile (
 	    "rep stosq"
 	    : [dst] "=&D"(d0)
-	    : "[dst]"(dst), "a"(uval), "c"(ulen)
+	    : "[dst]"(dst), "a"(uval), "c"(len)
+	    : "memory");
+
+	return dst;
+}
+
+/*
+ * Fill memory with given 8-byte value @val. For easy
+ * implementation, @len is vetoed to be a multiple of 8
+ */
+void *memset64(void *dst, uint64_t val, uint64_t len)
+{
+	uintptr_t d0;
+
+	assert((len % 8) == 0);
+	len = len / 8;
+
+	asm volatile (
+	    "rep stosq"
+	    : [dst] "=&D"(d0)
+	    : "[dst]"(dst), "a"(val), "c"(len)
 	    : "memory");
 
 	return dst;

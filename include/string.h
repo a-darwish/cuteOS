@@ -11,14 +11,16 @@
  *  the Free Software Foundation, version 2.
  */
 
+#include <stdint.h>
 
 int strlen(const char *str);
 char *strncpy(char *dst, const char *src, int n);
 int strncmp(const char *s1, const char *s2, int n);
 
 void *memcpy(void *dst, const void *src, int len);
-void *memset(void *dst, int ch, uint32_t len);
-void *memset32(void *dst, uint32_t val, uint32_t len);
+void *memset(void *dst, uint8_t ch, uint32_t len);
+void *memset32(void *dst, uint32_t val, uint64_t len);
+void *memset64(void *dst, uint64_t val, uint64_t len);
 
 #define memcmp(s1, s2, n)	__builtin_memcmp(s1, s2, n)
 

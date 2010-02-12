@@ -50,4 +50,4 @@ typedef unsigned long int uintptr_t;
 /* MAX value of given unsigned variable type */
 #define UTYPE_MAXVAL(x)	((typeof(x))UINT64_MAX)
 
-#endif
+#endif /* _STDINT_H */

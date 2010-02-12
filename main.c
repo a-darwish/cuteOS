@@ -65,7 +65,7 @@ static void print_info(void)
 }
 
 /*
- * Bootstrap core start
+ * Bootstrap-CPU start
  */
 void kernel_start(void)
 {
@@ -88,6 +88,7 @@ void kernel_start(void)
 	smpboot_init();
 
 	pagealloc_init();
+	memory_map_init();
 	kmalloc_init();
 
 	/* Testcases: */
