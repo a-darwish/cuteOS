@@ -22,7 +22,7 @@
 #include <mm.h>
 #include <kmalloc.h>
 
-void setup_idt(void)
+static void setup_idt(void)
 {
 	for (int i = 0; i < EXCEPTION_GATES; i ++)
 		set_intr_gate(i, &default_idt_stubs[i]);
@@ -36,12 +36,12 @@ void setup_idt(void)
  * startup", and that implicit initialization is done with
  * zero. Also kernel assembly code assumes a zeroed bss space
  */
-void clear_bss(void)
+static void clear_bss(void)
 {
 	memset(__bss_start , 0, __bss_end - __bss_start);
 }
 
-void print_info(void)
+static void print_info(void)
 {
 	uint64_t clock;
 

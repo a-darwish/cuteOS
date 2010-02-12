@@ -5,6 +5,9 @@
 CC	= gcc
 LD	= ld
 
+# 'Sparse' compiler wrapper
+CGCC	= cgcc
+
 # After using -nostdinc, add compiler's specific
 # includes back (stdarg.h, etc) using -iwithprefix
 CFLAGS  = -m64 --std=gnu99 -mcmodel=kernel \
@@ -49,6 +52,13 @@ BUILD_DIRS = $(DEPS_DIR) $(DEPS_LIB)
 
 all: $(BUILD_DIRS) image
 	$(E) "Kernel ready"
+
+# Check kernel code against common semantic C errors
+# using the 'sparse' semantic parser
+.PHONY: check
+check: clean
+	$(E) "  SPARSE build"
+	$(Q) $(MAKE) CC=$(CGCC) all
 
 image: bootsect.elf kernel.elf
 	$(E) "  OBJCOPY  " $@

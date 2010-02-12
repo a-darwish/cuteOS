@@ -16,9 +16,12 @@
 
 #ifndef __ASSEMBLY__
 
+#undef  VIRTUAL
+#undef  VIRTUAL_START
+
 /* We need a char* cast in case someone gave us an int or long
  * pointer that can mess up the whole summation/transformation */
-#undef  VIRTUAL
+#define VIRTUAL_START     (0xffffffff80000000ULL)
 #define VIRTUAL(address)  ((void *)((char *)(address) + VIRTUAL_START))
 #define PHYS(address)     ((void *)((char *)(address) - VIRTUAL_START))
 

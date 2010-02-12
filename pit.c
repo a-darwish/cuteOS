@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include <io.h>
 #include <tsc.h>
+#include <pit.h>
 
 #define PIT_CLOCK_RATE	1193182ul	/* Hz (ticks per second) */
 

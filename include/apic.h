@@ -32,7 +32,7 @@
 #define MSR_APICBASE 0x0000001b
 #define MSR_APICBASE_ENABLE    (1UL << 11)
 #define MSR_APICBASE_BSC       (1UL << 8)
-#define MSR_APICBASE_ADDRMASK  (0x000ffffffffff000)
+#define MSR_APICBASE_ADDRMASK  (0x000ffffffffff000ULL)
 
 static inline uint64_t msr_apicbase_getaddr(void)
 {

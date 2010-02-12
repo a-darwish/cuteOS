@@ -22,7 +22,7 @@
 /* FIXME: use a dynamic kmap() to get rid of our physical base
  * address limitations. Current assumption is buggy if the I/O
  * APICs have more redirection table entries than expected */
-#define IOAPIC_VRBASE	0xffffffffffc00000
+#define IOAPIC_VRBASE	0xffffffffffc00000ULL
 
 #ifndef __ASSEMBLY__
 

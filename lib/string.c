@@ -10,6 +10,7 @@
 
 #include <stdint.h>
 #include <kernel.h>
+#include <string.h>
 
 /*
  * For more speed, we should let movsq and stosq read
@@ -20,7 +21,7 @@
  * Copy @len bytes from @src to @dst. Return a pointer
  * to @dst
  */
-void *memcpy(void *dst, void *src, int len)
+void *memcpy(void *dst, const void *src, int len)
 {
 	int __uninitialized(tmp);
 	uintptr_t d0;
@@ -132,25 +133,6 @@ int strncmp(const char *c1, const char *c2, int n)
 
 		res = s1 - s2;
 		if (res != 0 || s1 == 0)
-			break;
-		n--;
-	}
-
-	return res;
-}
-
-int memcmp(const void *s1, const void *s2, int n)
-{
-	const uint8_t *v1, *v2;
-	uint8_t res;
-
-	v1 = s1;
-	v2 = s2;
-
-	res = 0;
-	while (n) {
-		res = *v1++ - *v2++;
-		if (res != 0)
 			break;
 		n--;
 	}

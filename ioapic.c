@@ -19,7 +19,10 @@
 int nr_ioapics;
 struct ioapic_desc ioapic_descs[IOAPICS_MAX];
 
-struct ioapic_pin i8259_pin = { .apic = -1, .pin = -1 };
+static struct ioapic_pin i8259_pin = {
+	.apic = -1,
+	.pin  = -1,
+};
 
 /*
  * Find where the 8259 INTR pin is connected to the ioapics
