@@ -58,7 +58,7 @@ void memory_map_init(void);
  * Test cases driver
  */
 
-#define PAGEALLOC_TESTS
+#undef PAGEALLOC_TESTS
 
 #ifdef PAGEALLOC_TESTS
 
