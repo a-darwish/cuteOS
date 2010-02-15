@@ -14,6 +14,7 @@
  */
 
 #include <stdint.h>
+#include <tests.h>
 
 /*
  * Page frame descriptor; one for each e820-available
@@ -58,11 +59,13 @@ void memory_map_init(void);
  * Test cases driver
  */
 
-#undef PAGEALLOC_TESTS
-
-#ifdef PAGEALLOC_TESTS
+#if	PAGEALLOC_TESTS
 
 void pagealloc_run_tests(void);
+
+#else
+
+static void __unused pagealloc_run_tests(void) { }
 
 #endif /* !PAGEALLOC_TESTS */
 

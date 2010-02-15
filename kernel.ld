@@ -14,6 +14,8 @@
  * modify them cautiously
  */
 
+#include <paging.h>
+
 OUTPUT_FORMAT("elf64-x86-64")
 OUTPUT_ARCH(i386:x86-64)
 
@@ -44,7 +46,7 @@ SECTIONS
 
 	/* High virtual-area mapped kernel code and data start */
 	__phys_start = .;
-	PROVIDE_HIDDEN(virt_start = __phys_start + 0xffffffff80000000);
+	PROVIDE_HIDDEN(virt_start = __phys_start + KTEXT_BASE);
 
 	/* We override the head.o bss section to save executable
 	 * size. On the very start, we'll move the code away to

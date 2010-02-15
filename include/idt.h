@@ -21,6 +21,7 @@
 
 #include <stdint.h>
 #include <segment.h>
+#include <paging.h>
 
 struct idt_gate {
 	uint16_t offset_low;

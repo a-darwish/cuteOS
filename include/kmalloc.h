@@ -14,6 +14,7 @@
  */
 
 #include <spinlock.h>
+#include <tests.h>
 
 /*
  * Terminology:
@@ -125,13 +126,15 @@ void kmalloc_init(void);
  * Test cases driver
  */
 
-#undef KMALLOC_TESTS
-
-#ifdef KMALLOC_TESTS
+#if	KMALLOC_TESTS
 
 void kmalloc_run_tests(void);
 
-#endif /* KMALLOC_TESTS */
+#else
+
+static void __unused kmalloc_run_tests(void) { }
+
+#endif /* !KMALLOC_TESTS */
 
 #endif /* _KMALLOC_H */
 

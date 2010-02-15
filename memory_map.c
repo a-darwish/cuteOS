@@ -178,7 +178,13 @@ void memory_map_init(void)
 	pml4_page = get_zeroed_page();
 	kernel_pml4_table = page_address(pml4_page);
 
-	map_kernel_range(0xffffffff80000000ULL, 0x40000000, 0);
+	map_kernel_range(KTEXT_BASE, 0x40000000, 0);
+
+	/* Map first physical 1GB till we have the right
+	 * abstractions to get physical memory end */
+	map_kernel_range(VIRTUAL_BASE, 0x40000000, 0);
+
+	/* Temporarily map APIC and IOAPIC MMIO addresses */
 	map_kernel_range(IOAPIC_VRBASE, 2 * PAGE_SIZE_2MB, IOAPIC_PHBASE);
 
 	/* Heaven be with us .. */

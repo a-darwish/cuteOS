@@ -9,6 +9,7 @@
  */
 
 #include <idt.h>
+#include <paging.h>
 
 .code64
 .text
@@ -101,11 +102,15 @@ kb_handler:
 
 /*
  * 64-bit IDT descriptor
+ *
+ * IDT base is linked to -2GB, but we want to have our
+ * base in the VIRTUAL() mapping form. Thus, we find
+ * the IDT base physical address, and VIRTUAL()ize it.
  */
 .globl idtdesc
 idtdesc:
 	.word  idt_end - idt		# limit
-	.quad  idt			# base
+	.quad  VIRTUAL(KTEXT_PHYS(idt))	# base
 
 .bss
 

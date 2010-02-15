@@ -3,6 +3,7 @@
 #
 
 CC	= gcc
+CPP	= cpp
 LD	= ld
 
 # 'Sparse' compiler wrapper
@@ -17,11 +18,15 @@ CFLAGS  = -m64 --std=gnu99 -mcmodel=kernel \
 
 # Warn about the sloppy UNIX linkers practice of
 # merging global common variables
-LDFLAGS = --warn-common -T kernel.ld
+LDFLAGS = --warn-common
 
 # Share headers between assembly and C files
 CPPFLAGS = -D__KERNEL__
 AFLAGS = -D__ASSEMBLY__
+
+# Our global kernel linker script, after being
+# 'cpp' pre-processed from the *.ld source
+PROCESSED_LD_SCRIPT = kernel.ldp
 
 LIB_OBJS = lib/string.o lib/printf.o
 
@@ -68,11 +73,11 @@ image: bootsect.elf kernel.elf
 
 bootsect.elf: bootsect.o
 	$(E) "  LD       " $@
-	$(Q) $(LD) -Ttext 0x0  $< -o $@
+	$(Q) $(LD) $(LDFLAGS) -Ttext 0x0  $< -o $@
 
-kernel.elf: $(KERN_OBJS) kernel.ld
+kernel.elf: $(KERN_OBJS) $(PROCESSED_LD_SCRIPT)
 	$(E) "  LD       " $@
-	$(Q) $(LD) $(LDFLAGS) $(KERN_OBJS) -o $@
+	$(Q) $(LD) $(LDFLAGS) -T $(PROCESSED_LD_SCRIPT) $(KERN_OBJS) -o $@
 
 # Patterns for custom implicit rules
 %.o: %.S
@@ -83,6 +88,10 @@ kernel.elf: $(KERN_OBJS) kernel.ld
 	$(E) "  CC       " $@
 	$(Q) $(CC) -c $(CPPFLAGS) $(CFLAGS) $< -o $@
 	$(Q) $(CC) -MM $(CPPFLAGS) $(CFLAGS) $< -o $(DEPS_DIR)/$*.d -MT $@
+%.ldp: %.ld
+	$(E) "  CPP      " $@
+	$(Q) $(CPP) $(AFLAGS) $(CFLAGS) -P $< -O $@
+	$(Q) $(CPP) -MM $(AFLAGS) $(CFLAGS) $< -o $(DEPS_DIR)/$*.d -MT $@
 
 # Needed build directories
 $(BUILD_DIRS):
@@ -96,6 +105,7 @@ clean:
 	$(Q) rm -f $(OBJS)
 	$(Q) rm -f *.bin
 	$(Q) rm -f *.elf
+	$(Q) rm -f $(PROCESSED_LD_SCRIPT)
 	$(Q) rm -fr $(BUILD_DIRS)
 	$(Q) rm -f *~
 

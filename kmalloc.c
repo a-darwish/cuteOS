@@ -62,6 +62,7 @@
 #include <string.h>
 #include <mm.h>
 #include <kmalloc.h>
+#include <tests.h>
 
 /*
  * A kernel memory bucket for each power-of-2 list
@@ -204,7 +205,7 @@ void kmalloc_init(void)
  * number generator ready.
  */
 
-#ifdef KMALLOC_TESTS
+#if	KMALLOC_TESTS
 
 #include <string.h>
 #include <paging.h>

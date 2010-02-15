@@ -24,6 +24,7 @@
 #include <spinlock.h>
 #include <e820.h>
 #include <mm.h>
+#include <tests.h>
 
 /*
  * Each physical page available for us to use and above our
@@ -36,8 +37,8 @@
  * @pfdtable_top: current table end mark
  * @pfdtable_end: don't exceed this dynamically set mark
  */
-static struct page *pfdtable = (struct page *)__kernel_end;
-static struct page *pfdtable_top = (struct page *)__kernel_end;
+static struct page *pfdtable;
+static struct page *pfdtable_top;
 static struct page *pfdtable_end;
 
 /*
@@ -268,7 +269,10 @@ static void pfdtable_init(uint64_t avail_pages, uint64_t avail_ranges)
 	uint32_t *entry, entry_len;
 	struct e820_range *range;
 
+	pfdtable = VIRTUAL(KTEXT_PHYS(__kernel_end));
+	pfdtable_top = pfdtable;
 	pfdtable_end = pfdtable + avail_pages;
+
 	printk("Memory: Page Frame descriptor table size = %d KB\n",
 	       (avail_pages * sizeof(pfdtable[0])) / 1024);
 
@@ -426,7 +430,7 @@ void pagealloc_init(void)
  * me in outlying different MM testing scenarious over IRC!
  */
 
-#ifdef  PAGEALLOC_TESTS
+#if	PAGEALLOC_TESTS
 
 #include <string.h>
 #include <paging.h>
@@ -702,4 +706,4 @@ void pagealloc_run_tests(void)
 	/* _test_pagealloc_exhaustion(); */
 }
 
-#endif /* PAGEALLOC_TEST */
+#endif /* PAGEALLOC_TESTS */

@@ -200,25 +200,38 @@ static inline uint64_t get_cr3(void)
  * Kernel-space mappings
  */
 
-#define VIRTUAL_START     (0xffffffff80000000ULL)
+/*
+ * Mapping base for kernel text, data, and bss (-2GB)
+ *
+ * We need a char* cast in case someone gave us an int or long
+ * pointer that can mess up the whole summation/transformation
+ */
+#define KTEXT_BASE		0xffffffff80000000ULL
+#define KTEXT_VIRTUAL(address)	((void *)((char *)(address) + KTEXT_BASE))
+#define KTEXT_PHYS(address)	((void *)((char *)(address) - KTEXT_BASE))
 
-/* We need a char* cast in case someone gave us an int or long
- * pointer that can mess up the whole summation/transformation */
-#define VIRTUAL(address)  ((void *)((char *)(address) + VIRTUAL_START))
-#define PHYS(address)     ((void *)((char *)(address) - VIRTUAL_START))
+/*
+ * Mapping base for all system physical memory.
+ *
+ * This is the standard kernel virtual memory base for every-
+ * thing except kernel text and data areas (%rip and %rsp).
+ */
+#define VIRTUAL_BASE		0xffff800000000000ULL
+#define VIRTUAL(address)	((void *)((char *)(address) + VIRTUAL_BASE))
+#define PHYS(address)		((void *)((char *)(address) - VIRTUAL_BASE))
 
 /* Maximum mapped physical address. We should get rid of our
  * ad-hoc mappings very soon */
-#define PHYS_MAX	0x30000000
+#define PHYS_MAX		0x30000000
 
 #else /* __ASSEMBLY__ */
 
-#undef  VIRTUAL
-#undef  VIRTUAL_START
+#define KTEXT_BASE		0xffffffff80000000
+#define KTEXT_VIRTUAL(address)	((address) + KTEXT_BASE)
+#define KTEXT_PHYS(address)	((address) - KTEXT_BASE)
 
-#define VIRTUAL_START     (0xffffffff80000000)
-
-#define VIRTUAL(address)  ((address) + VIRTUAL_START)
+#define VIRTUAL_BASE		0xffff800000000000
+#define VIRTUAL(address)	((address) + VIRTUAL_BASE)
 
 #endif /* !__ASSEMBLY__ */
 

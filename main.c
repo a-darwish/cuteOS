@@ -20,6 +20,7 @@
 #include <smpboot.h>
 #include <e820.h>
 #include <mm.h>
+#include <paging.h>
 #include <kmalloc.h>
 
 static void setup_idt(void)
@@ -76,8 +77,13 @@ void kernel_start(void)
 
 	print_info();
 
-	/* Parse the MP tables for needed IRQs data
-	 * before initializing the APICs */
+	/* Now git rid of our boot page tables
+	 * and setup the permanent ones */
+	pagealloc_init();
+	memory_map_init();
+
+	/* Parse the MP tables for needed IRQs
+	 * data before initializing the APICs */
 	mptables_init();
 
 	i8259_init();
@@ -87,13 +93,11 @@ void kernel_start(void)
 	keyboard_init();
 	smpboot_init();
 
-	pagealloc_init();
-	memory_map_init();
 	kmalloc_init();
 
-	/* Testcases: */
-	/* pagealloc_run_tests(); */
-	/* kmalloc_run_tests(); */
+	/* Testcases, if compiled */
+	pagealloc_run_tests();
+	kmalloc_run_tests();
 
 	local_irq_enable();
 
