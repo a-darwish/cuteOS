@@ -32,9 +32,9 @@ LIB_OBJS = lib/string.o lib/printf.o
 
 # Bootsector object won't be linked with the kernel;
 # handle it differently
-KERN_OBJS = head.o e820.o common.o main.o idt.o i8259.o \
+KERN_OBJS = head.o e820_rmode.o common.o main.o idt.o i8259.o \
             apic.o ioapic.o mptables.o keyboard.o smpboot.o \
-            pit.o trampoline.o spinlock.o page_alloc.o  \
+            pit.o trampoline.o spinlock.o e820.o page_alloc.o  \
             kmalloc.o memory_map.o $(LIB_OBJS)
 OBJS = bootsect.o $(KERN_OBJS)
 

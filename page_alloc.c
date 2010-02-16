@@ -1,5 +1,5 @@
 /*
- * Memory management: Page allocator & the pfdtable
+ * Memory management: the page allocator
  *
  * Copyright (C) 2009-2010 Ahmed S. Darwish <darwish.07@gmail.com>
  *
@@ -7,13 +7,8 @@
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
  *
- * In an earlier stage, we've switched to real-mode and acquired the
- * BIOS's ACPI E820h memory map, which includes details on available and
- * reserved memory pages. The real-mode code passes the map entries to
- * the rest of the kernel in a below 1MB structure defined in e820.h
- *
- * Using this data, we build our page allocator, which returns free
- * available physical pages to the rest of the system upon request.
+ * The page allocator returns free available physical memory
+ * pages to the rest of the kernel upon request.
  */
 
 #include <kernel.h>
@@ -147,158 +142,6 @@ static void rmap_add_range(struct e820_range *range,
 }
 
 /*
- * E820h entries parsing
- */
-
-/*
- * Modify given e820-available range to meet our standards:
- * - we work with memory in units of pages: page-align
- *   given range if possible, or bailout.
- * - treat ranges inside our kernel mem area as reserved.
- */
-static int sanitize_e820_range(struct e820_range *range)
-{
-	uint64_t start, end;
-
-	assert(range->type == E820_AVAIL);
-	start = range->base;
-	end = start + range->len;
-
-	start = round_up(start, PAGE_SIZE);
-	end = round_down(end, PAGE_SIZE);
-
-	if (end <= start) {
-		range->type = E820_ERRORMEM;
-		return -1;
-	}
-
-	assert(is_aligned(kmem_end, PAGE_SIZE));
-	if (end <= (uintptr_t)PHYS(kmem_end))
-		return -1;
-	if (start < (uintptr_t)PHYS(kmem_end))
-		start = (uintptr_t)PHYS(kmem_end);
-
-	range->base = start;
-	range->len = end - start;
-
-	return 0;
-}
-
-/*
- * While returning memory pages to the system, we want to be
- * sure not to override our own pfdtable area, so we need to
- * know its len first. To solve this chicken-and-egg problem,
- * we move over the e820 map in two passes. First pass is to
- * estimate table length by counting e820-availale pages, and
- * a second pass to actually fill the table.
- */
-struct e820_setup {
-	uint64_t avail_pages;
-	uint64_t avail_ranges;
-};
-
-/*
- * First Pass:
- * Get the number of pages marked by the BIOS E820h service
- * as available, by parsing the rmode-returned e820h struct.
- * Also validate this E820h-struct in the process.
- */
-static struct e820_setup get_e820_setup(void)
-{
-	uint32_t *entry, entry_len, err;
-	uint64_t avail_len, avail_ranges;
-	struct e820_range *range;
-	struct e820_setup setup;
-
-	entry = VIRTUAL(E820_BASE);
-	if (*entry != E820_INIT_SIG)
-		panic("E820 - Invalid buffer start signature");
-	entry++;
-
-	avail_len = 0;
-	avail_ranges = 0;
-	while (*entry != E820_END) {
-		if ((uintptr_t)PHYS(entry) >= E820_MAX)
-			panic("E820 - Unterminated buffer structure");
-
-		entry_len = *entry++;
-
-		range = (struct e820_range *)entry;
-		if (range->type == E820_AVAIL) {
-			avail_len += range->len;
-			avail_ranges++;
-		}
-
-		printk("Memory: E820 range: 0x%lx - 0x%lx (%s)\n", range->base,
-		       range->base + range->len, e820_typestr(range->type));
-
-		entry = (typeof(entry))((char *)entry + entry_len);
-	}
-	entry++;
-
-	err = *entry++;
-	if (err != E820_SUCCESS)
-		panic("E820 error - %s", e820_errstr(err));
-	assert(entry <= (typeof(entry))VIRTUAL(E820_MAX));
-
-	setup.avail_pages = avail_len / PAGE_SIZE;
-	setup.avail_ranges = avail_ranges;
-	return setup;
-}
-
-/**
- * e820_for_each     -	iterate over the E820h-struct
- * @entry:	the iterator, struct e820_entry
- * @entry_len:	the length of last entry (to go to the next)
- *
- * Prerequisite: rmode E820h-struct already validated
- */
-#define e820_for_each(entry, entry_len)				\
-	for (entry = VIRTUAL(E820_BASE) + sizeof(*entry);	\
-	     *entry != E820_END;				\
-	     entry = (typeof(entry))((char *)entry + entry_len))
-
-/*
- * Second Pass:
- * Build system's page frame descriptor table (pfdtable), the
- * core structure of the page allocator.
- * @avail_pages: number of available pages in the system
- */
-static void pfdtable_init(uint64_t avail_pages, uint64_t avail_ranges)
-{
-	uint32_t *entry, entry_len;
-	struct e820_range *range;
-
-	pfdtable = VIRTUAL(KTEXT_PHYS(__kernel_end));
-	pfdtable_top = pfdtable;
-	pfdtable_end = pfdtable + avail_pages;
-
-	printk("Memory: Page Frame descriptor table size = %d KB\n",
-	       (avail_pages * sizeof(pfdtable[0])) / 1024);
-
-	pfdrmap = (struct rmap *)pfdtable_end;
-	pfdrmap_top = pfdrmap;
-	pfdrmap_end = pfdrmap + avail_ranges;
-
-	kmem_end = round_up((uintptr_t)pfdrmap_end, PAGE_SIZE);
-	printk("Memory: Kernel memory area end = 0x%lx\n", kmem_end);
-
-	/* Including add_range(), this loop is O(n), where
-	 * n = number of available memory pages in the system */
-	e820_for_each(entry, entry_len) {
-		entry_len = *entry++;
-
-		range = (struct e820_range *)entry;
-		if (range->type != E820_AVAIL)
-			continue;
-		if (sanitize_e820_range(range))
-			continue;
-
-		pfdtable_add_range(range);
-	}
-}
-
-/*
  * Page allocation and reclamation, in O(1)
  * NOTE! do not call those in IRQ-context!
  */
@@ -412,15 +255,65 @@ int page_is_free(struct page *page)
 	return page->free;
 }
 
+/*
+ * Initialize the page allocator by building its core
+ * struct, the page frame descriptor table (pfdtable)
+ */
 void pagealloc_init(void)
 {
+	struct e820_range *range;
 	struct e820_setup setup;
+	uint64_t avail_pages, avail_ranges;
 
-	setup = get_e820_setup();
-	printk("Memory: Available memory for use = %d MB\n",
-	       ((setup.avail_pages * PAGE_SIZE) / 1024) / 1024);
+	/*
+	 * While building the page descriptors in the pfdtable,
+	 * we want to be sure not to include pages that override
+	 * our own pfdtable area. i.e. we want to know the
+	 * pfdtable area length _before_ forming its entries.
+	 *
+	 * Since the pfdtable length depends on available phys
+	 * memory, we move over the e820 map in two passes.
+	 *
+	 * First pass: estimate pfdtable area length by counting
+	 * provided e820-availale pages and ranges.
+	 */
 
-	pfdtable_init(setup.avail_pages, setup.avail_ranges);
+	setup = e820_get_memory_setup();
+	avail_pages = setup.avail_pages;
+	avail_ranges = setup.avail_ranges;
+
+	printk("Memory: Available physical memory = %d MB\n",
+	       ((avail_pages * PAGE_SIZE) / 1024) / 1024);
+
+	pfdtable = VIRTUAL(KTEXT_PHYS(__kernel_end));
+	pfdtable_top = pfdtable;
+	pfdtable_end = pfdtable + avail_pages;
+
+	printk("Memory: Page Frame descriptor table size = %d KB\n",
+	       (avail_pages * sizeof(pfdtable[0])) / 1024);
+
+	pfdrmap = (struct rmap *)pfdtable_end;
+	pfdrmap_top = pfdrmap;
+	pfdrmap_end = pfdrmap + avail_ranges;
+
+	kmem_end = round_up((uintptr_t)pfdrmap_end, PAGE_SIZE);
+	printk("Memory: Kernel memory area end = 0x%lx\n", kmem_end);
+
+	/*
+	 * Second Pass: actually fill the pfdtable entries
+	 *
+	 * Including add_range(), this loop is O(n), where
+	 * n = number of available memory pages in the system
+	 */
+
+	e820_for_each(range) {
+		if (range->type != E820_AVAIL)
+			continue;
+		if (e820_sanitize_range(range, kmem_end))
+			continue;
+
+		pfdtable_add_range(range);
+	}
 }
 
 /*
@@ -448,17 +341,13 @@ static char tmpbuf[PAGE_SIZE];
  */
 static int __unused _test_pfdfree_count(void) {
 	struct e820_range *range;
-	uint32_t *entry, entry_len;
 	int count;
 
 	count = 0;
-	e820_for_each(entry, entry_len) {
-		entry_len = *entry++;
-
-		range = (struct e820_range *)entry;
+	e820_for_each(range) {
 		if (range->type != E820_AVAIL)
 			continue;
-		if (sanitize_e820_range(range))
+		if (e820_sanitize_range(range, kmem_end))
 			continue;
 
 		count += range->len / PAGE_SIZE;
@@ -483,7 +372,6 @@ static int __unused _test_pfdfree_count(void) {
  * Prerequisite: rmode E820h-struct previously validated
  */
 static int __unused _test_pfdtable_add_range(void) {
-	uint32_t *entry, entry_len;
 	uint64_t old_end, old_count, repeat, ranges;
 	struct e820_range *range, subrange;
 	struct rmap *rmap;
@@ -510,14 +398,10 @@ static int __unused _test_pfdtable_add_range(void) {
 	pfdfree_head = NULL;
 
 	/* Refill the table, page by page */
-	e820_for_each(entry, entry_len) {
-		entry_len = *entry++;
-
-		range = (struct e820_range *)entry;
-
+	e820_for_each(range) {
 		if (range->type != E820_AVAIL)
 			continue;
-		if (sanitize_e820_range(range))
+		if (e820_sanitize_range(range, kmem_end))
 			continue;
 
 		subrange = *range;
@@ -546,7 +430,6 @@ static int __unused _test_pfdtable_add_range(void) {
  */
 static int _page_is_free(struct page *page)
 {
-	uint32_t *entry, entry_len;
 	uintptr_t start, end, addr;
 	struct e820_range *range;
 
@@ -554,10 +437,7 @@ static int _page_is_free(struct page *page)
 	if (addr < (uintptr_t)PHYS(kmem_end))
 		return false;
 
-	e820_for_each(entry, entry_len) {
-		entry_len = *entry++;
-
-		range = (struct e820_range *)entry;
+	e820_for_each(range) {
 		if (range->type != E820_AVAIL)
 			continue;
 		start = range->base;

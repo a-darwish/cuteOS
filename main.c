@@ -77,9 +77,11 @@ void kernel_start(void)
 
 	print_info();
 
+	e820_init();
+	pagealloc_init();
+
 	/* Now git rid of our boot page tables
 	 * and setup the permanent ones */
-	pagealloc_init();
 	memory_map_init();
 
 	/* Parse the MP tables for needed IRQs

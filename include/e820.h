@@ -16,7 +16,7 @@
  *             Success                       Failure
  *
  *     -----------------------       -----------------------
- *    |       Checksum        |     |       Checksum        |	Ignored (for now)
+ *    |       Checksum        |     |       Checksum        |
  *     -----------------------       -----------------------
  *    |     Err Code (0)      |     |    Err Code ( > 0)    |	Error code
  *     -----------------------       -----------------------
@@ -52,18 +52,27 @@
  * From now on, we'll refer to above composite struct as 'E820H struct'.
  */
 
+/*
+ * Shared defs between C and real-mode code
+ */
+
 /* E820H struct base address. Should in the first 64K
- * [0, (0xffff - 0x1000)] range to ease rmode access */
-#define E820_BASE	0x1000
+ * [0, 0xffff] range to ease real-mode access */
+#define E820_PHYS_BASE	0x1000
 
 /* The struct shouldn't exceed a 4K page (arbitary) */
-#define E820_MAX	(E820_BASE + 0x1000)
+#define E820_PHYS_MAX	(E820_PHYS_BASE + 0x1000)
 
 /* Struct start signature */
 #define E820_INIT_SIG	('C'<<(3*8) | 'U'<<(2*8) | 'T'<<(1*8) | 'E')
 
+/* E820H-struct-is-validated signature */
+#define E820_VALID_SIG	('V'<<(3*8) | 'A'<<(2*8) | 'L'<<(1*8) | 'D')
+
 /* ACPI-defined 'E820h supported' BIOS signature */
 #define E820_BIOS_SIG	('S'<<(3*8) | 'M'<<(2*8) | 'A'<<(1*8) | 'P')
+
+#define E820_END	0xffffffff	/* E820 list end mark */
 
 /* Error codes by e820.S */
 #define E820_SUCCESS	0x0		/* No errors; e820 entries validated */
@@ -77,6 +86,12 @@
 
 #include <stdint.h>
 #include <kernel.h>
+
+/*
+ * C code shouldn't be concerned with phys addresses
+ */
+#define E820_BASE	VIRTUAL(E820_PHYS_BASE)
+#define E820_MAX	VIRTUAL(E820_PHYS_MAX)
 
 /*
  * E820h struct error to string map
@@ -121,8 +136,30 @@ enum {
 	E820_DISABLED	= 0x6,		/* Not BIOS chipset-enabled memory */
 };
 
+/**
+ * e820_for_each - iterate over E820h-struct ranges
+ * @range:       the iterator, 'struct e820_range *'
+ *
+ * Take care while modifying this code, we're really
+ * bending C and GNU extensions rules to achieve it.
+ *
+ * Prerequisite: E820h-struct previously validated
+ */
+#define e820_for_each(range)						\
+	assert(*(uint32_t *)E820_BASE == E820_VALID_SIG);		\
+	for (uint32_t *entry = E820_BASE + sizeof(*entry),		\
+		     entry_len = *entry++,				\
+		     __unused *_____b = (uint32_t *)			\
+		             ({range  = (struct e820_range *)entry;});	\
+									\
+	     *(entry - 1) != E820_END;					\
+									\
+	     entry = (uint32_t *)((char *)entry + entry_len),		\
+		     entry_len = *entry++,				\
+		     range = (struct e820_range *)entry)
+
 /*
- * Range types are sequential; use as index.
+ * ACPI memory type -> string.
  */
 static char *e820_types[] = {
 	[E820_AVAIL]    = "available",
@@ -148,13 +185,18 @@ static inline char *e820_typestr(uint32_t type)
 	return e820_types[type];
 }
 
-void mmap_init(void);
+/*
+ * e820 module public interfaces
+ */
 
-#define E820_END	UINT32_MAX	/* E820 list end mark */
+struct e820_setup {
+	uint64_t avail_pages;
+	uint64_t avail_ranges;
+};
 
-#else /* __ASSEMBLY__ */
-
-#define E820_END	0xffffffff
+struct e820_setup e820_get_memory_setup(void);
+int e820_sanitize_range(struct e820_range *range, uint64_t kmem_end);
+void e820_init(void);
 
 #endif /* !__ASSEMBLY__ */
 

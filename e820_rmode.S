@@ -56,12 +56,13 @@ e820:
 	.equ   error_sz, 4		# error field size
 	.equ   chksm_sz, 4		# chksm field size
 	.equ   end_sz,   4		# end mark size
-	.equ   max_entry, E820_MAX-(entry_sz+width_sz+end_sz+error_sz+chksm_sz)
+	.equ   max_entry, E820_PHYS_MAX - \
+		(entry_sz+width_sz+end_sz+error_sz+chksm_sz)
 get_mmap:
 	xorw   %ax, %ax
 	movw   %ax, %es
 	movw   %ax, %ds
-	movl   $E820_BASE, %edi		# buffer start
+	movl   $E820_PHYS_BASE, %edi	# buffer start
 
 	/* First write our start signature */
 	movl   $init_sig, %es:(%di)
@@ -129,7 +130,7 @@ end:	movl   $E820_END, %es:-end_sz(%di)
 	movl   %eax, %es:(%di)
 
 	/* Finally, calculate checksum */
-	movl   $E820_BASE, %esi
+	movl   $E820_PHYS_BASE, %esi
 	addl   $error_sz, %edi
 	call   get_checksum
 	movl   %eax, %es:(%di)

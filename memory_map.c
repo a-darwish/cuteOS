@@ -133,7 +133,6 @@ static void map_pml4_range(struct pml4e *pml4_base, uintptr_t vstart,
 	     pml4e <= pml4_base + pml4_index(vend - 1);
 	     pml4e++) {
 		assert((char *)pml4e < (char *)pml4_base + PAGE_SIZE);
-
 		if (!pml4e->present) {
 			pml4e->present = 1;
 			pml4e->read_write = 1;
