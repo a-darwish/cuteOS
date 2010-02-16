@@ -20,6 +20,8 @@
 #include <stdint.h>
 #include <paging.h>
 
+static struct e820_setup memory_setup;
+
 /*
  * Checksum the rmode-returned e820h struct
  */
@@ -84,6 +86,34 @@ static void validate_e820h_struct(void)
 	*entry = E820_VALID_SIG;
 }
 
+static void build_memory_setup(void)
+{
+	uint64_t avail_len, avail_ranges, phys_end, end;
+	struct e820_range *range;
+
+	assert(memory_setup.valid == 0);
+
+	phys_end = 0;
+	avail_len = 0;
+	avail_ranges = 0;
+	e820_for_each(range) {
+		if (range->type != E820_AVAIL)
+			continue;
+
+		avail_len += range->len;
+		avail_ranges++;
+
+		end = range->base + range->len;
+		if (end > phys_end)
+			phys_end = end;
+	}
+
+	memory_setup.valid = 1;
+	memory_setup.avail_ranges = avail_ranges;
+	memory_setup.avail_pages = avail_len / PAGE_SIZE;
+	memory_setup.phys_addr_end = phys_end;
+}
+
 /*
  * Modify given e820-available range to meet our standards:
  * - we work with memory in units of pages: page-align
@@ -124,27 +154,23 @@ int e820_sanitize_range(struct e820_range *range, uint64_t kmem_end)
  * depends on available physical memory) before filling
  * its entries. Thus, we provide it this method ..
  */
-struct e820_setup e820_get_memory_setup(void)
+struct e820_setup *e820_get_memory_setup(void)
 {
-	uint64_t avail_len;
-	struct e820_range *range;
-	struct e820_setup setup;
+	assert(memory_setup.valid == 1);
 
-	avail_len = 0;
-	setup.avail_pages = 0;
-	setup.avail_ranges = 0;
-	e820_for_each(range) {
-		if (range->type == E820_AVAIL) {
-			avail_len += range->len;
-			setup.avail_ranges++;
-		}
-	}
+	return &memory_setup;
+}
 
-	setup.avail_pages = avail_len / PAGE_SIZE;
-	return setup;
+uint64_t e820_get_phys_addr_end(void)
+{
+	assert(memory_setup.valid == 1);
+	assert(memory_setup.phys_addr_end);
+
+	return memory_setup.phys_addr_end;
 }
 
 void e820_init(void)
 {
 	validate_e820h_struct();
+	build_memory_setup();
 }

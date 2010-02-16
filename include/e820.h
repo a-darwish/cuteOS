@@ -1,5 +1,5 @@
-#ifndef _E820
-#define _E820
+#ifndef _E820_H
+#define _E820_H
 
 /*
  * BIOS 0xE820 - Query System Address Map service.
@@ -190,14 +190,18 @@ static inline char *e820_typestr(uint32_t type)
  */
 
 struct e820_setup {
-	uint64_t avail_pages;
-	uint64_t avail_ranges;
+	int valid;			/* true if struct is initialized */
+	uint64_t avail_pages;		/* # of e820-available pages */
+	uint64_t avail_ranges;		/* # of bios e820 ranges */
+	uint64_t phys_addr_end;		/* max addressable/avail phys addr + 1 */
 };
 
-struct e820_setup e820_get_memory_setup(void);
+struct e820_setup *e820_get_memory_setup(void);
+uint64_t e820_get_phys_addr_end(void);
+
 int e820_sanitize_range(struct e820_range *range, uint64_t kmem_end);
 void e820_init(void);
 
 #endif /* !__ASSEMBLY__ */
 
-#endif /* _E820 */
+#endif /* _E820_H */

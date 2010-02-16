@@ -262,7 +262,7 @@ int page_is_free(struct page *page)
 void pagealloc_init(void)
 {
 	struct e820_range *range;
-	struct e820_setup setup;
+	struct e820_setup *setup;
 	uint64_t avail_pages, avail_ranges;
 
 	/*
@@ -279,8 +279,8 @@ void pagealloc_init(void)
 	 */
 
 	setup = e820_get_memory_setup();
-	avail_pages = setup.avail_pages;
-	avail_ranges = setup.avail_ranges;
+	avail_pages = setup->avail_pages;
+	avail_ranges = setup->avail_ranges;
 
 	printk("Memory: Available physical memory = %d MB\n",
 	       ((avail_pages * PAGE_SIZE) / 1024) / 1024);
@@ -331,7 +331,7 @@ void pagealloc_init(void)
 /*
  * Keep track of pages we allocate and free
  */
-#define PAGES_COUNT	10000
+#define PAGES_COUNT	100000
 static struct page *pages[PAGES_COUNT];
 static char tmpbuf[PAGE_SIZE];
 

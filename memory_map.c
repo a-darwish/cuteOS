@@ -15,6 +15,7 @@
 #include <paging.h>
 #include <mm.h>
 #include <ioapic.h>
+#include <e820.h>
 
 /*
  * Kernel's address-space master page table.
@@ -173,15 +174,19 @@ static void map_kernel_range(uintptr_t vstart, uint64_t vlen, uintptr_t pstart)
 void memory_map_init(void)
 {
 	struct page *pml4_page;
+	uint64_t phys_end;
 
 	pml4_page = get_zeroed_page();
 	kernel_pml4_table = page_address(pml4_page);
 
 	map_kernel_range(KTEXT_BASE, 0x40000000, 0);
 
-	/* Map first physical 1GB till we have the right
-	 * abstractions to get physical memory end */
-	map_kernel_range(VIRTUAL_BASE, 0x40000000, 0);
+	/* Map the entire available physical space */
+	phys_end = e820_get_phys_addr_end();
+	phys_end = round_up(phys_end, PAGE_SIZE_2MB);
+	map_kernel_range(VIRTUAL_BASE, phys_end, 0);
+	printk("Memory: Mappnig range 0x%lx -> 0x%lx to physical 0x0\n",
+	       VIRTUAL_BASE, VIRTUAL_BASE + phys_end);
 
 	/* Temporarily map APIC and IOAPIC MMIO addresses */
 	map_kernel_range(IOAPIC_VRBASE, 2 * PAGE_SIZE_2MB, IOAPIC_PHBASE);
