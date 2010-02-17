@@ -18,10 +18,9 @@
  * C99
  */
 #define NULL	((void *)0)
-enum {
-	true  = 1,
-	false = 0,
-};
+#define bool	_Bool
+#define true    ((_Bool)1)
+#define false   ((_Bool)0)
 
 /*
  * GCC extensions shorthands

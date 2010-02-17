@@ -51,11 +51,6 @@ int page_is_free(struct page *);
 void pagealloc_init(void);
 
 /*
- * Kernel memory maps
- */
-void memory_map_init(void);
-
-/*
  * Test cases driver
  */
 

@@ -20,6 +20,7 @@
 #include <smpboot.h>
 #include <e820.h>
 #include <mm.h>
+#include <vm.h>
 #include <paging.h>
 #include <kmalloc.h>
 
@@ -81,8 +82,8 @@ void kernel_start(void)
 	pagealloc_init();
 
 	/* Now git rid of our boot page tables
-	 * and setup the permanent ones */
-	memory_map_init();
+	 * and setup dynamic permanent ones */
+	vm_init();
 
 	/* Parse the MP tables for needed IRQs
 	 * data before initializing the APICs */
@@ -98,6 +99,7 @@ void kernel_start(void)
 	kmalloc_init();
 
 	/* Testcases, if compiled */
+	vm_run_tests();
 	pagealloc_run_tests();
 	kmalloc_run_tests();
 
