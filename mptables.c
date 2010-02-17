@@ -203,10 +203,6 @@ static void parse_ioapic(void *addr)
 	if (nr_ioapics >= IOAPICS_MAX)
 		panic("Only %d IO APICs supported", IOAPICS_MAX);
 
-	if (ioapic->base < IOAPIC_PHBASE ||
-	    ioapic->base > IOAPIC_PHBASE_MAX)
-		panic("Unmapped I/O APIC base at 0x%lx\n", ioapic->base);
-
 	/* We read the version from the chip itself instead
 	 * of reading it now from the mptable entries */
 	ioapic_descs[nr_ioapics].id = ioapic->id;

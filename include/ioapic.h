@@ -11,26 +11,12 @@
  *  the Free Software Foundation, version 2.
  */
 
-/*
- * I/O APIC registers address space
- */
-
-#define IOAPIC_SPACE	0x40		/* Address space size */
-#define IOAPIC_PHBASE	0xfec00000	/* Physical base */
-#define IOAPIC_PHBASE_MAX (IOAPIC_PHBASE + 0x200000 - IOAPIC_SPACE)
-
-/* FIXME: use a dynamic kmap() to get rid of our physical base
- * address limitations. Current assumption is buggy if the I/O
- * APICs have more redirection table entries than expected */
-#define IOAPIC_VRBASE	0xffffffffffc00000ULL
-
-#ifndef __ASSEMBLY__
-
 #include <stdint.h>
 #include <kernel.h>
 #include <apic.h>
 #include <mptables.h>
 #include <mmio.h>
+#include <vm.h>
 
 /*
  * System-wide I/O APIC descriptors for each I/O APIC reported
@@ -82,16 +68,9 @@ union ioapic_arb {
 };
 
 /*
- * Return the virtual mapping of given IOAPIC physical base
- * FIXME: get rid of those ad-hoc mappings using an iomap()
+ * IOAPIC memory mapped registers address space size
  */
-static inline uintptr_t ioapic_virtual(uint32_t addr)
-{
-	assert(IOAPIC_PHBASE <= addr);
-	assert(IOAPIC_PHBASE_MAX >= addr);
-
-	return IOAPIC_VRBASE + IOAPIC_PHBASE - addr;
-}
+#define IOAPIC_MMIO_SPACE	0x20
 
 /*
  * Get the IO APIC virtual base from the IOAPICs repository.
@@ -99,8 +78,12 @@ static inline uintptr_t ioapic_virtual(uint32_t addr)
  */
 static inline uintptr_t ioapic_base(int apic)
 {
+	void *vbase;
+
 	assert(apic < nr_ioapics);
-	return ioapic_virtual(ioapic_descs[apic].base);
+	vbase = vm_kmap(ioapic_descs[apic].base, IOAPIC_MMIO_SPACE);
+
+	return (uintptr_t)vbase;
 }
 
 static inline uint32_t ioapic_read(int apic, uint8_t reg)
@@ -210,7 +193,5 @@ struct ioapic_pin {
 
 void ioapic_setup_isairq(uint8_t irq, int vector);
 void ioapic_init(void);
-
-#endif /* __ASSEMBLY__ */
 
 #endif /* _IOAPIC_H */

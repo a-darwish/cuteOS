@@ -11,28 +11,21 @@
  *  the Free Software Foundation, version 2.
  */
 
-#include <ioapic.h>
-
-/*
- * Local APIC registers base addresses = the I/O APIC
- * registers physical and virtual base + 2MB.
- */
-#define APIC_PHBASE (IOAPIC_PHBASE + 0x200000)	/* Physical */
-#define APIC_VRBASE (IOAPIC_VRBASE + 0x200000)	/* Virtual; head.S */
-
-#ifndef __ASSEMBLY__
-
-#include <msr.h>
+#include <kernel.h>
 #include <stdint.h>
+#include <paging.h>
+#include <mmio.h>
+#include <vm.h>
+#include <msr.h>
 #include <mptables.h>
 
 /*
  * APIC Base Address MSR
  */
-#define MSR_APICBASE 0x0000001b
-#define MSR_APICBASE_ENABLE    (1UL << 11)
-#define MSR_APICBASE_BSC       (1UL << 8)
-#define MSR_APICBASE_ADDRMASK  (0x000ffffffffff000ULL)
+#define MSR_APICBASE		0x0000001b
+#define MSR_APICBASE_ENABLE	(1UL << 11)
+#define MSR_APICBASE_BSC	(1UL << 8)
+#define MSR_APICBASE_ADDRMASK	0x000ffffffffff000ULL
 
 static inline uint64_t msr_apicbase_getaddr(void)
 {
@@ -230,16 +223,27 @@ enum {
  * APIC register accessors
  */
 
+#define APIC_PHBASE	0xfee00000	/* Physical */
+#define APIC_MMIO_SPACE	PAGE_SIZE	/* 4-KBytes */
+
 static inline void apic_write(uint32_t reg, uint32_t val)
 {
-	volatile uint32_t *addr = (uint32_t *)(APIC_VRBASE + reg);
-	*addr = val;
+	void *vaddr;
+
+	vaddr = vm_kmap(APIC_PHBASE, APIC_MMIO_SPACE);
+	vaddr = (char *)vaddr + reg;
+
+	writel(val, vaddr);
 }
 
 static inline uint32_t apic_read(uint32_t reg)
 {
-	volatile uint32_t *addr = (uint32_t *)(APIC_VRBASE + reg);
-	return *addr;
+	void *vaddr;
+
+	vaddr = vm_kmap(APIC_PHBASE, APIC_MMIO_SPACE);
+	vaddr = (char *)vaddr + reg;
+
+	return readl(vaddr);
 }
 
 void apic_init(void);
@@ -254,5 +258,4 @@ int apic_ipi_acked(void);
 #define APIC_THERMAL_VECTOR 0
 #define APIC_PERFC_VECTOR   0
 
-#endif /* !__ASSEMBLY__ */
 #endif /* _APIC_H */

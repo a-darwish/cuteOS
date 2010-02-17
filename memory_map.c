@@ -14,7 +14,6 @@
 #include <kernel.h>
 #include <paging.h>
 #include <mm.h>
-#include <ioapic.h>
 #include <e820.h>
 #include <vm.h>
 #include <tests.h>
@@ -271,9 +270,6 @@ void vm_init(void)
 	map_kernel_range(KERN_PAGE_OFFSET, phys_end, KERN_PHYS_OFFSET);
 	printk("Memory: Mappnig range 0x%lx -> 0x%lx to physical 0x0\n",
 	       KERN_PAGE_OFFSET, KERN_PAGE_OFFSET + phys_end);
-
-	/* Temporarily map APIC and IOAPIC MMIO addresses */
-	map_kernel_range(IOAPIC_VRBASE, 2 * PAGE_SIZE_2MB, IOAPIC_PHBASE);
 
 	/* Heaven be with us .. */
 	load_cr3(page_phys_address(pml4_page));
