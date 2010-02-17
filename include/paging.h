@@ -201,24 +201,62 @@ static inline uint64_t get_cr3(void)
  */
 
 /*
- * Mapping base for kernel text, data, and bss (-2GB)
+ * Mappings for kernel text, data, and bss (-2GB)
  *
- * We need a char* cast in case someone gave us an int or long
- * pointer that can mess up the whole summation/transformation
+ * This is the virtual base for %rip, %rsp, and kernel global
+ * symbols. Check the logic behind this at head.S comments.
+ *
+ * @KTEXT_OFFSET is equivalent to Linux's __START_KERNEL_MAP
  */
-#define KTEXT_BASE		0xffffffff80000000ULL
-#define KTEXT_VIRTUAL(address)	((void *)((char *)(address) + KTEXT_BASE))
-#define KTEXT_PHYS(address)	((void *)((char *)(address) - KTEXT_BASE))
+#define KTEXT_PAGE_OFFSET	0xffffffff80000000ULL
+#define KTEXT_PHYS_OFFSET	0x0
+#define KTEXT_PAGE_END		0xffffffffa0000000ULL
+#define KTEXT_AREA_SIZE		(KTEXT_PAGE_END - KTEXT_PAGE_OFFSET)
+#define KTEXT_PHYS_END		(KTEXT_PHYS_OFFSET + KTEXT_AREA_SIZE)
+#define KTEXT_VIRTUAL(phys_address)				\
+({								\
+	assert((uintptr_t)(phys_address) >= KTEXT_PHYS_OFFSET);	\
+	assert((uintptr_t)(phys_address) < KTEXT_PHYS_END);	\
+								\
+	(void *)((char *)(phys_address) + KTEXT_PAGE_OFFSET);	\
+})
+#define KTEXT_PHYS(virt_address)				\
+({								\
+	assert((uintptr_t)(virt_address) >= KTEXT_PAGE_OFFSET);	\
+	assert((uintptr_t)(virt_address) < KTEXT_PAGE_END);	\
+								\
+	(void *)((char *)(virt_address) - KTEXT_PAGE_OFFSET);	\
+})
 
 /*
- * Mapping base for all system physical memory.
+ * Kernel-space mappings for all system physical memory
  *
- * This is the standard kernel virtual memory base for every-
- * thing except kernel text and data areas (%rip and %rsp).
+ * This is the standard kernel virtual base for everything
+ * except kernel text and data areas (%rip, %rsp, symbols).
+ * Check the logic behind this at the head.S comments.
+ *
+ * @KERN_PAGE_END_MAX, @KERN_PHYS_END_MAX: those are only
+ * rached if the system has max supported phys memory, 64TB!
  */
-#define VIRTUAL_BASE		0xffff800000000000ULL
-#define VIRTUAL(address)	((void *)((char *)(address) + VIRTUAL_BASE))
-#define PHYS(address)		((void *)((char *)(address) - VIRTUAL_BASE))
+#define KERN_PAGE_OFFSET	0xffff800000000000ULL
+#define KERN_PHYS_OFFSET	0x0
+#define KERN_PAGE_END_MAX	0xffffc00000000000ULL
+#define KERN_AREA_MAX_SIZE	(KERN_PAGE_END_MAX - KERN_PAGE_OFFSET)
+#define KERN_PHYS_END_MAX	(KERN_PHYS_OFFSET + KERN_AREA_MAX_SIZE)
+#define VIRTUAL(phys_address)					\
+({								\
+	assert((uintptr_t)(phys_address) >= KERN_PHYS_OFFSET);	\
+	assert((uintptr_t)(phys_address) < KERN_PHYS_END_MAX);	\
+								\
+	(void *)((char *)(phys_address) + KERN_PAGE_OFFSET);	\
+})
+#define PHYS(virt_address)					\
+({								\
+	assert((uintptr_t)(virt_address) >= KERN_PAGE_OFFSET);	\
+	assert((uintptr_t)(virt_address) < KERN_PAGE_END_MAX);	\
+								\
+	(void *)((char *)(virt_address) - KERN_PAGE_OFFSET);	\
+})
 
 /* Maximum mapped physical address. We should get rid of our
  * ad-hoc mappings very soon */
@@ -226,12 +264,12 @@ static inline uint64_t get_cr3(void)
 
 #else /* __ASSEMBLY__ */
 
-#define KTEXT_BASE		0xffffffff80000000
-#define KTEXT_VIRTUAL(address)	((address) + KTEXT_BASE)
-#define KTEXT_PHYS(address)	((address) - KTEXT_BASE)
+#define KTEXT_PAGE_OFFSET	0xffffffff80000000
+#define KTEXT_VIRTUAL(address)	((address) + KTEXT_PAGE_OFFSET)
+#define KTEXT_PHYS(address)	((address) - KTEXT_PAGE_OFFSET)
 
-#define VIRTUAL_BASE		0xffff800000000000
-#define VIRTUAL(address)	((address) + VIRTUAL_BASE)
+#define KERN_PAGE_OFFSET	0xffff800000000000
+#define VIRTUAL(address)	((address) + KERN_PAGE_OFFSET)
 
 #endif /* !__ASSEMBLY__ */
 

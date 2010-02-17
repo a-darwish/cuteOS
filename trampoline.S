@@ -127,7 +127,7 @@ startup_64:
 	movq   $(init_pml2 + 0x007), (identity_pml3 + 510 * 8)
 
 	/* Virtualize %rip and %rsp */
-	addq   $KTEXT_BASE, %rsp
+	addq   $KTEXT_PAGE_OFFSET, %rsp
 	movq   $KTEXT_VIRTUAL(SMPBOOT_START + (1f - trampoline)), %rax
 	jmpq   *%rax
 
@@ -142,7 +142,7 @@ startup_64:
 
 	/* Virtualize %idtr and %gdtr bases */
 	movq   $scratch_mem, %rdi
-	movq   $VIRTUAL_BASE, %rax
+	movq   $KERN_PAGE_OFFSET, %rax
 	addq   %rax, SMPBOOT_IDT_BASE(%rdi)
 	addq   %rax, SMPBOOT_GDT_BASE(%rdi)
 	lidt   SMPBOOT_IDT(%rdi)

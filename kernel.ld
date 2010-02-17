@@ -46,7 +46,7 @@ SECTIONS
 
 	/* High virtual-area mapped kernel code and data start */
 	__phys_start = .;
-	PROVIDE_HIDDEN(virt_start = __phys_start + KTEXT_BASE);
+	PROVIDE_HIDDEN(virt_start = __phys_start + KTEXT_PAGE_OFFSET);
 
 	/* We override the head.o bss section to save executable
 	 * size. On the very start, we'll move the code away to

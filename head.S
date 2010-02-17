@@ -274,7 +274,7 @@ startup_64:
 	/* Run using virtual addresses from now on ..
 	 * All addresses will be based on 0xffff800000000000
 	 * except %rip and %rsp, where they'll be -2GB based */
-	leaq   KTEXT_BASE(%rsp), %rsp
+	addq   $KTEXT_PAGE_OFFSET, %rsp
 	lgdt   virtual_gdtdesc
 	movq   $KTEXT_VIRTUAL(1f), %rax
 	jmpq   *%rax

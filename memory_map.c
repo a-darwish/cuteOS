@@ -179,14 +179,14 @@ void memory_map_init(void)
 	pml4_page = get_zeroed_page();
 	kernel_pml4_table = page_address(pml4_page);
 
-	map_kernel_range(KTEXT_BASE, 0x40000000, 0);
+	map_kernel_range(KTEXT_PAGE_OFFSET, KTEXT_AREA_SIZE, KTEXT_PHYS_OFFSET);
 
 	/* Map the entire available physical space */
 	phys_end = e820_get_phys_addr_end();
 	phys_end = round_up(phys_end, PAGE_SIZE_2MB);
-	map_kernel_range(VIRTUAL_BASE, phys_end, 0);
+	map_kernel_range(KERN_PAGE_OFFSET, phys_end, KERN_PHYS_OFFSET);
 	printk("Memory: Mappnig range 0x%lx -> 0x%lx to physical 0x0\n",
-	       VIRTUAL_BASE, VIRTUAL_BASE + phys_end);
+	       KERN_PAGE_OFFSET, KERN_PAGE_OFFSET + phys_end);
 
 	/* Temporarily map APIC and IOAPIC MMIO addresses */
 	map_kernel_range(IOAPIC_VRBASE, 2 * PAGE_SIZE_2MB, IOAPIC_PHBASE);
