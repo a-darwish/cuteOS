@@ -24,6 +24,7 @@ image
 #
 *.s
 *.d
+*.ldp
 
 #
 # Hidden files +
@@ -35,7 +36,7 @@ image
 \#*#
 
 #
-# Don't ignore us
+# Don't ignore ourself
 #
 # `!' negates the pattern; any matching file excluded by
 # a previous pattern will become included again. Note that

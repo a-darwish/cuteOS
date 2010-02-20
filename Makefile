@@ -26,17 +26,66 @@ AFLAGS = -D__ASSEMBLY__
 
 # Our global kernel linker script, after being
 # 'cpp' pre-processed from the *.ld source
-PROCESSED_LD_SCRIPT = kernel.ldp
+PROCESSED_LD_SCRIPT = kern/kernel.ldp
 
-LIB_OBJS = lib/string.o lib/printf.o
+# GCC-generated C code header files dependencies
+# Check '-MM' and '-MT' at gcc(1)
+DEPS_ROOT_DIR = .deps
+DEPS_DIRS    += $(DEPS_ROOT_DIR)
 
-# Bootsector object won't be linked with the kernel;
-# handle it differently
-KERN_OBJS = head.o e820_rmode.o common.o main.o idt.o i8259.o \
-            apic.o ioapic.o mptables.o keyboard.o smpboot.o \
-            pit.o trampoline.o spinlock.o e820.o page_alloc.o  \
-            kmalloc.o memory_map.o $(LIB_OBJS)
-OBJS = bootsect.o $(KERN_OBJS)
+#
+# Object files listings
+#
+
+# Core and Secondary CPUs bootstrap
+DEPS_DIRS		+= $(DEPS_ROOT_DIR)/boot
+BOOT_OBJS =		\
+  boot/head.o		\
+  boot/e820.o		\
+  boot/trampoline.o
+
+# Memory management
+DEPS_DIRS		+= $(DEPS_ROOT_DIR)/mm
+MM_OBJS =		\
+  mm/e820.o		\
+  mm/page_alloc.o	\
+  mm/vm_map.o		\
+  mm/kmalloc.o
+
+# Devices
+DEPS_DIRS		+= $(DEPS_ROOT_DIR)/dev
+DEV_OBJS =		\
+  dev/i8259.o		\
+  dev/apic.o		\
+  dev/ioapic.o		\
+  dev/pit.o		\
+  dev/keyboard.o
+
+# Isolated library code
+DEPS_DIRS		+= $(DEPS_ROOT_DIR)/lib
+LIB_OBJS =		\
+  lib/string.o		\
+  lib/printf.o		\
+  lib/spinlock.o
+
+# All other kernel objects
+DEPS_DIRS		+= $(DEPS_ROOT_DIR)/kern
+KERN_OBJS =		\
+  $(BOOT_OBJS)		\
+  $(MM_OBJS)		\
+  $(DEV_OBJS)		\
+  $(LIB_OBJS)		\
+  kern/idt.o		\
+  kern/mptables.o	\
+  kern/smpboot.o	\
+  kern/common.o		\
+  kern/main.o
+
+BOOTSECT_OBJS =		\
+  boot/bootsect.o
+
+BUILD_OBJS    =		$(BOOTSECT_OBJS) $(KERN_OBJS)
+BUILD_DIRS    =		$(DEPS_DIRS)
 
 # Control output verbosity
 # `@': suppresses echoing of subsequent command
@@ -49,12 +98,6 @@ else
 	Q =
 endif
 
-# GCC-generated object files dependencies folders
-# See `-MM' and `-MT' at gcc(1)
-DEPS_DIR = .deps
-DEPS_LIB = $(DEPS_DIR)/lib
-BUILD_DIRS = $(DEPS_DIR) $(DEPS_LIB)
-
 all: $(BUILD_DIRS) image
 	$(E) "Kernel ready"
 
@@ -65,17 +108,27 @@ check: clean
 	$(E) "  SPARSE build"
 	$(Q) $(MAKE) CC=$(CGCC) all
 
-image: bootsect.elf kernel.elf
-	$(E) "  OBJCOPY  " $@
-	$(Q) objcopy -O binary bootsect.elf bootsect.bin
-	$(Q) objcopy -O binary kernel.elf kernel.bin
-	$(Q) cat bootsect.bin kernel.bin > $@
+#
+# Build final, self-contained, bootable image
+#
 
-bootsect.elf: bootsect.o
+BOOTSECT_ELF = boot/bootsect.elf
+BOOTSECT_BIN = boot/bootsect.bin
+
+KERNEL_ELF   = kern/kernel.elf
+KERNEL_BIN   = kern/kernel.bin
+
+image: $(BOOTSECT_ELF) $(KERNEL_ELF)
+	$(E) "  OBJCOPY  " $@
+	$(Q) objcopy -O binary $(BOOTSECT_ELF) $(BOOTSECT_BIN)
+	$(Q) objcopy -O binary $(KERNEL_ELF) $(KERNEL_BIN)
+	$(Q) cat $(BOOTSECT_BIN) $(KERNEL_BIN) > $@
+
+$(BOOTSECT_ELF): $(BOOTSECT_OBJS)
 	$(E) "  LD       " $@
 	$(Q) $(LD) $(LDFLAGS) -Ttext 0x0  $< -o $@
 
-kernel.elf: $(KERN_OBJS) $(PROCESSED_LD_SCRIPT)
+$(KERNEL_ELF): $(KERN_OBJS) $(PROCESSED_LD_SCRIPT)
 	$(E) "  LD       " $@
 	$(Q) $(LD) $(LDFLAGS) -T $(PROCESSED_LD_SCRIPT) $(KERN_OBJS) -o $@
 
@@ -83,15 +136,15 @@ kernel.elf: $(KERN_OBJS) $(PROCESSED_LD_SCRIPT)
 %.o: %.S
 	$(E) "  AS       " $@
 	$(Q) $(CC) -c $(AFLAGS) $(CFLAGS) $< -o $@
-	$(Q) $(CC) -MM $(AFLAGS) $(CFLAGS) $< -o $(DEPS_DIR)/$*.d -MT $@
+	$(Q) $(CC) -MM $(AFLAGS) $(CFLAGS) $< -o $(DEPS_ROOT_DIR)/$*.d -MT $@
 %.o: %.c
 	$(E) "  CC       " $@
 	$(Q) $(CC) -c $(CPPFLAGS) $(CFLAGS) $< -o $@
-	$(Q) $(CC) -MM $(CPPFLAGS) $(CFLAGS) $< -o $(DEPS_DIR)/$*.d -MT $@
+	$(Q) $(CC) -MM $(CPPFLAGS) $(CFLAGS) $< -o $(DEPS_ROOT_DIR)/$*.d -MT $@
 %.ldp: %.ld
 	$(E) "  CPP      " $@
 	$(Q) $(CPP) $(AFLAGS) $(CFLAGS) -P $< -O $@
-	$(Q) $(CPP) -MM $(AFLAGS) $(CFLAGS) $< -o $(DEPS_DIR)/$*.d -MT $@
+	$(Q) $(CPP) -MM $(AFLAGS) $(CFLAGS) $< -o $(DEPS_ROOT_DIR)/$*.d -MT $@
 
 # Needed build directories
 $(BUILD_DIRS):
@@ -101,16 +154,15 @@ $(BUILD_DIRS):
 .PHONY: clean
 clean:
 	$(E) "  CLEAN"
-	$(Q) rm -f image
-	$(Q) rm -f $(OBJS)
-	$(Q) rm -f *.bin
-	$(Q) rm -f *.elf
-	$(Q) rm -f $(PROCESSED_LD_SCRIPT)
+	$(Q) rm -f  image
+	$(Q) rm -f  $(BUILD_OBJS)
 	$(Q) rm -fr $(BUILD_DIRS)
-	$(Q) rm -f *~
+	$(Q) rm -f  $(PROCESSED_LD_SCRIPT)
+	$(Q) rm -f  $(BOOTSECT_ELF) $(BOOTSECT_BIN)
+	$(Q) rm -f  $(KERNEL_ELF) $(KERNEL_BIN)
 
 # Include generated dependency files
 # `-': no error, not even a warning, if any of the given
 # filenames do not exist
--include $(DEPS_DIR)/*.d
--include $(DEPS_LIB)/*.d
+-include $(DEPS_ROOT_DIR)/*.d
+-include $(DEPS_ROOT_DIR)/*/*.d
