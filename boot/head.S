@@ -1,7 +1,7 @@
 /*
- * 64-bit startup code
+ * 64-bit bootstrap code
  *
- * Copyright (C) 2009 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2009-2010 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -20,13 +20,46 @@
  */
 .globl startup_32
 startup_32:
-	/* Relocate kernel code away from our bss section.
-	 * See the linker script for more details */
-	.equ   KERNEL_SIZE, 0x80000
+
+	/*
+	 * Relocate  kernel code away from our bss section
+	 * to its destined place at __kernel_phys_start.
+	 *
+	 * Check the rational for this at the linker script
+	 * before going any further ..
+	 *
+	 * __kernel_phys_start, the copy destination, may
+	 * reside inside the to-be-copied loaded kern image
+	 * itself if its size > bootstrap's 28KB BSS area.
+	 * This movsb overlap is corruptible (src < dst).
+	 *
+	 * To migitate this, we copy the code to a safe non
+	 * overlapping haven, then finally copy it again to
+	 * the likely overlapping __kern_phys_start address.
+	 */
+
+	/* Beyond kernel binary image end is guaranteed not
+	 * to overlap; let it be our safe haven area */
+	.equ   safe_haven, __kernel_phys_bin_end
+
 	movl   $__headbss_start, %esi
-	movl   $__phys_start, %edi
-	movl   $(KERNEL_SIZE / 4), %ecx
-	rep    movsl
+	movl   $safe_haven, %edi
+	movl   $__kernel_bin_size, %ecx
+	movl   %esi, %eax		# src
+	addl   %ecx, %eax		# %eax = region end
+	cmpl   %eax, %edi		# if overlapping:
+	jl     early_error		#  bailout ..
+	rep    movsb
+
+	/* After below copy, kernel code should start and
+	 * end at __kernel_phys{start,end} as normal.
+	 * movsb will _harmlessly_ overlap (src >= dst) */
+	movl   $safe_haven, %esi
+	movl   $__kernel_phys_start, %edi
+	movl   $__kernel_bin_size, %ecx
+	cmpl   %edi, %esi		# if src < dst:
+	jl     early_error		#  catastrophic ..
+	rep    movsb
 
 	/* Setup a boot stack and assure amd64 support */
 	movl   $stack_end, %esp
@@ -95,6 +128,14 @@ startup_32:
 	ljmp   $KERNEL_CS, $startup_64
 
 /*
+ * Error handling for 32-bit code
+ */
+
+early_error:
+	hlt
+	jmp    early_error
+
+/*
  * This x86 CPU has no 64-bit support; inform our
  * unlucky user and halt
  */
@@ -111,8 +152,7 @@ no_longmode:
 	movl   $(no64_end - no64_start), %ecx
 	rep    movsb
 
-1:	hlt
-	jmp    1b
+	jmp    early_error
 
 no64_start:
 	/* Message string + VGA color; little-endian */
@@ -129,6 +169,7 @@ no64_end:
 /*
  * Verify we're running on an amd64-compatible cpu
  */
+.type check_cpu64, @function
 check_cpu64:
 	/* Check if the CPUID instruction is supported to avoid an
 	 * invalid-opcode exception (#UD) in older cpus. The ability

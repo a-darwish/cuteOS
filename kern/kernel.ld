@@ -1,7 +1,7 @@
 /* 
  * Kernel linker script
  *
- * Copyright (C) 2009 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2009-2010 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -26,6 +26,11 @@ SECTIONS
 	/* Where the bootsector loads us */
 	. = 0x100000;
 
+	/*
+	 * Bootstrap sections can't be merged with the rest
+	 * of the kernel as they're physical-addresses based
+	 */
+
 	.text.head : {
 	      boot/head.o(.text)
 	      boot/e820.o(.text)
@@ -34,24 +39,37 @@ SECTIONS
 	.data.head : {
 	      boot/head.o(.data)
 	      boot/e820.o(.data)
-	      boot/head.o(.rodata)
-	      boot/e820.o(.rodata)
+	      boot/head.o(.rodata*)
+	      boot/e820.o(.rodata*)
 	}
 
+	. = .;
 	__headbss_start = .;
 	.bss.head (NOLOAD) : {
 	      boot/head.o(.bss)
 	      boot/e820.o(.bss)
 	}
 
-	/* High virtual-area mapped kernel code and data start */
-	__phys_start = .;
-	PROVIDE_HIDDEN(virt_start = __phys_start + KTEXT_PAGE_OFFSET);
+	/*
+	 * Use virtual addresses for the rest of the kernel
+	 */
 
-	/* We override the boot/head.o bss section to save executable
-	 * size. On the very start, we'll move the code away to
-	 * phys_start to let head.S use its bss section freely */
-	.text virt_start : AT(__headbss_start) {
+	. += KTEXT_PAGE_OFFSET;
+
+	/*
+	 * So far, the linker will have to allocate executable size
+	 * to bootstrap's BSS as it resides between other sections.
+	 * This's caused by LD's default behaviour of having virtual
+	 * memory addresses (VMA) = load memory addresses (LMA)
+	 *
+	 * To save kernel's binary image size, override bootstrap's
+	 * bss section with kernel code and data. i.e., set kernel
+	 * Load memory address to bootstrap's BSS section start.
+	 *
+	 * On the very start, we'll move such code to its place at
+	 * __kern_phys_start, letting bootstrap use its BSS freely.
+	 */
+	.text : AT(__headbss_start) {
 	       __text_start = .;
 	       *(EXCLUDE_FILE (*boot/head.o *boot/e820.o) .text)
 	       __text_end = .;
@@ -60,7 +78,7 @@ SECTIONS
 	.data : {
 	       __data_start = .;
 	       *(EXCLUDE_FILE (*boot/head.o *boot/e820.o) .data)
-	       *(EXCLUDE_FILE (*boot/head.o *boot/e820.o) .rodata)
+	       *(EXCLUDE_FILE (*boot/head.o *boot/e820.o) .rodata*)
 	       __data_end = .;
         }
 
@@ -73,8 +91,24 @@ SECTIONS
 
 	__kernel_end = .;
 
+	/* Binaries dont include BSS .. */
+	__kernel_bin_size = ADDR(.bss) - ADDR(.text);
+	__kernel_phys_bin_end = ADDR(.bss) - KTEXT_PAGE_OFFSET;
+
+	/* Kernel edges */
+	__kernel_phys_start = ADDR(.text)  - KTEXT_PAGE_OFFSET;
+	__kernel_phys_end   = __kernel_end - KTEXT_PAGE_OFFSET;
+
+	/* After moving the kernel code away from bootstrap's BSS,
+	 * be sure our exported _end symbols really reflect reality */
+	__kernel_bss_size = __bss_end - __bss_start;
+	ASSERT(__kernel_phys_end == __kernel_phys_start +
+	       __kernel_bin_size + __kernel_bss_size, "Error: \
+	Code relocation out of bootstrap's BSS will lead to information loss")
+
 	/DISCARD/ : {
 		*(.eh_frame)
 		*(.comment)
+		*(.note)
 	}
 }

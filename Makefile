@@ -10,7 +10,7 @@ LD	= ld
 # Machine-dependent C Flags:
 #
 # Use the AMD64 'kernel' code model for reasons stated in our
-# head.S bootup code.
+# head.S bootstrap code.
 #
 # Disable SSE floating point ops. They need special CPU state
 # setup, or several #UD and #NM exceptions will be triggered.
