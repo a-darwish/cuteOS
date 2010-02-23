@@ -14,7 +14,7 @@
  * FIXME: fix the SMP case once primitive SMP
  * code is ready
  */
-void panic(const char *fmt, ...)
+void __no_return panic(const char *fmt, ...)
 {
 	va_list args;
 	char buf[256];

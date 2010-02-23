@@ -96,7 +96,7 @@
 /*
  * E820h struct error to string map
  */
-static char *e820_errors[] = {
+static const char *e820_errors[] = {
 	[E820_SUCCESS]    = "success",
 	[E820_NOT_SUPP]   = "no BIOS support",
 	[E820_BUF_FULL]   = "custom buffer full",
@@ -105,7 +105,7 @@ static char *e820_errors[] = {
 	[E820_HUGE_ENTRY] = "huge returned e820 entry",
 };
 
-static inline char *e820_errstr(uint32_t error)
+static inline const char *e820_errstr(uint32_t error)
 {
 	if (error > E820_HUGE_ENTRY)
 		return "unknown e820.S-reported error";
@@ -146,8 +146,7 @@ enum {
  * Prerequisite: E820h-struct previously validated
  */
 #define e820_for_each(range)						\
-	assert(*(uint32_t *)E820_BASE == E820_VALID_SIG);		\
-	for (uint32_t *entry = E820_BASE + sizeof(*entry),		\
+	for (uint32_t *entry = (uint32_t *)E820_BASE + 1,		\
 		     entry_len = *entry++,				\
 		     __unused *_____b = (uint32_t *)			\
 		             ({range  = (struct e820_range *)entry;});	\
@@ -161,7 +160,7 @@ enum {
 /*
  * ACPI memory type -> string.
  */
-static char *e820_types[] = {
+static const char *e820_types[] = {
 	[E820_AVAIL]    = "available",
 	[E820_RESERVED] = "reserved",
 	[E820_ACPI_TBL] = "acpi tables",
@@ -173,7 +172,7 @@ static char *e820_types[] = {
 /*
  * Transform given ACPI type value to string.
  */
-static inline char *e820_typestr(uint32_t type)
+static inline const char *e820_typestr(uint32_t type)
 {
 	if (type < E820_AVAIL || type > E820_DISABLED)
 		return "unknown type - reserved";

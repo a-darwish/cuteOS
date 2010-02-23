@@ -134,7 +134,7 @@ static int start_secondary_cpus(void)
  * to that core.
  * FIXME: use a unique stack space for each core.
  */
-void secondary_start(void)
+void __no_return secondary_start(void)
 {
 	union apic_id id;
 

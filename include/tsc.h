@@ -4,7 +4,7 @@
 /*
  * Read the 64-bit time-stamp counter
  */
-static uint64_t inline read_tsc(void)
+static inline uint64_t read_tsc(void)
 {
 	uint32_t low, high;
 

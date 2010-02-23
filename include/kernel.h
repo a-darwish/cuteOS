@@ -33,6 +33,7 @@
 #define __likely(exp)	__builtin_expect((exp), 1)
 #define __unlikely(exp)	__builtin_expect((exp), 0)
 #define __no_inline	__attribute__((noinline))
+#define __no_return	__attribute__((noreturn))
 
 /* Mark the 'always_inline' attributed function as C99
  * 'inline' cause the attribute by itself is worthless.

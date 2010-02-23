@@ -22,6 +22,6 @@ void *memset(void *dst, uint8_t ch, uint32_t len);
 void *memset32(void *dst, uint32_t val, uint64_t len);
 void *memset64(void *dst, uint64_t val, uint64_t len);
 
-#define memcmp(s1, s2, n)	__builtin_memcmp(s1, s2, n)
+int memcmp(const void *s1, const void *s2, uint32_t len);
 
 #endif

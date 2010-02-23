@@ -6,23 +6,112 @@ CC	= gcc
 CPP	= cpp
 LD	= ld
 
-# 'Sparse' compiler wrapper
-CGCC	= cgcc
+#
+# Machine-dependent C Flags:
+#
+# Use the AMD64 'kernel' code model for reasons stated in our
+# head.S bootup code.
+#
+# Disable SSE floating point ops. They need special CPU state
+# setup, or several #UD and #NM exceptions will be triggered.
+#
+# TODO: Inspect AMD64 ABI -mno-red-zone
+#
+CMACH_FLAGS =				\
+  -m64					\
+  -mcmodel=kernel			\
+  -mno-mmx				\
+  -mno-sse				\
+  -mno-sse2				\
+  -mno-sse3				\
+  -mno-3dnow
 
-# After using -nostdinc, add compiler's specific
-# includes back (stdarg.h, etc) using -iwithprefix
-CFLAGS  = -m64 --std=gnu99 -mcmodel=kernel \
-	  -fno-builtin -nostdlib \
-	  -nostdinc -iwithprefix include -I include \
-	  -Wall -Wstrict-prototypes -O2
+#
+# GCC C dialect flags:
+#
+# We're a freestanding environment by ISO C99 definition:
+# - Code get executed without benefit of an OS (it's a kernel).
+# - Program startup and termination is implementation-defined.
+# - Any library facilities outside C99 'strict conformance'
+#   options are also implementation defined.
+#
+# Poking GCC with the 'freestanding' flag assures it won't
+# presume availability of any 'hosted' facilities like libc.
+#
+# After using -nostdinc, we add compiler's specific includes
+# back (stdarg.h, etc) using the -iwithprefix flag.
+#
+CDIALECT_FLAGS =			\
+  -std=gnu99				\
+  -ffreestanding			\
+  -fno-builtin				\
+  -nostdlib				\
+  -nostdinc				\
+  -iwithprefix include			\
+  -I include/
+
+#
+# C Optimization flags:
+#
+# Note! Shouldn't we disable strict aliasing?
+#
+COPT_FLAGS =				\
+  -O2					\
+  -pipe
+
+#
+# Warnings request and dismissal flags:
+#
+# - We've previously caught 2 bugs causeed by an implicit cast
+# to a smaller-width type: carefully inspect warnings reported
+# by the '-Wconversion' flag.
+#
+# - We may like to warn about aggregate returns cause we don't
+# want to explode the stack if the structure type returned got
+# _innocently_ bigger over time. Check '-Waggregate-return'.
+#
+# Options are printed in GCC HTML documentation order.
+#
+CWARN_FLAGS =				\
+  -Wall					\
+  -Wextra				\
+  -Wchar-subscripts			\
+  -Wformat=2				\
+  -Wmissing-include-dirs		\
+  -Wparentheses				\
+  -Wtrigraphs				\
+  -Wunused				\
+  -Wstrict-aliasing=2			\
+  -Wundef				\
+  -Wpointer-arith			\
+  -Wcast-qual				\
+  -Wwrite-strings			\
+  -Waddress				\
+  -Wlogical-op				\
+  -Wstrict-prototypes			\
+  -Wmissing-prototypes			\
+  -Wmissing-declarations		\
+  -Wmissing-noreturn			\
+  -Wnormalized=nfc			\
+  -Wredundant-decls			\
+  -Wvla					\
+  -Wdisabled-optimization		\
+  -Wno-type-limits			\
+  -Wno-missing-field-initializers
+
+CFLAGS =				\
+  $(CMACH_FLAGS)			\
+  $(CDIALECT_FLAGS)			\
+  $(COPT_FLAGS)				\
+  $(CWARN_FLAGS)
+
+# Share headers between assembly, C, and LD files
+CPPFLAGS = -D__KERNEL__
+AFLAGS = -D__ASSEMBLY__
 
 # Warn about the sloppy UNIX linkers practice of
 # merging global common variables
 LDFLAGS = --warn-common
-
-# Share headers between assembly and C files
-CPPFLAGS = -D__KERNEL__
-AFLAGS = -D__ASSEMBLY__
 
 # Our global kernel linker script, after being
 # 'cpp' pre-processed from the *.ld source
@@ -32,6 +121,9 @@ PROCESSED_LD_SCRIPT = kern/kernel.ldp
 # Check '-MM' and '-MT' at gcc(1)
 DEPS_ROOT_DIR = .deps
 DEPS_DIRS    += $(DEPS_ROOT_DIR)
+
+# 'Sparse' compiler wrapper
+CGCC	= cgcc
 
 #
 # Object files listings

@@ -69,7 +69,7 @@ static void print_info(void)
 /*
  * Bootstrap-CPU start
  */
-void kernel_start(void)
+void __no_return kernel_start(void)
 {
 	/* Before anything else */
 	clear_bss();

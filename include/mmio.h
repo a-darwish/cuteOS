@@ -40,7 +40,7 @@
 	type val;						\
 	asm volatile ("mov %[addr], %[val];"			\
 		      : [val] "=r"(val)				\
-		      : [addr] "m"(*(volatile type *)addr)	\
+		      : [addr] "m"(*(const volatile type *)addr)\
 		      : "memory");				\
 	val;							\
 })

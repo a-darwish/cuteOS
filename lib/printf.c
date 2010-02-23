@@ -20,7 +20,7 @@
  * desired radix. Return the number of ascii chars printed.
  * @size: output buffer size
  */
-static int ultoa(unsigned long num, char *buf, int size, int radix)
+static int ultoa(unsigned long num, char *buf, int size, unsigned radix)
 {
 	int ret, digits = 0;
 	char digit[16] = "0123456789abcdef";
@@ -118,8 +118,8 @@ end:
  * @va_list with the the help of type info from the argument
  * descriptor @desc. @size: output buffer size
  */
-static int print_arg(char *buf, int size, const char *fmt,
-	      struct printf_argdesc *desc, va_list args)
+static int print_arg(char *buf, int size, struct printf_argdesc *desc,
+		     va_list args)
 {
 	long num;
 	unsigned long unum;
@@ -195,7 +195,7 @@ int vsnprintf(char *buf, int size, const char *fmt, va_list args)
 			break;
 
 		fmt = parse_arg(fmt, &desc);
-		len = print_arg(str, size, fmt, &desc, args);
+		len = print_arg(str, size, &desc, args);
 		str += len;
 		size -= len;
 	}

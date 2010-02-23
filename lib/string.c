@@ -162,3 +162,21 @@ int strncmp(const char *c1, const char *c2, int n)
 
 	return res;
 }
+
+int memcmp(const void *s1, const void *s2, uint32_t n)
+{
+	const uint8_t *v1, *v2;
+	uint8_t res;
+
+	v1 = s1;
+	v2 = s2;
+
+	res = 0;
+	while (n--) {
+		res = *v1++ - *v2++;
+		if (res != 0)
+			break;
+	}
+
+	return res;
+}

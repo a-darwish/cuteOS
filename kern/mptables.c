@@ -39,7 +39,7 @@ struct mpc_irq mp_irqs[MAX_IRQS];
  * specified by the length field, including the 'checksum'
  * field and reserved bytes, must add up to zero."
  */
-static uint8_t mpf_checksum(void *mp, int len)
+static uint8_t mpf_checksum(void *mp, uint32_t len)
 {
 	uint8_t sum = 0;
 	uint8_t *buf = mp;
@@ -50,7 +50,7 @@ static uint8_t mpf_checksum(void *mp, int len)
 	return sum;
 }
 
-static struct mpf_struct *search_for_mpf(void *base, int len)
+static struct mpf_struct *search_for_mpf(void *base, uint32_t len)
 {
 	struct mpf_struct *mpf = base;
 	uint8_t checksum;
