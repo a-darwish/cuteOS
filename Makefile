@@ -53,10 +53,13 @@ CDIALECT_FLAGS =			\
 #
 # C Optimization flags:
 #
-# Note! Shouldn't we disable strict aliasing?
+# Use -O3 to catch any weird bugs early on
+#
+# Note-1! Fallback to -O2 at official releases
+# Note-2! Shouldn't we disable strict aliasing?
 #
 COPT_FLAGS =				\
-  -O2					\
+  -O3					\
   -pipe
 
 #
