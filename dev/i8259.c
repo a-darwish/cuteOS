@@ -16,6 +16,34 @@
 
 #include <io.h>
 #include <i8259.h>
+#include <idt.h>
+
+/*
+ * AT+ standard PIC ports
+ */
+#define PIC_MASTER_CMD		0x20
+#define PIC_SLAVE_CMD		0xa0
+#define PIC_MASTER_DATA		0x21
+#define PIC_SLAVE_DATA		0xa1
+
+/*
+ * Where the slave PIC is connected
+ */
+#define PIC_CASCADE_IRQ		2
+
+/*
+ * The PICs will be entirely masked. Map the IRQs
+ * just in case of a triggered 'spurious' interrupt.
+ *
+ * Assign the least priority possible to those IRQs
+ * (biggest vector number = least priority)
+ */
+#define PIC_IRQ0_VECTOR		0xf0
+#define PIC_IRQ7_VECTOR		(PIC_IRQ0_VECTOR + 7)
+#define PIC_IRQ8_VECTOR		0xf8
+#define PIC_IRQ15_VECTOR	(PIC_IRQ8_VECTOR + 7)
+
+extern void PIC_handler(void);
 
 /*
  * As said in a linux kernel comment, delay for access to PIC on
@@ -46,8 +74,6 @@ static inline void i8259_mask(void)
  */
 void i8259_init(void)
 {
-	i8259_mask();
-
 	/* Init command 1, cascade mode (D1 = 0), init mode
 	 * (D4 = 1), requires init command 4 (D0 = 1), other
 	 * bits useless in AT 80x86 mode */
@@ -80,4 +106,13 @@ void i8259_init(void)
 	/* FIXME: wait for the chip to initialize */
 
 	i8259_mask();
+
+	/* Now assure that any misbheaving IRQ that get triggered
+	 * by the PIC, despite of its masked status, get ignored */
+
+	for (int i = PIC_IRQ0_VECTOR; i <= PIC_IRQ7_VECTOR; i++)
+		set_intr_gate(i, PIC_handler);
+
+	for (int i = PIC_IRQ8_VECTOR; i <= PIC_IRQ15_VECTOR; i++)
+		set_intr_gate(i, PIC_handler);
 }

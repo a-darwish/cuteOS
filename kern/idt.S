@@ -15,6 +15,10 @@
 .text
 
 /*
+ * Exception handlers
+ */
+
+/*
  * Those "stub" handlers catch the vector number using their
  * position in the entries table and then jump to the real
  * fallback idt handler.
@@ -22,12 +26,12 @@
  * NOTE! don't change this code without changing the stub
  * code size macro at idt.h
  */
-.globl default_idt_stubs
-default_idt_stubs:
+.globl idt_exception_stubs
+idt_exception_stubs:
         i = 0
 	.rept  EXCEPTION_GATES
 	movq   $i, %rsi
-	jmp    default_idt_handler
+	jmp    default_exception_handler
 	i = i + 1
 	.endr
 
@@ -47,8 +51,7 @@ default_idt_stubs:
  * 17 - 1<<17 = 0x20000
  * which leads to a mask of 0x27d00 for such vector numbers
  */
-.globl default_idt_handler
-default_idt_handler:
+default_exception_handler:
 	movq   $0xdead, %rdx		# No error-code mark
 	movl   %esi, %ecx
 	movl   $1, %eax
@@ -76,6 +79,18 @@ idt_msg:
 	.ascii "%%rsp=0x%lx, %%rflags=0x%lx, %%cr2=0x%lx, %%cr3=0x%lx, "
 	.ascii "%%cr4=0x%lx \n"
 	.byte  0
+
+/*
+ * System IRQ handlers
+ */
+
+/*
+ * Avoid #GPs: setup an 'ignore' handler for any spurious
+ * PIC-triggered IRQ (despite PICs being already masked).
+ */
+.globl PIC_handler
+PIC_handler:
+	iretq
 
 /*
  * PS/2 keyboard interrupt handler stub.

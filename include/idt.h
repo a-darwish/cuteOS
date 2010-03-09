@@ -11,11 +11,11 @@
  *  the Free Software Foundation, version 2.
  */
 
-#define IDT_GATES 256
-#define EXCEPTION_GATES 32
+#define IDT_GATES	(0xFF + 1)
+#define EXCEPTION_GATES (0x1F + 1)
 
-#define GATE_INTERRUPT 0xe
-#define GATE_TRAP 0xf
+#define GATE_INTERRUPT	0xe
+#define GATE_TRAP	0xf
 
 #ifndef __ASSEMBLY__
 
@@ -38,7 +38,7 @@ struct idt_descriptor {
 } __packed;
 
 /*
- * Symbols from head.S
+ * Symbols from idt.S
  *
  * Note that 'extern <type> *SYMBOL;' won't work since it'd mean we
  * don't point to meaningful data yet, which isn't the case. We use
@@ -51,7 +51,8 @@ struct idt_descriptor {
 extern const struct idt_descriptor idtdesc[];
 extern struct idt_gate idt[IDT_GATES];
 #define IDT_STUB_SIZE 12
-extern const char default_idt_stubs[EXCEPTION_GATES][IDT_STUB_SIZE];
+extern const char idt_exception_stubs[EXCEPTION_GATES][IDT_STUB_SIZE];
+extern void default_irq_handler(void);
 
 static inline void pack_idt_gate(struct idt_gate *gate, uint8_t type, void *addr)
 {
@@ -68,8 +69,9 @@ static inline void pack_idt_gate(struct idt_gate *gate, uint8_t type, void *addr
 }
 
 static inline void write_idt_gate(struct idt_gate *gate, struct idt_gate *idt,
-				  int offset)
+				  unsigned offset)
 {
+	assert(offset < IDT_GATES);
 	idt[offset] = *gate;
 }
 
