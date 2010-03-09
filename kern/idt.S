@@ -49,24 +49,33 @@ default_idt_stubs:
  */
 .globl default_idt_handler
 default_idt_handler:
-	xorq   %r9, %r9			# zero if no error code
+	movq   $0xdead, %rdx		# No error-code mark
 	movl   %esi, %ecx
 	movl   $1, %eax
 	shl    %cl, %eax
 	andl   $0x27d00, %eax		# returns error code?
 	jz     0f
-	popq   %r9			# error code
+	popq   %rdx			# error code
 0:	movq   24(%rsp), %r8		# %rsp
-	movq   16(%rsp), %rcx		# %rflags
-	movq   0(%rsp), %rdx            # %rip
+	movq   16(%rsp), %r9		# %rflags
+	movq   0(%rsp), %rcx            # %rip
 	movq   $idt_msg, %rdi
+	movq   %cr4, %rax
+	push   %rax			# %cr4
+	movq   %cr3, %rax
+	push   %rax			# %cr3
+	movq   %cr2, %rax
+	push   %rax			# %cr2
 	call   printk
+	addq   $0x18, %rsp
 1:	hlt
 	jmp    1b
 
 idt_msg:
-	.ascii "Exception; vector=%d, %%rip=0x%x, %%rflags=0x%x "
-	.asciz "%%rsp=0x%x, errcode=%d\n"
+	.ascii "Exception: vector=%d, errcode=0x%lx, %%rip=0x%lx, "
+	.ascii "%%rsp=0x%lx, %%rflags=0x%lx, %%cr2=0x%lx, %%cr3=0x%lx, "
+	.ascii "%%cr4=0x%lx \n"
+	.byte  0
 
 /*
  * PS/2 keyboard interrupt handler stub.
