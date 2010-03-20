@@ -98,12 +98,14 @@ void __no_return kernel_start(void)
 
 	kmalloc_init();
 
+	/* Enable interrupts before running the
+	 * test cases */
+	local_irq_enable();
+
 	/* Testcases, if compiled */
 	vm_run_tests();
 	pagealloc_run_tests();
 	kmalloc_run_tests();
-
-	local_irq_enable();
 
 	while (true)
 		asm volatile ("hlt");

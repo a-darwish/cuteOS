@@ -15,7 +15,19 @@ LD	= ld
 # Disable SSE floating point ops. They need special CPU state
 # setup, or several #UD and #NM exceptions will be triggered.
 #
-# TODO: Inspect AMD64 ABI -mno-red-zone
+# Do not use the AMD64 ABI 'red zone'. This was a bug that
+# costed me an entire week to fix!
+#
+# Basically the zone is 128-byte area _below_ the stack pointer
+# that can be used for temporary local state, especially for
+# leaf functions.
+#
+# Ofcouse this red zone is disastrous to be used in the kernel
+# since it's where the CPU pushes %ss, %rsp, %rflags, %cs and
+# %rip on the event of invoking an interrupt handler. If used,
+# it will simply lead to kernel stack corruption.
+#
+# Check attached docs for extra info on -mcmodel and the zone.
 #
 CMACH_FLAGS =				\
   -m64					\
@@ -24,7 +36,8 @@ CMACH_FLAGS =				\
   -mno-sse				\
   -mno-sse2				\
   -mno-sse3				\
-  -mno-3dnow
+  -mno-3dnow				\
+  -mno-red-zone
 
 #
 # GCC C dialect flags:
