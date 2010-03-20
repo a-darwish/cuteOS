@@ -43,8 +43,12 @@ SECTIONS
 	      boot/e820.o(.rodata*)
 	}
 
-	. = .;
-	__headbss_start = .;
+	/* Putting the bootstrap BSS in the middle will force
+	 * the linker to reserve section size in the executable.
+	 * If you are interested in absolutely saving executable
+	 * size, you may like the trickery used in commit
+	 * cd618e752a which led to 0 executable bytes wasted,
+	 * with the tradeoff price of much extra complexity */
 	.bss.head (NOLOAD) : {
 	      boot/head.o(.bss)
 	      boot/e820.o(.bss)
@@ -56,20 +60,7 @@ SECTIONS
 
 	. += KTEXT_PAGE_OFFSET;
 
-	/*
-	 * So far, the linker will have to allocate executable size
-	 * to bootstrap's BSS as it resides between other sections.
-	 * This's caused by LD's default behaviour of having virtual
-	 * memory addresses (VMA) = load memory addresses (LMA)
-	 *
-	 * To save kernel's binary image size, override bootstrap's
-	 * bss section with kernel code and data. i.e., set kernel
-	 * Load memory address to bootstrap's BSS section start.
-	 *
-	 * On the very start, we'll move such code to its place at
-	 * __kern_phys_start, letting bootstrap use its BSS freely.
-	 */
-	.text : AT(__headbss_start) {
+	.text : AT(ADDR(.text) - KTEXT_PAGE_OFFSET) {
 	       __text_start = .;
 	       *(EXCLUDE_FILE (*boot/head.o *boot/e820.o) .text)
 	       __text_end = .;
@@ -90,21 +81,6 @@ SECTIONS
 	}
 
 	__kernel_end = .;
-
-	/* Binaries dont include BSS .. */
-	__kernel_bin_size = ADDR(.bss) - ADDR(.text);
-	__kernel_phys_bin_end = ADDR(.bss) - KTEXT_PAGE_OFFSET;
-
-	/* Kernel edges */
-	__kernel_phys_start = ADDR(.text)  - KTEXT_PAGE_OFFSET;
-	__kernel_phys_end   = __kernel_end - KTEXT_PAGE_OFFSET;
-
-	/* After moving the kernel code away from bootstrap's BSS,
-	 * be sure our exported _end symbols really reflect reality */
-	__kernel_bss_size = __bss_end - __bss_start;
-	ASSERT(__kernel_phys_end == __kernel_phys_start +
-	       __kernel_bin_size + __kernel_bss_size, "Error: \
-	Code relocation out of bootstrap's BSS will lead to information loss")
 
 	/DISCARD/ : {
 		*(.eh_frame)

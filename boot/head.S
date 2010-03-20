@@ -21,46 +21,6 @@
 .globl startup_32
 startup_32:
 
-	/*
-	 * Relocate  kernel code away from our bss section
-	 * to its destined place at __kernel_phys_start.
-	 *
-	 * Check the rational for this at the linker script
-	 * before going any further ..
-	 *
-	 * __kernel_phys_start, the copy destination, may
-	 * reside inside the to-be-copied loaded kern image
-	 * itself if its size > bootstrap's 28KB BSS area.
-	 * This movsb overlap is corruptible (src < dst).
-	 *
-	 * To migitate this, we copy the code to a safe non
-	 * overlapping haven, then finally copy it again to
-	 * the likely overlapping __kern_phys_start address.
-	 */
-
-	/* Beyond kernel binary image end is guaranteed not
-	 * to overlap; let it be our safe haven area */
-	.equ   safe_haven, __kernel_phys_bin_end
-
-	movl   $__headbss_start, %esi
-	movl   $safe_haven, %edi
-	movl   $__kernel_bin_size, %ecx
-	movl   %esi, %eax		# src
-	addl   %ecx, %eax		# %eax = region end
-	cmpl   %eax, %edi		# if overlapping:
-	jl     early_error		#  bailout ..
-	rep    movsb
-
-	/* After below copy, kernel code should start and
-	 * end at __kernel_phys{start,end} as normal.
-	 * movsb will _harmlessly_ overlap (src >= dst) */
-	movl   $safe_haven, %esi
-	movl   $__kernel_phys_start, %edi
-	movl   $__kernel_bin_size, %ecx
-	cmpl   %edi, %esi		# if src < dst:
-	jl     early_error		#  catastrophic ..
-	rep    movsb
-
 	/* Setup a boot stack and assure amd64 support */
 	movl   $stack_end, %esp
 	call   check_cpu64
