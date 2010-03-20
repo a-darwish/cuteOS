@@ -26,10 +26,15 @@
 struct idt_gate {
 	uint16_t offset_low;
 	uint16_t selector;
-	unsigned ist: 3, reserved0: 5, type: 5, dpl: 2, p: 1;
+	uint16_t ist: 3,
+		 reserved0: 5,
+		 type: 4,
+		 reserved0_1: 1,
+		 dpl: 2,
+		 p: 1;
 	uint16_t offset_middle;
 	uint32_t offset_high;
-	uint32_t reserved1;
+	uint32_t reserved0_2;
 } __packed;
 
 struct idt_descriptor {
@@ -41,11 +46,15 @@ struct idt_descriptor {
  * Symbols from idt.S
  *
  * Note that 'extern <type> *SYMBOL;' won't work since it'd mean we
- * don't point to meaningful data yet, which isn't the case. We use
- * 'SYMBOL[]' since in a declaration, [] just leaves it open to the
- * number of base type objects which are present, not *where* they are.
- * SYMBOL[n] just adds more static-time safety; SYMBOL[n][size] lets
+ * don't point to meaningful data yet, which isn't the case.
+ *
+ * We use 'SYMBOL[]' since in a declaration, [] just leaves it open
+ * to the number of base type objects which are present, not *where*
+ * they are.
+ *
+ * SYMBOL[n] just adds more static-time safety; SYMBOL[n][size] let
  * the compiler automatically calculate an entry index for us.
+ *
  * @IDT_STUB_SIZE: exception stub _code_ size.
  */
 extern const struct idt_descriptor idtdesc[];
@@ -61,11 +70,12 @@ static inline void pack_idt_gate(struct idt_gate *gate, uint8_t type, void *addr
 	gate->ist = 0;
 	gate->reserved0 = 0;
 	gate->type = type;
+	gate->reserved0_1 = 0;
 	gate->dpl = 0;
 	gate->p = 1;
 	gate->offset_middle = ((uintptr_t)addr >> 16) & 0xffff;
 	gate->offset_high = (uintptr_t)addr >> 32;
-	gate->reserved1 = 0;
+	gate->reserved0_2 = 0;
 }
 
 static inline void write_idt_gate(struct idt_gate *gate, struct idt_gate *idt,
@@ -74,6 +84,19 @@ static inline void write_idt_gate(struct idt_gate *gate, struct idt_gate *idt,
 	assert(offset < IDT_GATES);
 	idt[offset] = *gate;
 }
+
+/*
+ * The only difference between an interrupt gate and a trap gate
+ * is the way the processor handles the IF flag in the EFLAGS.
+ *
+ * Trap gates leaves the IF flag set while servicing the interrupt,
+ * which means handlers can get interrupted indefinitely, and our
+ * stack can get overflowed in a matter of milliseconds.
+ *
+ * Interrupt gates on the other hand clear the IF flag upon entry.
+ * A subsequent IRET instruction restores the IF flag to its value
+ * in the saved contents.
+ */
 
 static inline void set_intr_gate(unsigned int n, void *addr)
 {
