@@ -1,11 +1,21 @@
 /*
- * 64-bit IDT table and handlers
+ * 64-bit IDT table and interrupt handlers
  *
- * Copyright (C) 2009 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2009-2010 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
+ *
+ * Stack contents upon entrance of an exception or IRQ handler, assuming
+ * any generated exception error-code popped up:
+ *
+ *		%ss		0x20(%rsp)
+ *		%rsp		0x18(%rsp)
+ *		%rflags		0x10(%rsp)
+ *		%cs		0x8 (%rsp)
+ *		%rip		0x0 (%rsp)
+ *		  -- (Stack top) --
  */
 
 #include <idt.h>
@@ -40,15 +50,17 @@ idt_exception_stubs:
  * error message and halt
  *
  * Exception vectors that return error code are:
- * 8  - 1<<8  = 0x100
- * 10 - 1<<10 = 0x400
- * 11 - 1<<11 = 0x800
+ *
+ * 8  - 1 << 8  = 0x100
+ * 10 - 1 << 10 = 0x400
+ * 11 - 1 << 11 = 0x800
  * ---
- * 12 - 1<<12 = 0x1000
- * 13 - 1<<13 = 0x2000
- * 14 - 1<<14 = 0x4000
+ * 12 - 1 << 12 = 0x1000
+ * 13 - 1 << 13 = 0x2000
+ * 14 - 1 << 14 = 0x4000
  * ---
- * 17 - 1<<17 = 0x20000
+ * 17 - 1 << 17 = 0x20000
+ *
  * which leads to a mask of 0x27d00 for such vector numbers
  */
 default_exception_handler:
@@ -59,25 +71,33 @@ default_exception_handler:
 	andl   $0x27d00, %eax		# returns error code?
 	jz     0f
 	popq   %rdx			# error code
-0:	movq   24(%rsp), %r8		# %rsp
-	movq   16(%rsp), %r9		# %rflags
-	movq   0(%rsp), %rcx            # %rip
+0:
+	/* Save those printk() stack params to regs first
+	 * not to mess up stack offset calculations */
+	movq   0x10(%rsp), %r15		# %rflags
+	movq   0x18(%rsp), %r14		# %rsp
+
+	/* printk(): %rsi, %rdx are already saved above */
 	movq   $idt_msg, %rdi
+	movq   0x8 (%rsp), %rcx		# %cs
+	movq   0x0 (%rsp), %r8		# %rip
+	movq   0x20(%rsp), %r9		# %ss
 	movq   %cr4, %rax
 	push   %rax			# %cr4
 	movq   %cr3, %rax
 	push   %rax			# %cr3
 	movq   %cr2, %rax
 	push   %rax			# %cr2
+	push   %r15			# %rflags
+	push   %r14			# %rsp
 	call   printk
-	addq   $0x18, %rsp
 1:	hlt
 	jmp    1b
 
 idt_msg:
-	.ascii "Exception: vector=%d, errcode=0x%lx, %%rip=0x%lx, "
-	.ascii "%%rsp=0x%lx, %%rflags=0x%lx, %%cr2=0x%lx, %%cr3=0x%lx, "
-	.ascii "%%cr4=0x%lx \n"
+	.ascii "Exception: vector=%d, errcode=0x%lx, %%cs=0x%lx, "
+	.ascii "%%rip=0x%lx, %%ss=0x%lx, %%rsp=0x%lx, %%rflags=0x%lx, "
+	.ascii "%%cr2=0x%lx, %%cr3=0x%lx, %%cr4=0x%lx \n"
 	.byte  0
 
 /*
@@ -140,6 +160,11 @@ idtdesc:
 
 /*
  * IDT Table
+ *
+ * Size = 0x100 entries * 0x10 size = 0x1000 bytes
+ *
+ * The IDT should be aligned on an 16-byte boundary
+ * to maximize performance of cache line fills.
  */
 .align 16
 .globl idt
