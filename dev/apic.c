@@ -14,6 +14,10 @@
 #include <apic.h>
 #include <pit.h>
 
+static int bootstrap_apic_id = -1;
+
+static void *apic_virt_base;
+
 /*
  * Local APIC
  */
@@ -31,6 +35,9 @@ void apic_init(void)
 	/* Before doing any apic operation, assure the APIC
 	 * registers base address is set as we expect it */
 	msr_apicbase_setaddr(APIC_PHBASE);
+
+	/* Map the MMIO registers before accessing them */
+	apic_virt_base = vm_kmap(APIC_PHBASE, APIC_MMIO_SPACE);
 
 	/* No complexitis; set the task priority register to
 	 * zero: "all interrupts are allowed" */
@@ -54,16 +61,12 @@ void apic_init(void)
 	perfc.mask = APIC_MASK;
 	apic_write(APIC_LVTPC, perfc.value);
 
-	lint0.vector = 0;
-	lint0.trigger = APIC_TRIGGER_EDGE;
-	lint0.delivery_mode = APIC_DELMOD_ExtINT;
-	lint0.mask = APIC_UNMASK;
+	lint0.vector = APIC_LINT0_VECTOR;
+	lint0.mask = APIC_MASK;
 	apic_write(APIC_LVT0, lint0.value);
 
-	lint1.vector = 0;
-	lint1.trigger = APIC_TRIGGER_EDGE;
-	lint1.delivery_mode = APIC_DELMOD_NMI;
-	lint1.mask = APIC_UNMASK;
+	lint1.vector = APIC_LINT1_VECTOR;
+	lint1.mask = APIC_MASK;
 	apic_write(APIC_LVT1, lint1.value);
 
 	/*
@@ -76,8 +79,10 @@ void apic_init(void)
 
 	msr_apicbase_enable();
 
+	bootstrap_apic_id = apic_read(APIC_ID);
+
 	printk("APIC: bootstrap core lapic enabled, apic_id=0x%x\n",
-	       apic_read(APIC_ID));
+	       bootstrap_apic_id);
 }
 
 /*
@@ -103,4 +108,18 @@ int apic_ipi_acked(void)
 	}
 
 	return timeout;
+}
+
+int apic_bootstrap_id(void)
+{
+	assert(bootstrap_apic_id != -1);
+
+	return bootstrap_apic_id;
+}
+
+void *apic_vrbase(void)
+{
+	assert(apic_virt_base != NULL);
+
+	return apic_virt_base;
 }

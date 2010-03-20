@@ -191,7 +191,7 @@ struct ioapic_pin {
 	int pin;			/* which pin in this ioapic */
 };
 
-void ioapic_setup_isairq(uint8_t irq, int vector);
+void ioapic_setup_isairq(uint8_t irq, uint8_t vector);
 void ioapic_init(void);
 
 #endif /* _IOAPIC_H */

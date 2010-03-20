@@ -11,6 +11,8 @@
  *  the Free Software Foundation, version 2.
  */
 
+#ifndef __ASSEMBLY__
+
 #include <kernel.h>
 #include <stdint.h>
 #include <paging.h>
@@ -225,12 +227,13 @@ enum {
 
 #define APIC_PHBASE	0xfee00000	/* Physical */
 #define APIC_MMIO_SPACE	PAGE_SIZE	/* 4-KBytes */
+void *apic_vrbase(void);		/* Virtual */
 
 static inline void apic_write(uint32_t reg, uint32_t val)
 {
 	void *vaddr;
 
-	vaddr = vm_kmap(APIC_PHBASE, APIC_MMIO_SPACE);
+	vaddr = apic_vrbase();
 	vaddr = (char *)vaddr + reg;
 
 	writel(val, vaddr);
@@ -240,7 +243,7 @@ static inline uint32_t apic_read(uint32_t reg)
 {
 	void *vaddr;
 
-	vaddr = vm_kmap(APIC_PHBASE, APIC_MMIO_SPACE);
+	vaddr = apic_vrbase();
 	vaddr = (char *)vaddr + reg;
 
 	return readl(vaddr);
@@ -248,6 +251,7 @@ static inline uint32_t apic_read(uint32_t reg)
 
 void apic_init(void);
 int apic_ipi_acked(void);
+int apic_bootstrap_id(void);
 
 /*
  * FIXME: meaningless placeholder values set till we have
@@ -257,5 +261,14 @@ int apic_ipi_acked(void);
 #define APIC_TIMER_VECTOR   0
 #define APIC_THERMAL_VECTOR 0
 #define APIC_PERFC_VECTOR   0
+#define APIC_LINT0_VECTOR   0
+#define APIC_LINT1_VECTOR   0
+
+#else
+
+#define APIC_PHBASE	0xfee00000	/* Physical */
+#define APIC_EOI	0xb0		/* End of Interrupt Register */
+
+#endif /* !__ASSEMBLY__ */
 
 #endif /* _APIC_H */

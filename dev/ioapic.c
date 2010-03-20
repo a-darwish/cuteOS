@@ -9,6 +9,7 @@
  */
 
 #include <mptables.h>
+#include <apic.h>
 #include <ioapic.h>
 
 /*
@@ -92,15 +93,20 @@ static struct ioapic_pin ioapic_isa_pin(int isa_irq, enum mp_irqtype type)
 }
 
 /*
- * FIXME: SMP: we just read the APIC ID of the current executing
- * core and consider it the sole delivery destination.
+ * Setup the I/O APIC routing entry representing given
+ * ISA @irq, pointing it to bootstrap's IDT @vector.
+ *
+ * NOTE! You need to install a @vector handler before
+ * setting up its respective I/O APIC entry.
  */
-void ioapic_setup_isairq(uint8_t irq, int vector)
+void ioapic_setup_isairq(uint8_t irq, uint8_t vector)
 {
 	struct ioapic_pin pin;
 	union ioapic_irqentry entry = { .value = 0 };
 
 	pin = ioapic_isa_pin(irq, MP_INT);
+	printk("IOAPIC[%d]: ISA IRQ %d is assigned to pin %d\n",
+	       pin.apic, irq, pin.pin);
 
 	entry.vector = vector;
 	entry.delivery_mode = IOAPIC_DELMOD_FIXED;
@@ -108,7 +114,7 @@ void ioapic_setup_isairq(uint8_t irq, int vector)
 	entry.polarity = IOAPIC_POLARITY_HIGH;
 	entry.trigger = IOAPIC_TRIGGER_EDGE;
 	entry.mask = IOAPIC_UNMASK;
-	entry.dest = apic_read(APIC_ID);
+	entry.dest = apic_bootstrap_id();
 
 	ioapic_write_irqentry(pin.apic, pin.pin, entry);
 }
