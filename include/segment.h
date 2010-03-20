@@ -24,6 +24,10 @@ struct gdt_descriptor {
 	uint64_t base;
 } __packed;
 
+/*
+ * FIXME: Reload the segment caches with the new GDT
+ * values. Just changing the GDTR won't cut it.
+ */
 static inline void load_gdt(const struct gdt_descriptor *gdt_desc)
 {
 	asm volatile("lgdt %0"

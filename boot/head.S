@@ -172,7 +172,17 @@ no_amd64:
 
 .code64
 startup_64:
-	/* Reset the stack */
+
+	/* Reload segment caches: nullify all unused
+	 * segments. %cs has already been reloaded */
+	xorw   %ax, %ax
+	movw   %ax, %ds
+	movw   %ax, %es
+	movw   %ax, %fs
+	movw   %ax, %gs
+
+        /* Reset the stack */
+	movw   %ax, %ss
 	movq   $stack_end, %rsp
 
 	/*
@@ -313,14 +323,6 @@ gdt:
 	.long  0x00000000		# base/limit; ignored in LM
 	.byte  0x00, 0x98		# P=1, DPL=0, C/conforming=0
 	.byte  0xa0, 0x00		# L=1, D=0, base[24-31] ignored
-
-	/* FIXME: for some reason, `iretq' triggers a #GP with
-	 * error=16, indicating a misbheving data segment, if DS's
-	 * `Present' or `Writable' bits are not set. Set those bits
-	 * till we know why iretq logic needs this useless segment */
-	.long  0x00000000		# ignored
-	.word  0x9200			# Writable=1, Present=1
-	.word  0x0000			# ignored
 
 gdt_end:
 
