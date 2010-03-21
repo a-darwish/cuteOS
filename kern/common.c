@@ -9,6 +9,7 @@
  */
 
 #include <kernel.h>
+#include <idt.h>
 
 /*
  * FIXME: fix the SMP case once primitive SMP
@@ -27,6 +28,6 @@ void __no_return panic(const char *fmt, ...)
 	buf[n] = 0;
 	printk("\nPANIC: %s", buf);
 
-	while (true)
-		asm volatile ("hlt");
+	local_irq_disable();
+	halt();
 }

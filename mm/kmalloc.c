@@ -313,7 +313,7 @@ void kmalloc_run_tests(void)
 {
 	uint64_t i, count, repeat;
 
-	count = 10000;
+	count = ALLOCS_COUNT;
 	repeat = 100;
 
 	for (i = 0; i < repeat; i++) {

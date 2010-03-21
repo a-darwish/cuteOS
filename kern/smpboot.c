@@ -144,8 +144,7 @@ void __no_return secondary_start(void)
 	id.value = apic_read(APIC_ID);
 	printk("SMP: CPU apic_id=%d started\n", id.id);
 
-	while (true)
-		asm volatile ("hlt");
+	halt();
 }
 
 void smpboot_init(void)

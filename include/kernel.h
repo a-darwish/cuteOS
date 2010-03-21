@@ -97,6 +97,12 @@ void panic(const char *fmt, ...);
 			      __FILE__, __LINE__);		\
 	} while (0);
 
+#define halt()							\
+	do {							\
+		while (true)					\
+			asm volatile ("hlt":::"memory");	\
+	} while (0);
+
 /*
  * Compile-time assert for constant-folded expressions
  *

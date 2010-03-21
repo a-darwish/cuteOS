@@ -85,18 +85,24 @@ void __no_return kernel_start(void)
 	 * and setup dynamic permanent ones */
 	vm_init();
 
+	/* Enable dynamic heap memory management
+	 * to kernel services early on .. */
+	kmalloc_init();
+
 	/* Parse the MP tables for needed IRQs
 	 * data before initializing the APICs */
 	mptables_init();
 
 	i8259_init();
+
+	/* Initialize the APICs (and map their
+	 * MMIO regs) before enabling IRQs, and
+	 * before firing other cores using IPI */
 	apic_init();
 	ioapic_init();
 
 	keyboard_init();
 	smpboot_init();
-
-	kmalloc_init();
 
 	/* Enable interrupts before running the
 	 * test cases */
@@ -107,6 +113,5 @@ void __no_return kernel_start(void)
 	pagealloc_run_tests();
 	kmalloc_run_tests();
 
-	while (true)
-		asm volatile ("hlt");
+	halt();
 }
