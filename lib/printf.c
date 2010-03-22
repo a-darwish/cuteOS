@@ -1,7 +1,7 @@
 /*
  * printf()-like methods: vsnprintf(), etc
  *
- * Copyright (C) 2009 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2009-2010 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -14,6 +14,39 @@
 #include <paging.h>
 #include <spinlock.h>
 #include <mmio.h>
+#include <tests.h>
+
+/*
+ * We cannot use assert() for below printk() code as
+ * the assert code istelf internally calls printk().
+ */
+#define printk_assert(condition)						\
+	do {									\
+		if (__unlikely(!(condition)))					\
+			printk_panic("!(" #condition ")");			\
+	} while (0);
+
+/*
+ * A panic() that can be safely used by printk().
+ * We use putc() as it directly invokes the VGA code.
+ * NOTE! Don't use any assert()s in this function!
+ */
+static char panic_prefix[] = "PANIC: printk: ";
+static __no_return void printk_panic(const char *str)
+{
+	const char *prefix;
+
+	prefix = panic_prefix;
+	while (*prefix != 0)
+		putc(*prefix++);
+
+	while (*str != 0)
+		putc(*str++);
+
+	halt();
+}
+
+#define PRINTK_MAX_RADIX	16
 
 /*
  * Convert given unsigned long integer (@num) to ascii using
@@ -22,24 +55,25 @@
  */
 static int ultoa(unsigned long num, char *buf, int size, unsigned radix)
 {
-	int ret, digits = 0;
-	char digit[16] = "0123456789abcdef";
+	int ret, digits;
+	char digit[PRINTK_MAX_RADIX + 1] = "0123456789abcdef";
 
-	if (radix < 2 || radix > sizeof(digit))
-		return 0;
+	printk_assert(radix > 2 && radix <= PRINTK_MAX_RADIX);
 
-	if (!num)
+	digits = 0;
+	if (num == 0)
 		digits++;
+
 	for (typeof(num) c = num; c != 0; c /= radix)
                 digits++;
 
-	ret = min(digits, size);
+	ret = digits;
 
-	while (digits && size) {
+	printk_assert(digits > 0);
+	printk_assert(digits <= size);
+	for (; digits != 0; digits--) {
 		buf[digits - 1] = digit[num % radix];
 		num = num / radix;
-		--digits;
-		--size;
 	}
 
 	return ret;
@@ -52,15 +86,18 @@ static int ultoa(unsigned long num, char *buf, int size, unsigned radix)
  */
 static int ltoa(signed long num, char *buf, int size, int radix)
 {
-	if (radix < 2 || radix > 16)
-		return 0;
-	if (num < 0 && size < 2)
-		return 0;
+	printk_assert(radix > 2 && radix <= PRINTK_MAX_RADIX);
+
 	if (num < 0) {
+		/* Make room for the '-' */
+		printk_assert(size >= 2);
+
 		num *= -1;
 		buf[0] = '-';
+
 		return ultoa(num, buf+1, size-1, radix) + 1;
 	}
+
 	return ultoa(num, buf, size, radix);
 }
 
@@ -88,29 +125,62 @@ struct printf_argdesc {
 
 /*
  * Parse given printf argument expression (@fmt) and save
- * the results to argument descriptor @desc. Input is in
- * in the form: %ld, %d, %x, %lx, etc.
+ * the results to argument descriptor @desc.
+ *
+ * Input is in in the form: %ld, %d, %x, %lx, etc.
+ *
+ * Return @fmt after bypassing the '%' expression.
+ * FIXME: Better only return printf-expression # of chars.
  */
 static const char *parse_arg(const char *fmt, struct printf_argdesc *desc)
 {
+	int complete;
+
+	printk_assert(*fmt == '%');
+
+	complete = 0;
 	desc->len = INT;
 	desc->type = NONE;
 	desc->radix = 10;
 
-	while (*fmt++) {
+	while (*++fmt) {
 		switch (*fmt) {
-		case 'l': desc->len = LONG; break;
-		case 'd': desc->type = SIGNED; goto end;
-		case 'u': desc->type = UNSIGNED; goto end;
-		case 'x': desc->type = UNSIGNED; desc->radix = 16; goto end;
-		case 's': desc->type = STRING; goto end;
-		case 'c': desc->type = CHAR; goto end;
-		case '%': desc->type = PERCENT; goto end;
-		default: desc->type = NONE; goto end;
+		case 'l':
+			desc->len = LONG;
+			break;
+		case 'd':
+			desc->type = SIGNED, complete = 1;
+			goto out;
+		case 'u':
+			desc->type = UNSIGNED, complete = 1;
+			goto out;
+		case 'x':
+			desc->type = UNSIGNED, desc->radix = 16, complete = 1;
+			goto out;
+		case 's':
+			desc->type = STRING, complete = 1;
+			goto out;
+		case 'c':
+			desc->type = CHAR, complete = 1;
+			goto out;
+		case '%':
+			desc->type = PERCENT, complete = 1;
+			goto out;
+		default:
+			desc->type = NONE;
+			goto out;
 		}
 	}
-end:
-	return ++fmt;
+
+out:
+	if (complete != 1)
+		printk_panic("Unknown/incomplete expression");
+
+	/* Bypass last expression char */
+	if (*fmt != 0)
+		fmt++;
+
+	return fmt;
 }
 
 /*
@@ -125,10 +195,10 @@ static int print_arg(char *buf, int size, struct printf_argdesc *desc,
 	unsigned long unum;
 	const char *str;
 	unsigned char ch;
-	int len = 0;
+	int len;
 
-	if (size <= 0)
-		return 0;
+	len = 0;
+	printk_assert(size > 0);
 
 	switch (desc->type) {
 	case SIGNED:
@@ -177,29 +247,33 @@ static int print_arg(char *buf, int size, struct printf_argdesc *desc,
  */
 int vsnprintf(char *buf, int size, const char *fmt, va_list args)
 {
-	struct printf_argdesc desc = {0};
-	char *str = buf;
+	struct printf_argdesc desc = { 0 };
+	char *str;
 	int len;
 
-	if (size <= 1)
+	if (size < 1)
 		return 0;
 
+	str = buf;
 	while (*fmt) {
-		while (*fmt && *fmt != '%' && size) {
+		while (*fmt != 0 && *fmt != '%' && size != 0) {
 			*str++ = *fmt++;
 			--size;
 		}
 
-		/* At least '%' + a character */
-		if (!*fmt || size < 2)
+		/* Mission complete */
+		if (*fmt == 0 || size == 0)
 			break;
 
+		printk_assert(*fmt == '%');
 		fmt = parse_arg(fmt, &desc);
+
 		len = print_arg(str, size, &desc, args);
 		str += len;
 		size -= len;
 	}
 
+	printk_assert(str >= buf);
 	return str - buf;
 }
 
@@ -214,6 +288,8 @@ int vsnprintf(char *buf, int size, const char *fmt, va_list args)
  * screen backed up." Thanks travis!
  * [1] 20 seconds to write and scroll 53,200 rows on my core2duo
  * laptop.
+ *
+ * Do not use any assert()s in VGA code! (stack overflow)
  */
 
 #define VGA_BASE    ((char *)VIRTUAL(0xb8000))
@@ -327,3 +403,96 @@ void printk(const char *fmt, ...)
 
 	spin_unlock_irqrestore(&printk_lock, flags);
 }
+
+/*
+ * Minimal printk test cases
+ */
+
+#if	PRINTK_TESTS
+
+static void printk_test_int(void)
+{
+	printk("(-10, 10): ");
+	for (int i = -10; i <= 10; i++)
+		printk("%d ", i);
+	printk("\n");
+
+	printk("(INT64_MIN, 0xINT64_MIN + 10): ");
+	int64_t start = (INT64_MAX * -1) - 1;
+	for (int64_t i = start; i <= start + 10; i++)
+		printk("%ld ", i);
+	printk("\n");
+}
+
+static void printk_test_hex(void)
+{
+	printk("(0x0, 0x100): ");
+	for (int i = 0; i <= 0x100; i++)
+		printk("0x%x ", i);
+	printk("\n");
+
+	printk("(0xUINT64_MAX, 0xUINT64_MAX - 0x10): ");
+	for (uint64_t i = UINT64_MAX; i >= UINT64_MAX - 0x10; i--)
+		printk("0x%lx ", i);
+	printk("\n");
+}
+
+static void printk_test_string(void)
+{
+	const char *test1, *test2, *test3;
+
+	printk("(a, d): ");
+	printk("a");
+	printk("b");
+	printk("c");
+	printk("d");
+	printk("\n");
+
+	printk("(a, z): ");
+	for (char c = 'a'; c <= 'z'; c++)
+		printk("%c ", c);
+	printk("\n");
+
+	test1 = "Test1";
+	test2 = "Test2";
+	test3 = NULL;
+	printk("Tests: %s %s %s\n", test1, test2, test3);
+}
+
+/*
+ * Test printk reaction to NULL and incomplete
+ * C printf expressions
+ */
+static char tmpbuf[100];
+static void printk_test_format(void)
+{
+	const char *fmt;
+	int len;
+
+	for (int i = 0; i < 0x1000; i++)
+		printk("");
+
+	/* This code is expected to panic.
+	 * Modify loop counter manually */
+	fmt = "%d %x %ld";
+	len = strlen(fmt);
+	for (int i = 0; i <= len; i++) {
+		printk("[%d] ", i);
+
+		strncpy(tmpbuf, fmt, len);
+		tmpbuf[i] = 0;
+		printk(tmpbuf, 1, 2, 3);
+
+		printk("\n");
+	}
+}
+
+void printk_run_tests(void)
+{
+	printk_test_int();
+	printk_test_hex();
+	printk_test_string();
+//	printk_test_format();
+}
+
+#endif /* PRINTK_TESTS */

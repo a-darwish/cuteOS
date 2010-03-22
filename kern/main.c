@@ -109,9 +109,11 @@ void __no_return kernel_start(void)
 	local_irq_enable();
 
 	/* Testcases, if compiled */
+	printk_run_tests();
 	vm_run_tests();
 	pagealloc_run_tests();
 	kmalloc_run_tests();
 
 	halt();
 }
+

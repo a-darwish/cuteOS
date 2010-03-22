@@ -13,6 +13,7 @@
 
 #include <stdarg.h>
 #include <stdint.h>
+#include <tests.h>
 
 /*
  * C99
@@ -84,6 +85,12 @@
 int vsnprintf(char *buf, int size, const char *fmt, va_list args);
 void printk(const char *fmt, ...);
 void putc(char c);
+
+#if	PRINTK_TESTS
+void printk_run_tests(void);
+#else
+static void __unused printk_run_tests(void) { }
+#endif
 
 /*
  * Critical failures
