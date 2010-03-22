@@ -153,6 +153,10 @@ startup_64:
 	movq   SMPBOOT_CR3(%rdi), %rax
 	movq   %rax, %cr3
 
+	/* The x86-64 ABI mandates a cleared direction flag
+	 * upon C functions entry; let it be */
+	cld
+
 	/* Jump to AP cores init code; we're done */
 	movq   $secondary_start, %rax
 	jmpq   *%rax

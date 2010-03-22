@@ -90,6 +90,7 @@ default_exception_handler:
 	push   %rax			# %cr2
 	push   %r15			# %rflags
 	push   %r14			# %rsp
+	cld
 	call   printk
 1:	hlt
 	jmp    1b
@@ -118,6 +119,9 @@ PIC_handler:
  * AMD64 ABI indicates that only %rbp, %rbx and %r12 through
  * %r15 needs to be perserved by the callee. FIXME: to be
  * transformed to a generic IRQ handling stub once needed.
+ *
+ * The ABI also mandates a cleared direction flag upon C
+ * functions entry; clear the flag.
  */
 .globl kb_handler
 kb_handler:
@@ -130,6 +134,7 @@ kb_handler:
 	pushq  %r9
 	pushq  %r10
 	pushq  %r11
+	cld
 	call   __kb_handler
 	popq   %r11
 	popq   %r10

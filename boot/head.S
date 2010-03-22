@@ -294,6 +294,10 @@ startup_64:
 	/* Voila! we're now virtual :) */
 	call   zap_identity
 
+	/* The x86-64 ABI mandates a cleared direction flag
+	 * upon C functions entry; let it be */
+	cld
+
 	/* Note!! don't use %rip-relave ops like 'call' here.
 	 * We're now using a virtual %rip, different from the
 	 * physical one we're linked to; use absolute address */
