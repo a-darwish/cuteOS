@@ -258,7 +258,9 @@ static void vga_write(char *buf, int n)
 	int old_xpos, old_ypos;
 	int area, offset;
 
-	/* We may get called from irq context */
+	/* NOTE! This will deadlock if the code enclosed
+	 * by this lock triggered exceptions: the default
+	 * exception handlers implicitly call vga_write() */
 	flags = spin_lock_irqsave(&vga_lock);
 
 	old_xpos = vga_xpos;
@@ -300,17 +302,28 @@ void putc(char c)
 	vga_write(&c, 1);
 }
 
+static char buf[1024];
+static spinlock_t printk_lock = SPIN_UNLOCKED();
+
 /*
  * Main kernel print method
  */
 void printk(const char *fmt, ...)
 {
+	union x86_rflags flags;
 	va_list args;
-	char buf[256];
 	int n;
+
+	/* NOTE! This will deadlock if the code enclosed
+	 * by this lock triggered exceptions: the default
+	 * exception handlers already call printk() */
+	flags = spin_lock_irqsave(&printk_lock);
 
 	va_start(args, fmt);
 	n = vsnprintf(buf, sizeof(buf), fmt, args);
-	vga_write(buf, n);
 	va_end(args);
+
+	vga_write(buf, n);
+
+	spin_unlock_irqrestore(&printk_lock, flags);
 }
