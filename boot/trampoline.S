@@ -120,6 +120,15 @@ startup_32:
 .code64
 
 startup_64:
+	/* Reload segment caches */
+	xorw   %ax, %ax
+	movw   %ax, %ds
+	movw   %ax, %es
+	movw   %ax, %fs
+	movw   %ax, %gs
+
+	/* Setup the stack */
+	movw   %ax, %ss
 	movq   $trampoline_stack, %rsp
 
 	/* As in head.S, setup -2GB virtual mappings */
