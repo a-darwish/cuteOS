@@ -321,7 +321,7 @@ void kmalloc_run_tests(void)
 		_test_allocs(count, 1);
 	}
 
-	memset(p, 0, ARRAY_SIZE(p));
+	memset(p, 0, sizeof(p));
 	for (i = 0; i < repeat; i++) {
 		printk("[%d] ", i);
 		_test_allocs(count, 0);
