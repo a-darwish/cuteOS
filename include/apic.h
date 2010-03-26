@@ -253,17 +253,6 @@ void apic_init(void);
 int apic_ipi_acked(void);
 int apic_bootstrap_id(void);
 
-/*
- * FIXME: meaningless placeholder values set till we have
- * the big picture on assigning vector numbers to IRQs.
- */
-
-#define APIC_TIMER_VECTOR   0
-#define APIC_THERMAL_VECTOR 0
-#define APIC_PERFC_VECTOR   0
-#define APIC_LINT0_VECTOR   0
-#define APIC_LINT1_VECTOR   0
-
 #else
 
 #define APIC_PHBASE	0xfee00000	/* Physical */

@@ -13,6 +13,7 @@
 #include <msr.h>
 #include <apic.h>
 #include <pit.h>
+#include <vectors.h>
 
 static int bootstrap_apic_id = -1;
 

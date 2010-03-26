@@ -20,6 +20,7 @@
 
 #include <idt.h>
 #include <paging.h>
+#include <apic.h>
 
 .code64
 .text
@@ -114,38 +115,67 @@ PIC_handler:
 	iretq
 
 /*
- * PS/2 keyboard interrupt handler stub.
+ * AMD64 ABI indicates that only %rbp, %rbx, and %r12
+ * through %r15 need to be perserved by the callee.
  *
- * AMD64 ABI indicates that only %rbp, %rbx and %r12 through
- * %r15 needs to be perserved by the callee. FIXME: to be
- * transformed to a generic IRQ handling stub once needed.
+ * If any of the above regs get modified by C functions
+ * called, they will be saved in the callee stack. Lets
+ * save the rest of the regs which won't be saved.
  *
  * The ABI also mandates a cleared direction flag upon C
- * functions entry; clear the flag.
+ * functions entry; clear the flag. No need to save CPU
+ * %rflags as the CPU core automatically does so for us.
+ */
+#define PUSH_REGS		\
+	pushq  %rax;		\
+	pushq  %rcx;		\
+	pushq  %rdx;		\
+	pushq  %rdi;		\
+	pushq  %rsi;		\
+	pushq  %r8 ;		\
+	pushq  %r9 ;		\
+	pushq  %r10;		\
+	pushq  %r11;		\
+	cld
+
+#define RESTORE_REGS		\
+	popq   %r11;		\
+	popq   %r10;		\
+	popq   %r9 ;		\
+	popq   %r8 ;		\
+	popq   %rsi;		\
+	popq   %rdi;		\
+	popq   %rdx;		\
+	popq   %rcx;		\
+	popq   %rax
+
+/*
+ * Where every IRQ handler ends ..
+ *
+ * Send EOI to local APIC; 'Fixed' interrupts must notify
+ * their completion to the local APIC before returning
+ * from the handler, so the local APIC can dispatch other
+ * IRQs pending at its IRR register.
+ *
+ * NOTE-1! APIC MMIO must have been explicitly mapped
+ * NOTE-2! The EOI memory-mapped register is only 32-bit
+ * NOTE-3! Transform this to C once we have an IRQ model
+ * NOTE-4! Don't clobber any reg not saved at PUSH_REGS
+ */
+irq_end:
+	movq   $(VIRTUAL(APIC_PHBASE) + APIC_EOI), %rax
+	movl   $0,(%rax)
+	RESTORE_REGS
+	iretq
+
+/*
+ * PS/2 keyboard interrupt handler stub.
  */
 .globl kb_handler
 kb_handler:
-	pushq  %rax
-	pushq  %rcx
-	pushq  %rdx
-	pushq  %rdi
-	pushq  %rsi
-	pushq  %r8
-	pushq  %r9
-	pushq  %r10
-	pushq  %r11
-	cld
+	PUSH_REGS
 	call   __kb_handler
-	popq   %r11
-	popq   %r10
-	popq   %r9
-	popq   %r8
-	popq   %rsi
-	popq   %rdi
-	popq   %rdx
-	popq   %rcx
-	popq   %rax
-	iretq
+	jmp    irq_end
 
 .data
 

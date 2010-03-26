@@ -17,6 +17,7 @@
 #include <io.h>
 #include <idt.h>
 #include <keyboard.h>
+#include <vectors.h>
 
 /*
  * AT+ (set 2) keyboard scan codes table
@@ -107,7 +108,7 @@ void __kb_handler(void) {
 		shifted = 0;
 
 	if ((int)code >= sizeof(scancodes) / sizeof(scancodes[0]))
-		goto out;
+		return;
 
 	if (shifted)
 		ascii = scancodes[code].shifted;
@@ -116,14 +117,12 @@ void __kb_handler(void) {
 
 	if (ascii)
 		putc(ascii);
-
-out:
-	apic_write(APIC_EOI, 0);
 }
 
 void keyboard_init(void) {
-	int vector = 0x20;	/* Arbitary for now */
+	int vector;
 
+	vector = KEYBOARD_IRQ_VECTOR;
 	set_intr_gate(vector, kb_handler);
 	ioapic_setup_isairq(1, vector);
 }
