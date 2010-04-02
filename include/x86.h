@@ -62,4 +62,20 @@ static inline void set_rflags(union x86_rflags flags)
 		      :"r"(flags.raw));
 }
 
+/*
+ * Default rflags: set it to rflags of new threads, etc
+ * This is same as the CPU rflags value following #RESET or
+ * INIT SIPI, with the difference of having IRQs enabled.
+ */
+static inline union x86_rflags default_rflags(void)
+{
+	union x86_rflags flags;
+
+	flags.raw = 0;
+	flags.__reserved1_0 = 1;
+	flags.irqs_enabled = 1;
+
+	return flags;
+}
+
 #endif /* _X86_H */

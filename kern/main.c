@@ -23,6 +23,7 @@
 #include <vm.h>
 #include <paging.h>
 #include <kmalloc.h>
+#include <sched.h>
 
 static void setup_idt(void)
 {
@@ -101,8 +102,10 @@ void __no_return kernel_start(void)
 	apic_init();
 	ioapic_init();
 
-	keyboard_init();
 	smpboot_init();
+	sched_init();
+
+	keyboard_init();
 
 	/* Enable interrupts before running the
 	 * test cases */
@@ -113,7 +116,7 @@ void __no_return kernel_start(void)
 	vm_run_tests();
 	pagealloc_run_tests();
 	kmalloc_run_tests();
+	sched_run_tests();
 
 	halt();
 }
-

@@ -15,5 +15,6 @@
 #define		VM_TESTS		0
 #define		PAGEALLOC_TESTS		0
 #define		KMALLOC_TESTS		0
+#define		SCHED_TESTS		0
 
 #endif /* _TESTS_H */

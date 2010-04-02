@@ -11,6 +11,8 @@
  *  the Free Software Foundation, version 2.
  */
 
+#include <stdint.h>
+
 #define KB_COMMAND	0x64
 #define KB_DATA		0x60
 
