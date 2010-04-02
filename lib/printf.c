@@ -14,6 +14,7 @@
 #include <paging.h>
 #include <spinlock.h>
 #include <mmio.h>
+#include <vga.h>
 #include <tests.h>
 
 /*
@@ -167,7 +168,9 @@ static const char *parse_arg(const char *fmt, struct printf_argdesc *desc)
 			desc->type = PERCENT, complete = 1;
 			goto out;
 		default:
+			/* Unknown mark: complete by definition */
 			desc->type = NONE;
+			complete = 1;
 			goto out;
 		}
 	}
@@ -292,11 +295,11 @@ int vsnprintf(char *buf, int size, const char *fmt, va_list args)
  * Do not use any assert()s in VGA code! (stack overflow)
  */
 
-#define VGA_BASE    ((char *)VIRTUAL(0xb8000))
-#define VGA_MAXROWS 25
-#define VGA_MAXCOLS 80
-#define VGA_COLOR   0x0f
-#define VGA_AREA    (VGA_MAXROWS * VGA_MAXCOLS * 2)
+#define VGA_BASE		((char *)VIRTUAL(0xb8000))
+#define VGA_MAXROWS		25
+#define VGA_MAXCOLS		80
+#define VGA_DEFAULT_COLOR	VGA_COLOR(VGA_BLACK, VGA_WHITE)
+#define VGA_AREA		(VGA_MAXROWS * VGA_MAXCOLS * 2)
 
 static spinlock_t vga_lock = SPIN_UNLOCKED();
 static int vga_xpos, vga_ypos;
@@ -306,7 +309,7 @@ static char vga_buffer[VGA_AREA];
  * Scroll the screen up by one row.
  * NOTE! only call while the vga lock is held
  */
-static void vga_scrollup(void) {
+static void vga_scrollup(int color) {
 	char *src = vga_buffer + 2*VGA_MAXCOLS;
 	char *dst = vga_buffer;
 	int len = 2*((VGA_MAXROWS - 1) * VGA_MAXCOLS);
@@ -315,7 +318,7 @@ static void vga_scrollup(void) {
 	memcpy(dst, src, len);
 
 	for (int i = 0; i < VGA_MAXCOLS; i++)
-		*p++ = (VGA_COLOR << 8) + ' ';
+		*p++ = (color << 8) + ' ';
 
 	memcpy(VGA_BASE, vga_buffer, VGA_AREA);
 	vga_xpos = 0;
@@ -326,7 +329,7 @@ static void vga_scrollup(void) {
  * Write given buffer to VGA ram and scroll the screen
  * up as necessary.
  */
-static void vga_write(char *buf, int n)
+static void vga_write(char *buf, int n, int color)
 {
 	union x86_rflags flags;
 	int max_xpos = VGA_MAXCOLS;
@@ -344,13 +347,13 @@ static void vga_write(char *buf, int n)
 
 	while (*buf && n--) {
 		if (vga_ypos == max_ypos) {
-			vga_scrollup();
+			vga_scrollup(color);
 			old_ypos = vga_ypos;
 			old_xpos = vga_xpos;
 		}
 
 		if (*buf != '\n') {
-			writew((VGA_COLOR << 8) + *buf,
+			writew((color << 8) + *buf,
 			       vga_buffer + 2*(vga_xpos + vga_ypos * max_xpos));
 			++vga_xpos;
 		}
@@ -370,20 +373,31 @@ static void vga_write(char *buf, int n)
 }
 
 /*
- * Without any formatting overhead, write a charactor
- * to screen
+ * Without any formatting overhead, write a single
+ * charactor to screen
  */
-void putc(char c)
+
+/*
+ * @color: foreground color; check vga.h
+ */
+void putc_colored(char c, int color)
 {
-	vga_write(&c, 1);
+	printk_assert(color <= VGA_COLOR_MAX);
+	vga_write(&c, 1, VGA_COLOR(VGA_BLACK, color));
 }
 
-static char buf[1024];
-static spinlock_t printk_lock = SPIN_UNLOCKED();
+void putc(char c)
+{
+	putc_colored(c, VGA_DEFAULT_COLOR);
+}
 
 /*
  * Main kernel print method
  */
+
+static char buf[1024];
+static spinlock_t printk_lock = SPIN_UNLOCKED();
+
 void printk(const char *fmt, ...)
 {
 	union x86_rflags flags;
@@ -399,7 +413,7 @@ void printk(const char *fmt, ...)
 	n = vsnprintf(buf, sizeof(buf), fmt, args);
 	va_end(args);
 
-	vga_write(buf, n);
+	vga_write(buf, n, VGA_DEFAULT_COLOR);
 
 	spin_unlock_irqrestore(&printk_lock, flags);
 }
@@ -487,12 +501,35 @@ static void printk_test_format(void)
 	}
 }
 
+static void printk_test_colors(void)
+{
+	printk("Colored text: ");
+	putc_colored('A', VGA_BLACK);
+	putc_colored('A', VGA_BLUE);
+	putc_colored('A', VGA_GREEN);
+	putc_colored('A', VGA_CYAN);
+	putc_colored('A', VGA_RED);
+	putc_colored('A', VGA_MAGNETA);
+	putc_colored('A', VGA_BROWN);
+	putc_colored('A', VGA_LIGHT_GRAY);
+	putc_colored('A', VGA_GRAY);
+	putc_colored('A', VGA_LIGHT_BLUE);
+	putc_colored('A', VGA_LIGHT_GREEN);
+	putc_colored('A', VGA_LIGHT_CYAN);
+	putc_colored('A', VGA_LIGHT_RED);
+	putc_colored('A', VGA_LIGHT_MAGNETA);
+	putc_colored('A', VGA_YELLOW);
+	putc_colored('A', VGA_WHITE);
+	printk("\n");
+}
+
 void printk_run_tests(void)
 {
 	printk_test_int();
 	printk_test_hex();
 	printk_test_string();
 //	printk_test_format();
+	printk_test_colors();
 }
 
 #endif /* PRINTK_TESTS */

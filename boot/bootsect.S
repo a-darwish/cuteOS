@@ -288,7 +288,11 @@ kpoll_output:
  * INT 0x10, function 0x0e - write teletype to active page
  * input  %al    - character to write
  * input  %bh    - page number
- * input  %bl    - characters' attribute (*)
+ * input  %bl    - characters' attribute
+ *
+ * Character attribute is an 8 bit value, low 4 bits sets
+ * foreground color, while the high 4 sets the background.
+ * Check vga.h for the actual values.
  */
 
 /* print %dx value in hexadecimal */
@@ -425,35 +429,4 @@ boot_flag:
 	.word  BOOT_SIGNATURE
 
 /*
- * (*) character attribute is an 8 bit value, low 4 bits
- * set fore color, high 4 bits set background color.
- *
- *  HEX    BIN        COLOR
- *
- *  0      0000      black
- *  1      0001      blue
- *  2      0010      green
- *  3      0011      cyan
- *  4      0100      red
- *  5      0101      magenta
- *  6      0110      brown
- *  7      0111      light gray
- *  8      1000      dark gray
- *  9      1001      light blue
- *  A      1010      light green
- *  B      1011      light cyan
- *  C      1100      light red
- *  D      1101      light magenta
- *  E      1110      yellow
- *  F      1111      white
- *
- * ``When writing graphical data to the video data buffer, the BIOS
- * writes the individual color value of each pixel to be painted on
- * the CRT. It addresses the display buffer as a memory map made up
- * of an array of bits. The video subsytem's control circuitry reads
- * each pixel location from the buffer and generates the color and
- * control signals necessary to write the pixel to the correct screen
- * location with the correct color value'' -- System BIOS for IBM PCs,
- * compatibles, and EISA computers, second edition, Phoenix press
  */
-
