@@ -112,6 +112,16 @@ void panic(const char *fmt, ...);
 	} while (0);
 
 /*
+ * For spin-loops, use x86 'pause' and a memory barrier to:
+ * - force gcc to reload any values from memory over the busy
+ *   loop, avoiding the often-buggy C volatile keyword
+ * - hint the CPU to avoid useless memory ordering violations
+ * - for Pentium 4, reduce power usage in the busy loop state
+ */
+#define cpu_pause()						\
+	asm volatile ("pause":::"memory");
+
+/*
  * Compile-time assert for constant-folded expressions
  *
  * We would've been better using GCC's error(msg) attribute,

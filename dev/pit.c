@@ -28,14 +28,17 @@
  * OUT-2 pin, which leads to outputting counter 2 ticks to the system
  * speaker if set.
  *
- * Delays are tested against wall clock time.
+ * Delays were tested against wall clock time.
+ *
+ * Finally, remember that for legacy hardware, it typically takes about
+ * 1-µs to access an I/O port.
  */
 
 #include <kernel.h>
 #include <stdint.h>
 #include <io.h>
-#include <tsc.h>
 #include <pit.h>
+#include <tests.h>
 
 #define PIT_CLOCK_RATE	1193182ul	/* Hz (ticks per second) */
 
@@ -117,20 +120,48 @@ static inline void timer2_stop(void)
 }
 
 /*
+ * Set the given PIT counter with a count representing given
+ * milliseconds value relative to the PIT clock rate.
+ *
+ * @counter_reg: PIT_COUNTER{0, 1, 2}
+ *
+ * Due to default oscillation frequency and the max counter
+ * size of 16 bits, maximum delay is around 53 milliseconds.
+ *
+ * Countdown begins once counter is set and GATE-x is up.
+ */
+static void pit_set_counter(int ms, int counter_reg)
+{
+	uint32_t counter;
+	uint8_t counter_low, counter_high;
+
+	/* counter = ticks per second * seconds to delay
+	 *         = PIT_CLOCK_RATE * (ms / 1000)
+	 *         = PIT_CLOCK_RATE / (1000 / ms)
+	 * We use last form to avoid float arithmetic */
+	assert(ms > 0);
+	assert((1000 / ms) > 0);
+	counter = PIT_CLOCK_RATE / (1000 / ms);
+
+	assert(counter <= UINT16_MAX);
+	counter_low = counter & 0xff;
+	counter_high = counter >> 8;
+
+	outb(counter_low, counter_reg);
+	outb(counter_high, counter_reg);
+}
+
+/*
  * Did we program PIT's counter0 to monotonic mode?
  */
 static bool timer0_monotonic;
 
 /*
  * Delay/busy-loop for @ms milliseconds.
- * Due to default oscillation frequency and the max counter
- * size of 16 bits, maximum delay is around 53 milliseconds.
  */
 void pit_mdelay(int ms)
 {
 	union pit_cmd cmd = { .raw = 0 };
-	uint32_t counter;
-	uint8_t counter_low, counter_high;
 
 	/* GATE-2 down */
 	timer2_stop();
@@ -141,24 +172,13 @@ void pit_mdelay(int ms)
 	cmd.timer = 2;
 	outb(cmd.raw, PIT_CONTROL);
 
-	/* counter = ticks per second * seconds to delay
-	 * counter = PIT_CLOCK_RATE * (ms / 1000)
-	 * We use division to avoid float arithmetic */
-	assert(ms > 0);
-	counter = PIT_CLOCK_RATE / (1000 / ms);
-
-	assert(counter <= UINT16_MAX);
-	counter_low = counter & 0xff;
-	counter_high = counter >> 8;
-
-	outb(counter_low, PIT_COUNTER2);
-	outb(counter_high, PIT_COUNTER2);
+	pit_set_counter(ms, PIT_COUNTER2);
 
 	/* GATE-2 up */
 	timer2_start();
 
 	while ((inb(0x61) & PIT_OUT2) == 0)
-		asm ("pause");
+		cpu_pause();
 }
 
 /*
@@ -167,8 +187,6 @@ void pit_mdelay(int ms)
 void pit_oneshot(int ms)
 {
 	union pit_cmd cmd = { .raw = 0 };
-	uint32_t counter;
-	uint8_t counter_low, counter_high;
 
 	/* No control over GATE-0: it's always positive */
 
@@ -182,88 +200,139 @@ void pit_oneshot(int ms)
 	cmd.timer = 0;
 	outb(cmd.raw, PIT_CONTROL);
 
-	/* FIXME: we may like to put this division in a
-	 * header file to let GCC do it at compile-time */
-	assert(ms > 0);
-	counter = PIT_CLOCK_RATE / (1000 / ms);
-
-	assert(counter <= UINT16_MAX);
-	counter_low = counter & 0xff;
-	counter_high = counter >> 8;
-
-	outb(counter_low, PIT_COUNTER0);
-	outb(counter_high, PIT_COUNTER0);
+	pit_set_counter(ms, PIT_COUNTER0);
 }
 
 /*
  * Let the PIT fire at monotonic rate.
- *
- * OUT-2 actually starts high and stands high half the period,
- * go low the other half, then return high.
- *
- * Since we program the PIT IRQ as edge-triggered, this gives
- * us the desirable effect of an IRQ every @ms since we  only
- * notice the last rise.
  */
 void pit_monotonic(int ms)
 {
 	union pit_cmd cmd = { .raw = 0 };
-	uint32_t counter;
-	uint8_t counter_low, counter_high;
 
 	/* No control over GATE-0: it's always positive */
 
 	timer0_monotonic = true;
 
 	cmd.bcd = 0;
-	cmd.mode = MODE_3;
+	cmd.mode = MODE_2;
 	cmd.rw = RW_16bit;
 	cmd.timer = 0;
 	outb(cmd.raw, PIT_CONTROL);
 
-	assert(ms > 0);
-	counter = PIT_CLOCK_RATE / (1000 / ms);
+	pit_set_counter(ms, PIT_COUNTER0);
+}
 
-	assert(counter <= UINT16_MAX);
-	counter_low = counter & 0xff;
-	counter_high = counter >> 8;
+#if	PIT_TESTS
 
-	outb(counter_low, PIT_COUNTER0);
-	outb(counter_high, PIT_COUNTER0);
+#include <vectors.h>
+#include <idt.h>
+#include <ioapic.h>
+
+/*
+ * Give the observer some time ..
+ */
+static void pit_5secs_delay(void)
+{
+	for (int i = 0; i < 500; i++)
+		pit_mdelay(10);
 }
 
 /*
- * Calculate the processor clock using the PIT and the time-
- * stamp counter: it's increased by one for each clock cycle.
- *
- * There's a possibility of being hit by a massive SMI, we
- * repeat the calibration to hope this wasn't the case. Some
- * SMI handlers can take many milliseconds to complete!
- *
- * FIXME: For Intel core2duo cpus and up, ask the architect-
- * ural event monitoring interface to calculate cpu clock.
- *
- * Return cpu clock ticks per second.
+ * Test milli-second delays against wall-clock
+ * Remember to have a stopwatch close by
  */
-uint64_t pit_calibrate_cpu(int repeat)
+static void pit_test_mdelay(void)
 {
-	uint64_t tsc1, tsc2, diff, diff_min, cpu_clock;
-	int ms_delay;
+	printk("PIT: Testing timer delays\n\n");
 
-	ms_delay = 5;
-	diff_min = UINT64_MAX;
-	for (int i = 0; i < repeat; i ++) {
-		tsc1 = read_tsc();
-		pit_mdelay(ms_delay);
-		tsc2 = read_tsc();
+	printk("Testing a 10-second delay after notice\n");
+	pit_5secs_delay();
 
-		diff = tsc2 - tsc1;
-		if (diff < diff_min)
-			diff_min = diff;
+	printk("Note: Delay interval started \n");
+	for (int i = 0; i < 1000; i++)
+		pit_mdelay(10);
+	printk("Note: Delay end \n\n");
+
+	printk("Testing a 5-second delay after notice\n");
+	pit_5secs_delay();
+
+	printk("Note: Delay interval started \n");
+	for (int i = 0; i < 5000; i++)
+		pit_mdelay(1);
+	printk("Note: Delay end \n\n");
+
+	printk("Testing another 5-second delay after notice\n");
+	pit_5secs_delay();
+
+	printk("Note: Delay interval started \n");
+	for (int i = 0; i < 100; i++)
+		pit_mdelay(50);
+	printk("Note: Delay end \n\n");
+}
+
+/*
+ * Test PIT's monotonic mode code
+ */
+
+/*
+ * Increase the counter for each periodic PIT tick.
+ */
+static volatile int ticks_count;
+
+void __pit_periodic_handler(void)
+{
+	ticks_count++;
+}
+
+/*
+ * ticks[i]: number of periodic timer ticks triggered after
+ * the `i'th independently-programmed delay interval.
+ */
+#define DELAY_TESTS	100
+static uint64_t ticks[DELAY_TESTS];
+
+/*
+ * Test the periodic timer by checking the number of ticks
+ * produced after each delay interval.
+ *
+ * Delay intervals code is assumed to be correct.
+ */
+extern void pit_periodic_handler(void);
+static void pit_test_periodic_irq(void)
+{
+	int i, ms, vector;
+
+	printk("PIT: Testing periodic interrupts\n\n");
+
+	/* FIXME: We should have an IRQ model soon */
+	vector = PIT_TESTS_VECTOR;
+	set_intr_gate(vector, pit_periodic_handler);
+	ioapic_setup_isairq(0, vector);
+
+	/* Testing showed that big delay values catches
+	 * more periodic timer accuracy errors .. */
+	ms = 50;
+	pit_monotonic(ms);
+
+	/* After each delay, store ticks triggered so far */
+	local_irq_enable();
+	for (i = 0; i < DELAY_TESTS; i++) {
+		pit_mdelay(ms);
+		ticks[i] = ticks_count;
 	}
 
-	/* cpu ticks per 1 second =
-	 * ticks per delay * (1 / delay in seconds) */
-	cpu_clock = diff_min * (1000 / ms_delay);
-	return cpu_clock;
+	/* This should print a list of ones */
+	printk("Number of ticks triggered on each delay period: ");
+	for (i = 1; i < DELAY_TESTS; i++)
+		printk("%ld ", ticks[i] - ticks[i - 1]);
+	printk("\n\n");
 }
+
+void pit_run_tests(void)
+{
+	pit_test_periodic_irq();
+	pit_test_mdelay();
+}
+
+#endif /* PIT_TESTS */

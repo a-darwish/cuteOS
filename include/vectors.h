@@ -16,8 +16,10 @@
  * NOTE! Don't use reserved vector numbers <= 0x1f.
  */
 
-#define PIT_IRQ_VECTOR		0x20
+#define TICKS_IRQ_VECTOR	0x20
 #define KEYBOARD_IRQ_VECTOR	0x21
+#define PIT_TESTS_VECTOR	0x22
+#define APIC_TESTS_VECTOR	0x23
 
 /*
  * Placeholder values till we know how will we

@@ -46,8 +46,6 @@ static void clear_bss(void)
 
 static void print_info(void)
 {
-	uint64_t clock;
-
 	printk("Cute 0.0\n\n");
 
 	printk("Text start = 0x%lx\n", __text_start);
@@ -61,10 +59,20 @@ static void print_info(void)
 	printk("BSS start  = 0x%lx\n", __bss_start);
 	printk("BSS end    = 0x%lx\n", __bss_end);
 	printk("BSS size   = %d bytes\n\n", __bss_end - __bss_start);
+}
 
-	clock = pit_calibrate_cpu(10);
-	printk("Detected %d.%d MHz processor\n\n", clock / 1000000,
-	       (uint8_t)(clock % 1000000));
+/*
+ * Run compiled testcases, if any
+ */
+static void run_test_cases(void)
+{
+	printk_run_tests();
+	vm_run_tests();
+	pagealloc_run_tests();
+	kmalloc_run_tests();
+	pit_run_tests();
+	apic_run_tests();
+	sched_run_tests();
 }
 
 /*
@@ -112,11 +120,7 @@ void __no_return kernel_start(void)
 	local_irq_enable();
 
 	/* Testcases, if compiled */
-	printk_run_tests();
-	vm_run_tests();
-	pagealloc_run_tests();
-	kmalloc_run_tests();
-	sched_run_tests();
+	run_test_cases();
 
 	halt();
 }

@@ -124,7 +124,7 @@ void sched_init(void)
 	 * will get 'latched' in the bootstrap local APIC IRR
 	 * register and get serviced once interrupts are enabled.
 	 */
-	vector = PIT_IRQ_VECTOR;
+	vector = TICKS_IRQ_VECTOR;
 	set_intr_gate(vector, timer_handler);
 	ioapic_setup_isairq(0, vector);
 
@@ -134,7 +134,7 @@ void sched_init(void)
 	 * method sounds a bit risky: if a single edge trigger got
 	 * lost, the entire kernel will halt.
 	 */
-	pit_monotonic(52);
+	pit_monotonic(10);
 }
 
 #if	SCHED_TESTS
@@ -145,6 +145,8 @@ static void __no_return test_thread(void)
 {
 	while (true) {
 		putc_colored('B', VGA_LIGHT_GREEN);
+		for (int i = 0; i < 0xffff; i++)
+			cpu_pause();
 	}
 }
 
@@ -154,6 +156,8 @@ void __no_return sched_run_tests(void)
 
 	while (true) {
 		putc_colored('A', VGA_LIGHT_RED);
+		for (int i = 0; i < 0xffff; i++)
+			cpu_pause();
 	}
 }
 

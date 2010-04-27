@@ -20,6 +20,7 @@
 #include <vm.h>
 #include <msr.h>
 #include <mptables.h>
+#include <tests.h>
 
 /*
  * APIC Base Address MSR
@@ -121,8 +122,13 @@ union apic_icr {
 #define APIC_LVTT	0x320   /* Timer LVT Entry */
 union apic_lvt_timer {
 	struct {
-		unsigned vector:8, reserved0:4, delivery_status:1, reserved1:3,
-			mask:1, timer_mode:1, reserved2:14;
+		uint32_t vector:8,
+			reserved0:4,
+			delivery_status:1,	/* read-only */
+			reserved1:3,
+			mask:1,
+			timer_mode:1,
+			reserved2:14;
 	} __packed;
 	uint32_t value;
 };
@@ -163,6 +169,30 @@ union apic_lvt_error {
 			delivery_status:1, reserved1:3, mask:1, reserved3:15;
 	} __packed;
 	uint32_t value;
+};
+
+#define APIC_TIMER_INIT_CNT	0x380	/* Timer Initial Count register */
+#define APIC_TIMER_CUR_CNT	0x390	/* Timer Current Count register */
+
+#define APIC_DCR		0x3e0	/* Timer Divide Configuration register */
+union apic_dcr {
+	struct {
+		uint32_t divisor:4,	/* NOTE! bit-2 MUST be zero */
+			reserved0:28;
+	} __packed;
+	uint32_t value;
+};
+
+/* Timer Divide Register divisor; only APIC_DCR_1 was tested */
+enum {
+	APIC_DCR_2   = 0x0,		/* Divide by 2   */
+	APIC_DCR_4   = 0x1,		/* Divide by 4   */
+	APIC_DCR_8   = 0x2,		/* Divide by 8   */
+	APIC_DCR_16  = 0x3,		/* Divide by 16  */
+	APIC_DCR_32  = 0x8,		/* Divide by 32  */
+	APIC_DCR_64  = 0x9,		/* Divide by 64  */
+	APIC_DCR_128 = 0xa,		/* Divide by 128 */
+	APIC_DCR_1   = 0xb,		/* Divide by 1!  */
 };
 
 /*
@@ -221,6 +251,12 @@ enum {
 	APIC_MASK   = 0x1,
 };
 
+/* APIC timer modes */
+enum {
+	APIC_TIMER_ONESHOT  = 0x0,	/* Trigger timer as one shot */
+	APIC_TIMER_PERIODIC = 0x1,	/* Trigger timer monotonically */
+};
+
 /*
  * APIC register accessors
  */
@@ -252,6 +288,20 @@ static inline uint32_t apic_read(uint32_t reg)
 void apic_init(void);
 int apic_ipi_acked(void);
 int apic_bootstrap_id(void);
+
+void apic_udelay(uint64_t us);
+void apic_mdelay(int ms);
+void apic_monotonic(int ms, uint8_t vector);
+
+#if	APIC_TESTS
+
+void apic_run_tests(void);
+
+#else
+
+static void __unused apic_run_tests(void) { }
+
+#endif	/* APIC_TESTS */
 
 #else
 

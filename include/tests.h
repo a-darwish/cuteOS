@@ -15,6 +15,15 @@
 #define		VM_TESTS		0
 #define		PAGEALLOC_TESTS		0
 #define		KMALLOC_TESTS		0
+#define		PIT_TESTS		0
+#define		APIC_TESTS		0
 #define		SCHED_TESTS		0
+
+#if	(SCHED_TESTS == 1) && (PIT_TESTS == 1)
+
+#error	"Can't run scheduler test cases with the PIT ones:\
+	PIT tests invalidate scheduler timer ticks setup"
+
+#endif
 
 #endif /* _TESTS_H */

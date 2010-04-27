@@ -32,6 +32,7 @@
 #include <paging.h>
 #include <apic.h>
 #include <proc.h>
+#include <tests.h>
 
 .code64
 .text
@@ -280,6 +281,11 @@ timer_handler:
 	jmp    irq_end
 
 /*
+ * Interrupt handlers stubs ..
+ * (till we have a real IRQ model)
+ */
+
+/*
  * PS/2 keyboard interrupt handler stub.
  */
 .globl kb_handler
@@ -287,6 +293,32 @@ kb_handler:
 	PUSH_REGS
 	call   __kb_handler
 	jmp    irq_end
+
+/*
+ * PIT periodic mode test handler
+ */
+#if	PIT_TESTS
+
+.globl pit_periodic_handler
+pit_periodic_handler:
+	PUSH_REGS
+	call   __pit_periodic_handler
+	jmp    irq_end
+
+#endif	/* PIT_TESTS */
+
+/*
+ * APIC periodic mode test handler
+ */
+#if	APIC_TESTS
+
+.globl apic_timer_handler
+apic_timer_handler:
+	PUSH_REGS
+	call   __apic_timer_handler
+	jmp    irq_end
+
+#endif	/* APIC_TESTS */
 
 .data
 
