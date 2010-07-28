@@ -283,12 +283,13 @@ int vsnprintf(char *buf, int size, const char *fmt, va_list args)
 /*
  * VGA text-mode memory (0xb8000-0xbffff) access
  * @vga_xpos and @vga_ypos forms the current cursor position
- * @vga_buffer: used to access vga ram in a write-only mode. For
- * scrolling, we need to copy the last 24 rows up one row, but
- * reading from vga ram is pretty darn slow and buggy[1], thus the
- * need for a dedicated buffer. "It's also much easier to support
- * multiple terminals that way since we'll have everything on the
- * screen backed up." Thanks travis!
+ * @vga_buffer: A buffer to access VGA RAM in a write-only mode.
+ * For scrolling, we need to copy the last 24 rows up one row, but
+ * reading from VGA RAM is pretty darn slow and buggy[1], thus the
+ * need for a dedicated buffer. As also once advised by Travis
+ * Geiselbrecht, multiple terminals will be much easier to support
+ * that way since everything on the screen will be backed up.
+ *
  * [1] 20 seconds to write and scroll 53,200 rows on my core2duo
  * laptop.
  *
@@ -310,15 +311,19 @@ static char vga_buffer[VGA_AREA];
  * NOTE! only call while the vga lock is held
  */
 static void vga_scrollup(int color) {
-	char *src = vga_buffer + 2*VGA_MAXCOLS;
-	char *dst = vga_buffer;
-	int len = 2*((VGA_MAXROWS - 1) * VGA_MAXCOLS);
-	unsigned short *p = (unsigned short *)(vga_buffer + len);
+	char *src, *dst;
+	int rows_24;
+	uint16_t *vgap;
 
-	memcpy(dst, src, len);
+	src = vga_buffer + 2 * VGA_MAXCOLS;
+	dst = vga_buffer;
+	rows_24 = 2 * ((VGA_MAXROWS - 1) * VGA_MAXCOLS);
 
+	memcpy(dst, src, rows_24);
+
+	vgap = (uint16_t *)(vga_buffer + rows_24);
 	for (int i = 0; i < VGA_MAXCOLS; i++)
-		*p++ = (color << 8) + ' ';
+		*vgap++ = (color << 8) + ' ';
 
 	memcpy(VGA_BASE, vga_buffer, VGA_AREA);
 	vga_xpos = 0;
@@ -366,9 +371,10 @@ static void vga_write(char *buf, int n, int color)
 		buf++;
 	}
 
-	offset = 2*(old_ypos * max_xpos + old_xpos);
-	area = 2*((vga_ypos - old_ypos) * max_xpos + vga_xpos);
+	offset = 2 * (old_ypos * max_xpos + old_xpos);
+	area = 2 * ((vga_ypos - old_ypos) * max_xpos + vga_xpos);
 	memcpy(VGA_BASE + offset, vga_buffer + offset, area);
+
 	spin_unlock_irqrestore(&vga_lock, flags);
 }
 
@@ -378,12 +384,11 @@ static void vga_write(char *buf, int n, int color)
  */
 
 /*
- * @color: foreground color; check vga.h
+ * @color: VGA_COLOR(bg, fg); check vga.h
  */
 void putc_colored(char c, int color)
 {
-	printk_assert(color <= VGA_COLOR_MAX);
-	vga_write(&c, 1, VGA_COLOR(VGA_BLACK, color));
+	vga_write(&c, 1, color);
 }
 
 void putc(char c)
@@ -478,7 +483,7 @@ static void printk_test_string(void)
  * C printf expressions
  */
 static char tmpbuf[100];
-static void printk_test_format(void)
+static void __unused printk_test_format(void)
 {
 	const char *fmt;
 	int len;
@@ -503,23 +508,27 @@ static void printk_test_format(void)
 
 static void printk_test_colors(void)
 {
+	uint8_t color;
+
+	color = VGA_COLOR(VGA_BLACK, 0);
+
 	printk("Colored text: ");
-	putc_colored('A', VGA_BLACK);
-	putc_colored('A', VGA_BLUE);
-	putc_colored('A', VGA_GREEN);
-	putc_colored('A', VGA_CYAN);
-	putc_colored('A', VGA_RED);
-	putc_colored('A', VGA_MAGNETA);
-	putc_colored('A', VGA_BROWN);
-	putc_colored('A', VGA_LIGHT_GRAY);
-	putc_colored('A', VGA_GRAY);
-	putc_colored('A', VGA_LIGHT_BLUE);
-	putc_colored('A', VGA_LIGHT_GREEN);
-	putc_colored('A', VGA_LIGHT_CYAN);
-	putc_colored('A', VGA_LIGHT_RED);
-	putc_colored('A', VGA_LIGHT_MAGNETA);
-	putc_colored('A', VGA_YELLOW);
-	putc_colored('A', VGA_WHITE);
+	putc_colored('A', color | VGA_BLACK);
+	putc_colored('A', color | VGA_BLUE);
+	putc_colored('A', color | VGA_GREEN);
+	putc_colored('A', color | VGA_CYAN);
+	putc_colored('A', color | VGA_RED);
+	putc_colored('A', color | VGA_MAGNETA);
+	putc_colored('A', color | VGA_BROWN);
+	putc_colored('A', color | VGA_LIGHT_GRAY);
+	putc_colored('A', color | VGA_GRAY);
+	putc_colored('A', color | VGA_LIGHT_BLUE);
+	putc_colored('A', color | VGA_LIGHT_GREEN);
+	putc_colored('A', color | VGA_LIGHT_CYAN);
+	putc_colored('A', color | VGA_LIGHT_RED);
+	putc_colored('A', color | VGA_LIGHT_MAGNETA);
+	putc_colored('A', color | VGA_YELLOW);
+	putc_colored('A', color | VGA_WHITE);
 	printk("\n");
 }
 
