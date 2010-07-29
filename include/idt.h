@@ -57,7 +57,7 @@ struct idt_descriptor {
  *
  * @IDT_STUB_SIZE: exception stub _code_ size.
  */
-extern const struct idt_descriptor idtdesc[];
+extern const struct idt_descriptor idtdesc;
 extern struct idt_gate idt[IDT_GATES];
 #define IDT_STUB_SIZE 12
 extern const char idt_exception_stubs[EXCEPTION_GATES][IDT_STUB_SIZE];

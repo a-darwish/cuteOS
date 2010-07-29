@@ -30,7 +30,7 @@ static void setup_idt(void)
 	for (int i = 0; i < EXCEPTION_GATES; i ++)
 		set_intr_gate(i, &idt_exception_stubs[i]);
 
-	load_idt(idtdesc);
+	load_idt(&idtdesc);
 }
 
 /*
