@@ -96,7 +96,7 @@ static void __unused printk_run_tests(void) { }
 /*
  * Critical failures
  */
-void panic(const char *fmt, ...);
+void __no_return panic(const char *fmt, ...);
 
 #define assert(condition)					\
 	do {							\
