@@ -47,15 +47,15 @@
 /*
  * Semi type-safe min macro using GNU extensions
  */
-#define min(x, y) ({		    \
+#define min(x, y)		    \
+({				    \
         typeof(x) _m1 = (x);	    \
 	typeof(y) _m2 = (y);	    \
 	(void) (&_m1 == &_m2);	    \
-	_m1 < _m2 ? _m1 : _m2; })
+	_m1 < _m2 ? _m1 : _m2;	    \
+})
 
 #define offsetof(type, elem)	((uint64_t) &((type *) 0)->elem)
-
-#define ARRAY_SIZE(array)	(sizeof(array) / sizeof(array[0]))
 
 /*
  * In a binary system, a value 'x' is said to be n-byte
@@ -133,5 +133,23 @@ void __unused __undefined_method(void);
 		if (!(condition))				\
 			__undefined_method();			\
 	} while (0);
+
+#define __arr_size(arr)	(sizeof(arr) / sizeof((arr)[0]))
+
+/*
+ * Per C99 spec, the 'sizeof' operator returns an unsigned
+ * integer. This is bothersome in the very common idiom:
+ *
+ *     for (int i = 0; i < ARRAY_SIZE(arr); i++)
+ *
+ * as it now entails a comparison between a signed and an
+ * unsigned value. Thus, _safely_ cast the overall division
+ * result below to a signed 32-bit int.
+ */
+#define ARRAY_SIZE(arr)						\
+({								\
+	compiler_assert(__arr_size(arr) <= (uint64_t)INT32_MAX);\
+	(int32_t)__arr_size(arr);				\
+})
 
 #endif /* _KERNEL_H */
