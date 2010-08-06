@@ -138,7 +138,8 @@
 
 #define PAGE_SHIFT		12
 #define PAGE_SIZE		(1 << PAGE_SHIFT)
-#define PAGE_MASK		(~(PAGE_SIZE - 1))
+
+#define page_aligned(addr)	(is_aligned((uintptr_t)(addr), PAGE_SIZE))
 
 /*
  * 2-MByte pages

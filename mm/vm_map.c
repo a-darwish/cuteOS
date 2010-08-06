@@ -35,7 +35,7 @@ static void map_pml2_range(struct pml2e *pml2_base, uintptr_t vstart,
 {
 	struct pml2e *pml2e;
 
-	assert(is_aligned((uintptr_t)pml2_base, PAGE_SIZE));
+	assert(page_aligned(pml2_base));
 	assert(is_aligned(vstart, PAGE_SIZE_2MB));
 	assert(is_aligned(vend, PAGE_SIZE_2MB));
 	assert(is_aligned(pstart, PAGE_SIZE_2MB));
@@ -78,7 +78,7 @@ static void map_pml3_range(struct pml3e *pml3_base, uintptr_t vstart,
 	struct page *page;
 	uintptr_t end;
 
-	assert(is_aligned((uintptr_t)pml3_base, PAGE_SIZE));
+	assert(page_aligned(pml3_base));
 	assert(is_aligned(vstart, PAGE_SIZE_2MB));
 	assert(is_aligned(vend, PAGE_SIZE_2MB));
 	assert(is_aligned(pstart, PAGE_SIZE_2MB));
@@ -128,7 +128,7 @@ static void map_pml4_range(struct pml4e *pml4_base, uintptr_t vstart,
 	struct page *page;
 	uintptr_t end;
 
-	assert(is_aligned((uintptr_t)pml4_base, PAGE_SIZE));
+	assert(page_aligned(pml4_base));
 	assert(is_aligned(vstart, PAGE_SIZE_2MB));
 	assert(is_aligned(vend, PAGE_SIZE_2MB));
 	assert(is_aligned(pstart, PAGE_SIZE_2MB));

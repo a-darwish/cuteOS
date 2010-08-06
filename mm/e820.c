@@ -137,7 +137,7 @@ int e820_sanitize_range(struct e820_range *range, uint64_t kmem_end)
 		return -1;
 	}
 
-	assert(is_aligned(kmem_end, PAGE_SIZE));
+	assert(page_aligned(kmem_end));
 	if (end <= (uintptr_t)PHYS(kmem_end))
 		return -1;
 	if (start < (uintptr_t)PHYS(kmem_end))

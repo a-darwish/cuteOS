@@ -95,9 +95,9 @@ static void pfdtable_add_range(struct e820_range *range)
 
 	start = range->base;
 	end = range->base + range->len;
-	assert(is_aligned(start, PAGE_SIZE));
-	assert(is_aligned(end, PAGE_SIZE));
-	assert(is_aligned(kmem_end, PAGE_SIZE));
+	assert(page_aligned(start));
+	assert(page_aligned(end));
+	assert(page_aligned(kmem_end));
 	assert(start < end);
 	assert(start >= (uintptr_t)PHYS(kmem_end));
 
