@@ -35,6 +35,46 @@ struct page {
 	};
 };
 
+static inline void page_init(struct page *page, uintptr_t phys_addr)
+{
+	page->pfn = phys_addr >> PAGE_SHIFT;
+	page->free = 1;
+	page->in_bucket = 0;
+	page->next = NULL;
+}
+
+/*
+ * Return virtual address of given page
+ *
+ * In the function name, we didn't add a 'virt' prefix to
+ * the 'address' part cause dealing with virtual addresses
+ * is the default action throughout the kernel's C part.
+ */
+static inline void *page_address(struct page *page)
+{
+	return VIRTUAL((uintptr_t)page->pfn << PAGE_SHIFT);
+}
+
+/*
+ * Return physical address of given page
+ *
+ * The return type is intentionally set to int instead of a
+ * pointer; we don't want to have invalid pointers dangling
+ * around.
+ *
+ * Physical addresses are to be ONLY used at early boot
+ * setup and while filling paging tables entries.
+ */
+static inline uintptr_t page_phys_addr(struct page *page)
+{
+	return (uintptr_t)page->pfn << PAGE_SHIFT;
+}
+
+static inline int page_is_free(struct page *page)
+{
+	return page->free;
+}
+
 /*
  * Page Allocator
  */
@@ -43,10 +83,7 @@ struct page *get_free_page(void);
 struct page *get_zeroed_page(void);
 void free_page(struct page *page);
 
-void *page_address(struct page *page);
-uintptr_t page_phys_address(struct page *page);
 struct page *addr_to_page(void *addr);
-int page_is_free(struct page *);
 
 void pagealloc_init(void);
 

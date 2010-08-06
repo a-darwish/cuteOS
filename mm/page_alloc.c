@@ -109,12 +109,12 @@ static void pfdtable_add_range(struct e820_range *range)
 	rmap_add_range(range, page);
 
 	while (start != end) {
-		page->free = 1;
-		page->pfn = start >> PAGE_SHIFT;
+		page_init(page, start);
+
 		page->next = pfdfree_head;
 		pfdfree_head = page;
-
 		pfdfree_count++;
+
 		page++;
 		start += PAGE_SIZE;
 	}
@@ -187,30 +187,10 @@ void free_page(struct page *page)
 
 	if (page->free != 0)
 		panic("Memory - Freeing already free page at 0x%lx\n",
-		      page->pfn << PAGE_SHIFT);
+		      page_address(page));
 	page->free = 1;
 
 	spin_unlock(&pfdfree_lock);
-}
-
-/*
- * Return virtual address of given page
- */
-void *page_address(struct page *page)
-{
-	return VIRTUAL((uintptr_t)page->pfn << PAGE_SHIFT);
-}
-
-/*
- * Return physical address of given page
- *
- * The return type is intentionally set to int instead of a
- * pointer; we don't want to have invalid pointers dangling
- * around.
- */
-uintptr_t page_phys_address(struct page *page)
-{
-	return (uintptr_t)page->pfn << PAGE_SHIFT;
 }
 
 /*
@@ -239,7 +219,7 @@ struct page *addr_to_page(void *addr)
 		page = rmap->pfd_start;
 		offset = (paddr - start) / PAGE_SIZE;
 		page += offset;
-		assert((page->pfn << PAGE_SHIFT) < end);
+		assert(page_phys_addr(page) < end);
 		return page;
 	}
 
@@ -247,12 +227,6 @@ struct page *addr_to_page(void *addr)
 	      "address", addr);
 
 	return NULL;
-}
-
-/* Be happy, OO lovers .. */
-int page_is_free(struct page *page)
-{
-	return page->free;
 }
 
 /*
@@ -433,7 +407,7 @@ static int _page_is_free(struct page *page)
 	uintptr_t start, end, addr;
 	struct e820_range *range;
 
-	addr = page->pfn << PAGE_SHIFT;
+	addr = page_phys_addr(page);
 	if (addr < (uintptr_t)PHYS(kmem_end))
 		return false;
 
@@ -497,7 +471,7 @@ static int _test_pagealloc_coherency(int nr_pages)
 		pages[i] = get_free_page();
 		if (!_page_is_free(pages[i]))
 			panic("_Memory: Allocated invalid page address "
-			      "0x%lx\n", pages[i]->pfn << PAGE_SHIFT);
+			      "0x%lx\n", page_phys_addr(pages[i]));
 
 		/* Test reverse mapping */
 		addr = page_address(pages[i]);

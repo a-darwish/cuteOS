@@ -96,7 +96,7 @@ static void map_pml3_range(struct pml3e *pml3_base, uintptr_t vstart,
 			pml3e->read_write = 1;
 			pml3e->user_supervisor = 1;
 			page = get_zeroed_page();
-			pml3e->pml2_base = page_phys_address(page) >> PAGE_SHIFT;
+			pml3e->pml2_base = page_phys_addr(page) >> PAGE_SHIFT;
 		}
 
 		pml2_base = VIRTUAL((uintptr_t)pml3e->pml2_base << PAGE_SHIFT);
@@ -146,7 +146,7 @@ static void map_pml4_range(struct pml4e *pml4_base, uintptr_t vstart,
 			pml4e->read_write = 1;
 			pml4e->user_supervisor = 1;
 			page = get_zeroed_page();
-			pml4e->pml3_base = page_phys_address(page) >> PAGE_SHIFT;
+			pml4e->pml3_base = page_phys_addr(page) >> PAGE_SHIFT;
 		}
 
 		pml3_base = VIRTUAL((uintptr_t)pml4e->pml3_base << PAGE_SHIFT);
@@ -272,7 +272,7 @@ void vm_init(void)
 	       KERN_PAGE_OFFSET, KERN_PAGE_OFFSET + phys_end);
 
 	/* Heaven be with us .. */
-	load_cr3(page_phys_address(pml4_page));
+	load_cr3(page_phys_addr(pml4_page));
 }
 
 /*
