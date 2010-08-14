@@ -122,7 +122,7 @@ static void *get_tokenized_page(int bucket_idx)
 	char *buf, *start, *end;
 	int buf_len;
 
-	page = get_free_page();
+	page = get_free_page(ZONE_ANY);
 	page->in_bucket = 1;
 	page->bucket_idx = bucket_idx;
 

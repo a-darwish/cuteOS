@@ -1,5 +1,5 @@
 /*
- * Kernel virtual memory
+ * Memory Management: kernel virtual memory
  *
  * Copyright (C) 2010 Ahmed S. Darwish <darwish.07@gmail.com>
  *
@@ -7,8 +7,13 @@
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
  *
- * So far, we've depended on early head.S boot page tables setup.
- * Here we build and apply our permanent kernel mappings.
+ * So far, we've depended on the boot page tables being built early-on
+ * by head.S setup code. Here, we build and apply our permanent mappings
+ * for all kinds of kernel virtual addresses -- check paging.h
+ *
+ * NOTE! Always ask the page allocator for pages residing in the first
+ * physical GB zone. Up to this point, _only_ virtual addresses represe-
+ * nting that zone (beside kernel text addresses) were mapped by head.S
  */
 
 #include <kernel.h>
@@ -95,7 +100,7 @@ static void map_pml3_range(struct pml3e *pml3_base, uintptr_t vstart,
 			pml3e->present = 1;
 			pml3e->read_write = 1;
 			pml3e->user_supervisor = 1;
-			page = get_zeroed_page();
+			page = get_zeroed_page(ZONE_1GB);
 			pml3e->pml2_base = page_phys_addr(page) >> PAGE_SHIFT;
 		}
 
@@ -145,7 +150,7 @@ static void map_pml4_range(struct pml4e *pml4_base, uintptr_t vstart,
 			pml4e->present = 1;
 			pml4e->read_write = 1;
 			pml4e->user_supervisor = 1;
-			page = get_zeroed_page();
+			page = get_zeroed_page(ZONE_1GB);
 			pml4e->pml3_base = page_phys_addr(page) >> PAGE_SHIFT;
 		}
 
@@ -258,7 +263,7 @@ void vm_init(void)
 	struct page *pml4_page;
 	uint64_t phys_end;
 
-	pml4_page = get_zeroed_page();
+	pml4_page = get_zeroed_page(ZONE_1GB);
 	kernel_pml4_table = page_address(pml4_page);
 
 	/* Map 512-MByte kernel text area */

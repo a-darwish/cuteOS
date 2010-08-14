@@ -2,31 +2,107 @@
 #define _MM_H
 
 /*
- * Memory management: The page allocator
+ * Memory Management (MM) bare bones
  *
- * Copyright (C) 2009 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2009-2010 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
  *
- * Please check page_alloc.c for context ..
+ * MM terminology:
+ *
+ * o Page Frame: a physical 4-KBytes page, naturally 0x1000-aligned.
+ *
+ * o Available Page: a page frame marked as available (not reserved) for
+ *   system use by the ACPI e820h service.
+ *
+ * o Page Frame Descriptor: one for each available page frame in the sy-
+ *   stem, collecting important details for that page, like whether it's
+ *   allocated (by the page allocator), or free.
+ *
+ * o Page Frame Descriptor Table (pfdtable): A table (array) collecting
+ *   all the system's page frame descriptors, and thus statically repre-
+ *   senting all system's available RAM.
+ *
+ * o Page Allocator: an MM module which allocates and reclaims (manages)
+ *   memory pages for the rest of the system. Naturally, it manages
+ *   these 4K-pages through their descriptors state.
+ *
+ * o Zone: A special area of physical memory; e.g., we can request a page
+ *   from the page allocator, but only from the first physical GB 'zone'.
+ *
+ * o Bucket Allocator: our 'malloc' service, managing dynamic variable-
+ *   sized memory regions (the heap) upon request. First, it allocates
+ *   memory - in pages - from the page allocator, and then it slices and
+ *   dices them as it sees fit.
+ *
+ * o Slab (object-caching) Allocator: we don't have one; the bucket all-
+ *   ocator is more than enough for our purposes so far.
  */
 
 #include <stdint.h>
 #include <tests.h>
 
 /*
- * Page frame descriptor; one for each e820-available
- * physical page in the system. Check the @pfdtable.
- * Note! The 'bucket allocator' is our kmalloc algorithm.
+ * Page allocator Zones
+ *
+ * We divide the physical memory space to 'zones' according to
+ * need. The main rational for adding zones support to the page
+ * allocator so far is ZONE_1GB.
+ *
+ * Please order the zones IDs, beginning from 0 upwards, with
+ * no gaps, according to their prioririty: the smaller the ID,
+ * the higher the zone's priority. Each ID except NULL is used
+ * as an index in the zones descriptors table.
+ *
+ * If the number of zones (including NULL) exceeded four, don't
+ * forget to extend the 'struct page' zone_id field from 2 to 3
+ * bits: it's essential to save space in that struct.
+ */
+enum zone_id {
+	/* Allocate pages from the first GByte
+	 *
+	 * At early boot, where permanent kernel page tables
+	 * are not yet ready, PAGE_OFFSET-based addresses are
+	 * only set-up for the first physical GB by head.S
+	 *
+	 * At that state, the subset of virtual adddresses
+	 * representing phys regions > 1-GB are unmapped. If
+	 * the system has > 1-GB RAM, the page allocator will
+	 * then return some unmapped virt addresses, leading
+	 * to #PFs at early boot - Zones_1GB raison d'être.
+	 *
+	 * IMP: Before and while building kernel's permanent
+	 * page tables at vm_init(), _only_ use this zone! */
+	ZONE_1GB = 0,
+
+	/* Allocate pages from any zone
+	 *
+	 * Beside acting as a flag, this zone also represents
+	 * all pages in the system with no special semantics
+	 * to us. Thus, always make it the least-priority one.
+	 *
+	 * If we requested a page from this zone, the page
+	 * allocator will get free pages from the least prio-
+	 * rity zone first, reserving precious memory areas
+	 * as far as possible */
+	ZONE_ANY = 1,
+
+	/* Undefined; the `NULL' zone! */
+	ZONE_UNASSIGNED = 2,
+};
+
+/*
+ * Page Frame Descriptor
  */
 struct page {
 	uint64_t pfn;			/* Phys addr = pfn << PAGE_SHIFT */
 
 	/* Page flags */
-	unsigned free:1,		/* Not allocated? */
-		in_bucket:1;		/* Used by the bucket-allocator? */
+	uint8_t free:1,			/* Not allocated? */
+		in_bucket:1,		/* Used by the bucket-allocator? */
+		zone_id:2;		/* The zone we're assigned to */
 
 	union {
 		struct page *next;	/* If in pfdfree_head, next free page */
@@ -40,6 +116,7 @@ static inline void page_init(struct page *page, uintptr_t phys_addr)
 	page->pfn = phys_addr >> PAGE_SHIFT;
 	page->free = 1;
 	page->in_bucket = 0;
+	page->zone_id = ZONE_UNASSIGNED;
 	page->next = NULL;
 }
 
@@ -79,8 +156,8 @@ static inline int page_is_free(struct page *page)
  * Page Allocator
  */
 
-struct page *get_free_page(void);
-struct page *get_zeroed_page(void);
+struct page *get_free_page(enum zone_id zid);
+struct page *get_zeroed_page(enum zone_id zid);
 void free_page(struct page *page);
 
 struct page *addr_to_page(void *addr);
