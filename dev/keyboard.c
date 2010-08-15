@@ -107,7 +107,7 @@ void __kb_handler(void) {
 	if (code == release(KEY_LSHIFT) || code == release(KEY_RSHIFT))
 		shifted = 0;
 
-	if ((int)code >= sizeof(scancodes) / sizeof(scancodes[0]))
+	if ((int)code >= ARRAY_SIZE(scancodes))
 		return;
 
 	if (shifted)
