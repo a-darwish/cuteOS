@@ -42,6 +42,7 @@
  */
 
 #include <stdint.h>
+#include <paging.h>
 #include <tests.h>
 
 /*
@@ -95,12 +96,17 @@ enum zone_id {
 
 /*
  * Page Frame Descriptor
+ *
+ * It's essential to save space in this struct since there's
+ * one for each available page frame in the system.
+ *
+ * Additionally, a smaller pfd means a _much_ smaller pfdta-
+ * ble, lessening this table's probability of hitting a res-
+ * erved memory area like the legacy ISA and PCI holes.
  */
 struct page {
-	uint64_t pfn;			/* Phys addr = pfn << PAGE_SHIFT */
-
-	/* Page flags */
-	uint8_t free:1,			/* Not allocated? */
+	uint64_t pfn:(64 - PAGE_SHIFT),	/* Phys addr = pfn << PAGE_SHIFT */
+		free:1,			/* Not allocated? */
 		in_bucket:1,		/* Used by the bucket-allocator? */
 		zone_id:2;		/* The zone we're assigned to */
 

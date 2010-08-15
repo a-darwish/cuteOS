@@ -126,7 +126,7 @@ static void *get_tokenized_page(int bucket_idx)
 	page->in_bucket = 1;
 	page->bucket_idx = bucket_idx;
 
-	start = VIRTUAL(page->pfn << PAGE_SHIFT);
+	start = page_address(page);
 	end = start + PAGE_SIZE;
 
 	buf = start;
