@@ -18,6 +18,10 @@
 
 /*
  * Kernel-space mappings
+ *
+ * Macros returning physical addresses intentionally return
+ * an unsigned integer instead of a pointer; we do not want
+ * to have invalid pointers dangling around.
  */
 
 /*
@@ -45,7 +49,7 @@
 	assert((uintptr_t)(virt_address) >= KTEXT_PAGE_OFFSET);	\
 	assert((uintptr_t)(virt_address) < KTEXT_PAGE_END);	\
 								\
-	(void *)((char *)(virt_address) - KTEXT_PAGE_OFFSET);	\
+	(uintptr_t)((char *)(virt_address) - KTEXT_PAGE_OFFSET);\
 })
 
 /*
@@ -68,14 +72,14 @@
 	assert((uintptr_t)(phys_address) >= KERN_PHYS_OFFSET);	\
 	assert((uintptr_t)(phys_address) < KERN_PHYS_END_MAX);	\
 								\
-	(void *)((uintptr_t)(phys_address) + KERN_PAGE_OFFSET); \
+	(void *)((char *)(phys_address) + KERN_PAGE_OFFSET);	\
 })
 #define PHYS(virt_address)					\
 ({								\
 	assert((uintptr_t)(virt_address) >= KERN_PAGE_OFFSET);	\
 	assert((uintptr_t)(virt_address) < KERN_PAGE_END_MAX);	\
 								\
-	(void *)((uintptr_t)(virt_address) - KERN_PAGE_OFFSET);	\
+	(uintptr_t)((char *)(virt_address) - KERN_PAGE_OFFSET);	\
 })
 
 /*

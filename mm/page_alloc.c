@@ -247,7 +247,7 @@ static void pfdtable_add_range(struct e820_range *range)
 	assert(page_aligned(start));
 	assert(page_aligned(end));
 	assert(page_aligned(kmem_end));
-	assert(start >= (uintptr_t)PHYS(kmem_end));
+	assert(start >= PHYS(kmem_end));
 	assert(start < end);
 
 	/* New entries shouldn't overflow the table */
@@ -397,7 +397,7 @@ struct page *addr_to_page(void *addr)
 	struct e820_range *range;
 	uint64_t paddr, start, end, offset;
 
-	paddr = (uint64_t)PHYS(addr);
+	paddr = PHYS(addr);
 	paddr = round_down(paddr, PAGE_SIZE);
 	for (rmap = pfdrmap; rmap != pfdrmap_top; rmap++) {
 		range = &(rmap->range);
@@ -418,8 +418,6 @@ struct page *addr_to_page(void *addr)
 
 	panic("Memory - No page descriptor found for given 0x%lx "
 	      "address", addr);
-
-	return NULL;
 }
 
 /*
@@ -684,7 +682,7 @@ static int _page_is_free(struct page *page)
 	struct e820_range *range;
 
 	paddr = page_phys_addr(page);
-	if (paddr < (uintptr_t)PHYS(kmem_end))
+	if (paddr < PHYS(kmem_end))
 		return false;
 
 	e820_for_each(range) {
