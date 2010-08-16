@@ -9,6 +9,8 @@
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
+ *
+ * NOTE! MP strings are coded in ASCII, but are not NULL-terminated.
  */
 
 #include <stdint.h>
@@ -119,15 +121,23 @@ struct mpc_linterrupt {
 	uint8_t dst_lapicpin;		/* Destination local APIC LINTINn pin */
 } __packed;
 
+#define MPC_ENTRY_MAX_LEN		(sizeof(struct mpc_cpu))
+
 /* Compile-time MP tables sizes sanity checks */
 static inline void mptables_check(void) {
-	assert(sizeof(struct mpf_struct) == 4 * 4);
-	assert(sizeof(struct mpc_table) == 11 * 4);
-	assert(sizeof(struct mpc_cpu) == 5 * 4);
-	assert(sizeof(struct mpc_bus) == 2 * 4);
-	assert(sizeof(struct mpc_ioapic) == 2 * 4);
-	assert(sizeof(struct mpc_irq) == 2 * 4);
-	assert(sizeof(struct mpc_linterrupt) == 2 * 4);
+	compiler_assert(sizeof(struct mpf_struct) == 4 * 4);
+	compiler_assert(sizeof(struct mpc_table) == 11 * 4);
+	compiler_assert(sizeof(struct mpc_cpu) == 5 * 4);
+	compiler_assert(sizeof(struct mpc_bus) == 2 * 4);
+	compiler_assert(sizeof(struct mpc_ioapic) == 2 * 4);
+	compiler_assert(sizeof(struct mpc_irq) == 2 * 4);
+	compiler_assert(sizeof(struct mpc_linterrupt) == 2 * 4);
+
+	compiler_assert(MPC_ENTRY_MAX_LEN >= sizeof(struct mpc_cpu));
+	compiler_assert(MPC_ENTRY_MAX_LEN >= sizeof(struct mpc_bus));
+	compiler_assert(MPC_ENTRY_MAX_LEN >= sizeof(struct mpc_ioapic));
+	compiler_assert(MPC_ENTRY_MAX_LEN >= sizeof(struct mpc_irq));
+	compiler_assert(MPC_ENTRY_MAX_LEN >= sizeof(struct mpc_linterrupt));
 }
 
 /*

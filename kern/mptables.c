@@ -19,6 +19,7 @@
 #include <kernel.h>
 #include <paging.h>
 #include <mptables.h>
+#include <vm.h>
 #include <apic.h>
 #include <ioapic.h>
 #include <smpboot.h>
@@ -240,9 +241,12 @@ static void parse_bus(void *addr)
  */
 static int parse_mpc(struct mpc_table *mpc)
 {
-	uint8_t *entry = (uint8_t *)(mpc + 1);
+	uint8_t *entry;
+
+	entry = (uint8_t *)(mpc + 1);	/* WARN: possibly un-mapped! */
 
 	for (int i = 0; i < mpc->entries; i++) {
+		entry = vm_kmap(PHYS(entry), MPC_ENTRY_MAX_LEN);
 		switch (*entry) {
 		case MP_PROCESSOR:
 			parse_cpu(entry);
@@ -264,7 +268,8 @@ static int parse_mpc(struct mpc_table *mpc)
 			entry += sizeof(struct mpc_linterrupt);
 			break;
 		default:
-			printk("MP: Unknown conf table entry = %d\n", *entry);
+			printk("MP: Unknown conf table entry type = %d\n",
+			      *entry);
 			return 0;
 		}
 	}
@@ -284,18 +289,20 @@ void mptables_init(void)
 		panic("No compliant MP pointer found");
 
 	if (mpf->feature1)
-		panic("No MP default configuration support yet");
+		panic("MP: Spec `default configuration' is not supported");
 
-	if (mpf->conf_physaddr >= PHYS_MAX)
-		panic("Unmapped MP conf table at 0x%lx",
-		      mpf->conf_physaddr);
+	if (mpf->conf_physaddr == 0)
+		panic("MP: Spec configuration table does not exist");
 
-	mpc = VIRTUAL((uintptr_t)mpf->conf_physaddr);
+	mpc = vm_kmap(mpf->conf_physaddr, sizeof(*mpc));
 
 	if (!mpc_check(mpc)) {
 		mpc_dump(mpc);
 		panic("Buggy MP conf table header");
 	}
+
+	/* FIXME: Print MP OEM and Product ID once printk's
+	 * support for non-null-terminated strings is added */
 
 	if (!parse_mpc(mpc)) {
 		mpc_dump(mpc);

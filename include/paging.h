@@ -281,10 +281,6 @@ static inline uint64_t get_cr3(void)
 	return cr3;
 }
 
-/* Maximum mapped physical address. We should get rid of our
- * ad-hoc mappings very soon */
-#define PHYS_MAX		0x30000000
-
 #else /* __ASSEMBLY__ */
 
 #define KTEXT_PAGE_OFFSET	0xffffffff80000000
