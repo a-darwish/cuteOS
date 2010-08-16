@@ -172,8 +172,10 @@ get_mmap_end:
 /*
  * Switch to rmode and execute passed 16-bit method.
  * Switch-back to pmode32 afterwards, then return to the
- * caller using regular 32-bit ret. @First param is rmode
- * function start, and the @second is method end pointer.
+ * caller using a regular 32-bit 'ret'.
+ *
+ * @First param: rmode function code start address
+ * @Second param: rmode function code end address
  */
 	.type   pmode32_to_real, @function
 pmode32_to_real:

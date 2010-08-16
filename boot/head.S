@@ -217,10 +217,10 @@ startup_64:
 	 * Thus, an x86-64 callq will only consume a 4-byte offset:
 	 * relative space between next op and the destination label.
 	 *
-	 * To get kernel globals values (instead of just their add-
-	 * resses), we'll use %rip-relative addressing within + or
-	 * - 2GB limit, avoiding the size-overhead of referencing a
-	 * full 8-byte address.
+	 * To dereference kernel globals instead of just passing
+	 * their addresses, we'll use %rip-relative addressing
+	 * within + or - 2GB limit, avoiding the size-overhead of
+	 * referencing an absolute full 8-byte address.
 	 *
 	 * All of this was in fact designed by the SysV AMD64 ABI
 	 * developers, and is called the 'kernel code model'. We
@@ -252,7 +252,7 @@ startup_64:
 	shl    $21, %rax		# page addr = page-num<<21
 	addq   $0x083, %rax		# flags: P, R/W, 2MB
 	movq   %rax, (%rbx)
-	addq   $8, %rbx			# next PDE
+	addq   $8, %rbx			# next PML2e
 	incq   %rcx			# next phys. page
 	cmpq   $(init_pml2 + PAGE_SIZE), %rbx
 	jne    1b

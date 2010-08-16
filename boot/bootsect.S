@@ -30,7 +30,10 @@
 #define MSG(msg)		\
 	movw   $msg, %si;  	\
 	call   print_string
-	
+
+/* Arbitary offset > bootsector's 512 bytes code */
+#define STACK_OFFSET	0x3000
+
 .code16
 
 /* The text section is relocated by the linker to 0x0000, thus
@@ -54,8 +57,7 @@ real_start:
 	movw   %ax, %ds
 	movw   %ax, %es
 	movw   %ax, %ss
-	/* arbitary stack value > bootsector's 512 bytes code */
-	movw   $0x3000, %sp
+	movw   $STACK_OFFSET, %sp
 
 	MSG    (welcome)
 
@@ -95,7 +97,7 @@ real_start:
 	 * at 0x10000. For simplicity, we'll copy the disk's first
 	 * 1024 sectors post the mbr to ram regardless of the real
 	 * kernel size; we may optimize later. The kernel will be in
-	 * the range (0x10000-0x90000].
+	 * the range (0x10000-0x90000]; sector size = 512 bytes.
 	 *
 	 * INT 0x13, function 0x42 - extended read sectors
 	 * input  %dl     - drive number (provided by bios in %dl)
@@ -174,15 +176,19 @@ flush_prefetch:
 	movw   %ax, %ds
 	movw   %ax, %es
 	movw   %ax, %ss
+	movl   $((MBR_SEG << 4) + STACK_OFFSET), %esp
 
-	/* Long jump to protected mode. GAS should know that
-	 * $(gdt_cs - gdt) which equals 0x08 *is* an absoulte code
-	 * segment value, but it doesn't */
-	DATA32 ljmp $0x08, $(reloc-_start + 0x7c00)
+	/* Setup %cs: long jump to 32-bit protected mode. GAS should
+	 * have known that $(gdt_cs - gdt), equalling 0x08, *is* an
+	 * absoulte code segment value, but it doesn't.
+	 *
+	 * Far pointer offset is the destination's full flat address
+	 * since now setup %cs base = 0 */
+	ljmp   $0x08, $((MBR_SEG << 4) + reloc)
 
 .code32
 
-reloc:	
+reloc:
 	/* Goodbye the 80's; welcome the 90's!
 	 * Relocate the kernel above the one mege-byte point at
 	 * 0x100000. We should have directly done so using multiple
@@ -194,8 +200,10 @@ reloc:
 	movl   $(KERNEL_SIZE / 4), %ecx
 	rep    movsl
 
-	/* Run our kernel */
-	ljmp   $0x08, $KERNEL_RELOC
+	/* Run our kernel with the currently setup code segment:
+	 * perform an absolute near jump */
+	movl   $KERNEL_RELOC, %eax
+	jmpl   *%eax
 
 .code16
 
@@ -427,6 +435,3 @@ welcome:
 .org 510
 boot_flag:
 	.word  BOOT_SIGNATURE
-
-/*
- */
