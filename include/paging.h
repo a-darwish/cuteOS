@@ -53,7 +53,7 @@
 })
 
 /*
- * Kernel-space mappings for all system physical memory
+ * Kernel-space mappings for all system phys memory (-128TB)
  *
  * This is the standard kernel virtual base for everything
  * except kernel text and data areas (%rip, %rsp, symbols).

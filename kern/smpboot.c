@@ -157,9 +157,7 @@ void smpboot_init(void)
 	smpboot_params_validate_offsets();
 	params.cr3 = get_cr3();
 	params.idt_desc = get_idt();
-	params.idt_desc.base = PHYS(params.idt_desc.base);
 	params.gdt_desc = get_gdt();
-	params.gdt_desc.base = PHYS(params.gdt_desc.base);
 
 	memcpy(VIRTUAL(SMPBOOT_START), trampoline, trampoline_end - trampoline);
 	memcpy(VIRTUAL(SMPBOOT_PARAMS), &params, sizeof(params));

@@ -64,8 +64,8 @@ extern struct cpu_desc cpu_descs[CPUS_MAX];
 
 struct smpboot_params {
 	uintptr_t cr3;
-	struct idt_descriptor idt_desc;	/* Physical base */
-	struct gdt_descriptor gdt_desc;	/* Physical base */
+	struct idt_descriptor idt_desc;
+	struct gdt_descriptor gdt_desc;
 } __packed;
 
 /* Compile-time validation of parameters offsets sent to

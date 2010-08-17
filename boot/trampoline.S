@@ -111,8 +111,12 @@ startup_32:
 	bts    $31, %eax
 	movl   %eax, %cr0
 
-	/* clear prefetch and jump to 64-bit mode using 64-bit
-	 * (conforming) code segment provided in the parameters */
+	/* Clear prefetch and jump to 64-bit mode using 64-bit
+	 * (conforming) code segment provided in the parameters
+	 *
+	 * Passed GDT base is an -128TB based virtual address.
+	 * We're in a 32-bit mode, so only the least-significant
+	 * 4 bytes will get loaded -- the desired physical val */
 	movl   $SMPBOOT_PARAMS, %eax
 	lgdt   SMPBOOT_GDT(%eax)
 	ljmp   $KERNEL_CS, $(SMPBOOT_START + (startup_64 - trampoline))
@@ -141,19 +145,10 @@ startup_64:
 	jmpq   *%rax
 
 1:
-	/* Copy BSC's parameters to a scratch space to freely
-	 * modify parts of their values in-place */
-	cld
-	movq   $SMPBOOT_PARAMS, %rsi
-	movq   $scratch_mem, %rdi
-	movq   $(SMPBOOT_PARAMS_END - SMPBOOT_PARAMS), %rcx
-	rep    movsb
 
-	/* Virtualize %idtr and %gdtr bases */
-	movq   $scratch_mem, %rdi
-	movq   $KERN_PAGE_OFFSET, %rax
-	addq   %rax, SMPBOOT_IDT_BASE(%rdi)
-	addq   %rax, SMPBOOT_GDT_BASE(%rdi)
+	movq   $SMPBOOT_PARAMS, %rdi
+
+	/* Passed table bases are already virtual! */
 	lidt   SMPBOOT_IDT(%rdi)
 	lgdt   SMPBOOT_GDT(%rdi)
 
@@ -225,9 +220,3 @@ trampoline_end:
 .equ	identity_pml4,	SMPBOOT_START + PAGE_SIZE
 .equ	identity_pml3,	identity_pml4 + PAGE_SIZE
 .equ	identity_end,	identity_pml3 + PAGE_SIZE
-
-/*
- * Scratch memory
- */
-
-.equ	scratch_mem,	identity_end
