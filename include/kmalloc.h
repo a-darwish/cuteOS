@@ -119,6 +119,7 @@ static inline void *kmalloc(int size)
 	return NULL;
 }
 
+void *kmalloc_asm(int size);
 void kfree(void *addr);
 void kmalloc_init(void);
 

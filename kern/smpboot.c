@@ -132,7 +132,6 @@ static int start_secondary_cpus(void)
  * AP core C code start. We come here from the trampoline,
  * which has assigned bootstrap's gdt, idt, and page tables
  * to that core.
- * FIXME: use a unique stack space for each core.
  */
 void __no_return secondary_start(void)
 {

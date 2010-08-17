@@ -166,6 +166,12 @@ startup_64:
 	 * upon C functions entry; let it be */
 	cld
 
+	/* Well, C code also expects a stack :) */
+	movq   $PAGE_SIZE, %rdi
+	movq   $kmalloc_asm, %rax
+	callq  *%rax
+	leaq   PAGE_SIZE(%rax), %rsp
+
 	/* Jump to AP cores init code; we're done */
 	movq   $secondary_start, %rax
 	jmpq   *%rax
