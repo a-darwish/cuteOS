@@ -212,10 +212,13 @@ all: $(BUILD_DIRS) image
 
 # Check kernel code against common semantic C errors
 # using the 'sparse' semantic parser
+#
+# REAL_CC: do not depend on the system-wide CC envi-
+# ronment variable, use our chosen compiler instead.
 .PHONY: check
 check: clean
 	$(E) "  SPARSE build"
-	$(Q) $(MAKE) CC=$(CGCC) all
+	$(Q) $(MAKE) REAL_CC=$(CC) CC=$(CGCC) all
 
 #
 # Build final, self-contained, bootable image
