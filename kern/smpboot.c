@@ -15,22 +15,70 @@
 #include <apic.h>
 #include <idt.h>
 #include <pit.h>
+#include <mptables.h>
 
 /*
- * System-wide cpu descriptors. Number of CPUs and their APIC
- * IDs is gathered from MP or ACPI MADT tables.
- */
-int nr_cpus;
-struct cpu_desc cpu_descs[CPUS_MAX];
-
-int nr_alive_cpus = 1;
-
-/*
- * Assembly trampoline code start and end pointers, defined
- * in trampoline.S
+ * Assembly trampoline code start and end pointers
  */
 extern const char trampoline[];
 extern const char trampoline_end[];
+
+/*
+ * Parameters to be sent to other AP cores.
+ */
+struct smpboot_params {
+	uintptr_t cr3;
+	struct idt_descriptor idtr;
+	struct gdt_descriptor gdtr;
+} __packed;
+
+/*
+ * Validate the manually calculated parameters offsets
+ * we're sending to the assembly trampoline code
+ */
+static inline void smpboot_params_validate_offsets(void)
+{
+	compiler_assert(SMPBOOT_CR3 ==
+	       offsetof(struct smpboot_params, cr3));
+
+	compiler_assert(SMPBOOT_IDTR ==
+	       offsetof(struct smpboot_params, idtr));
+
+	compiler_assert(SMPBOOT_IDTR_LIMIT ==
+	       offsetof(struct smpboot_params, idtr) +
+	       offsetof(struct idt_descriptor, limit));
+
+	compiler_assert(SMPBOOT_IDTR_BASE ==
+	       offsetof(struct smpboot_params, idtr) +
+	       offsetof(struct idt_descriptor, base));
+
+	compiler_assert(SMPBOOT_GDTR ==
+	       offsetof(struct smpboot_params, gdtr));
+
+	compiler_assert(SMPBOOT_GDTR_LIMIT ==
+	       offsetof(struct smpboot_params, gdtr) +
+	       offsetof(struct gdt_descriptor, limit));
+
+	compiler_assert(SMPBOOT_GDTR_BASE ==
+	       offsetof(struct smpboot_params, gdtr) +
+	       offsetof(struct gdt_descriptor, base));
+
+	compiler_assert(SMPBOOT_PARAMS_SIZE ==
+	       sizeof(struct smpboot_params));
+}
+
+/*
+ * CPU Descriptors Table
+ *
+ * Data is gathered from MP or ACPI MADT tables.
+ */
+struct cpu cpus[CPUS_MAX];
+
+/*
+ * Number of active CPUs so far: BSC + SIPI-started AP
+ * cores that are now verifiably executing kernel code.
+ */
+static int nr_alive_cpus = 1;
 
 /*
  * Common Inter-Processor Interrupts
@@ -39,7 +87,7 @@ extern const char trampoline_end[];
 /*
  * Send an INIT IPI to all cores, except self.
  */
-static void ipi_broadcast_init(void)
+static void broadcast_init_ipi(void)
 {
 	union apic_icr icr = { .value = 0 };
 
@@ -59,15 +107,13 @@ static void ipi_broadcast_init(void)
 	apic_write(APIC_ICRL, icr.value_low);
 }
 
-/*
- * Send a startup IPI
- */
-static void ipi_sipi(uint32_t start_vector, int apic_id)
+static void send_startup_ipi(uint32_t start_vector, int apic_id)
 {
 	union apic_icr icr = { .value = 0 };
 
-	/* Start vector should be 4K-page aligned */
-	assert((start_vector & 0xfff) == 0);
+	/* ICR's vector field is 8-bits; For the value
+	 * 0xVV, target core will start from 0xVV000 */
+	assert(page_aligned(start_vector));
 	assert(start_vector >= 0x10000 && start_vector <= 0x90000);
 	icr.vector = start_vector >> 12;
 
@@ -87,49 +133,69 @@ static void ipi_sipi(uint32_t start_vector, int apic_id)
 }
 
 /*
- * Start secondary cores. Init each AP core iteratively as
- * the trampoline code can't be executed in parallel.
+ * "It is up to the software to determine if the SIPI was
+ * not successfully delivered and to reissue the SIPI if
+ * necessary." --Intel
+ */
+#define MAX_SIPI_RETRY	3
+
+/*
+ * Start each AP core iteratively as the trampoline code
+ * cannot be executed in parallel.
  *
- * FIXME: 200 micro-second delay between the two SIPIs
+ * FIXME: 200 micro-second delay between the SIPIs
  * FIXME: fine-grained timeouts using micro-seconds.
  */
 static int start_secondary_cpus(void)
 {
-	int count, apic_id, ack1, ack2, timeout;
+	int nr_cpus, count, apic_id, acked, timeout;
 
+	nr_cpus = mptables_get_nr_cpus();
 	for (int i = 0; i < nr_cpus; i++) {
-		if (cpu_descs[i].bsc)
+		if (cpus[i].bootstrap)
 			continue;
 
+		barrier();
 		count = nr_alive_cpus;
-		apic_id = cpu_descs[i].apic_id;
 
-		ipi_sipi(SMPBOOT_START, apic_id);
-		ack1 = apic_ipi_acked();
+		apic_id = cpus[i].apic_id;
 
-		ipi_sipi(SMPBOOT_START, apic_id);
-		ack2 = apic_ipi_acked();
+		for (int j = 1; j <= MAX_SIPI_RETRY; j++) {
+			send_startup_ipi(SMPBOOT_START, apic_id);
+			acked = apic_ipi_acked();
+			if (acked)
+				break;
 
-		if (!ack1 || !ack2) {
-			printk("SMP: SIPI not delivered\n");
-			return ack1;
+			printk("SMP: Failed to deliver SIPI#%d to CPU#%d\n",
+			       j, apic_id);
+
+			if (j == MAX_SIPI_RETRY) {
+				printk("SMP: Giving-up SIPI delivery\n");
+				return 1;
+			}
+
+			printk("SMP: Retrying SIPI delivery\n");
 		}
 
+		/* The just-started AP core should now signal us
+		 * by incrementing the active-CPUs counter by one */
 		timeout = 1000;
-		while (timeout-- && count == nr_alive_cpus)
+		while (timeout-- && count == nr_alive_cpus) {
+			barrier();
 			pit_mdelay(1);
-
-		if (!timeout) {
-			printk("SMP: Timeout waiting for AP core\n");
-			return timeout;
+		}
+		if (timeout == -1) {
+			printk("SMP: Timeout waiting for CPU#%d to start\n",
+			       apic_id);
+			return 1;
 		}
 	}
 
-	return 1;
+	return 0;
 }
 
 /*
- * AP core C code start. We come here from the trampoline,
+ * AP cores C code entry. We come here from the trampoline,
  * which has assigned bootstrap's gdt, idt, and page tables
  * to that core.
  */
@@ -148,33 +214,34 @@ void __no_return secondary_start(void)
 
 void smpboot_init(void)
 {
-	int res;
+	int res, acked, nr_cpus;
 	struct smpboot_params params;
 
+	smpboot_params_validate_offsets();
+
+	nr_cpus = mptables_get_nr_cpus();
 	printk("SMP: %d usable CPUs found\n", nr_cpus);
 
-	/* Copy trampoline and params to AP's boot vector */
-	smpboot_params_validate_offsets();
 	params.cr3 = get_cr3();
-	params.idt_desc = get_idt();
-	params.gdt_desc = get_gdt();
+	params.idtr = get_idt();
+	params.gdtr = get_gdt();
 
-	memcpy(VIRTUAL(SMPBOOT_START), trampoline, trampoline_end - trampoline);
-	memcpy(VIRTUAL(SMPBOOT_PARAMS), &params, sizeof(params));
+	memcpy(TRAMPOLINE_START, trampoline, trampoline_end - trampoline);
+	memcpy(TRAMPOLINE_PARAMS, &params, sizeof(params));
 
-	/* Broadcast INIT IPI: wakeup AP cores from their deep
-	 * halted state (IF=0) and let them wait for the SIPI */
-	ipi_broadcast_init();
-	res = apic_ipi_acked();
-	if (!res)
-		panic("Couldn't deliver broadcast INIT IPI\n");
+	/* Wakeup AP cores from their deep halted state (IF=0)
+	 * and let them wait for the SIPIs */
+	broadcast_init_ipi();
+	acked = apic_ipi_acked();
+	if (!acked)
+		panic("Could not broadcast the INIT IPI\n");
 
 	pit_mdelay(10);
 
-	/* Send the double SIPI sequence */
 	res = start_secondary_cpus();
-	if (!res)
-		panic("Couldn't start-up AP cores\n");
+	if (res)
+		panic("Could not start-up all AP cores\n");
 
+	barrier();
 	assert(nr_alive_cpus == nr_cpus);
 }

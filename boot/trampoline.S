@@ -114,11 +114,11 @@ startup_32:
 	/* Clear prefetch and jump to 64-bit mode using 64-bit
 	 * (conforming) code segment provided in the parameters
 	 *
-	 * Passed GDT base is an -128TB based virtual address.
-	 * We're in a 32-bit mode, so only the least-significant
-	 * 4 bytes will get loaded -- the desired physical val */
+	 * Passed GDTR address is a virtual -128TB based one.
+	 * We're in 32-bit mode, so only the least-significant
+	 * 4 bytes will get loaded: the desired physical value! */
 	movl   $SMPBOOT_PARAMS, %eax
-	lgdt   SMPBOOT_GDT(%eax)
+	lgdt   SMPBOOT_GDTR(%eax)
 	ljmp   $KERNEL_CS, $(SMPBOOT_START + (startup_64 - trampoline))
 
 .code64
@@ -149,8 +149,8 @@ startup_64:
 	movq   $SMPBOOT_PARAMS, %rdi
 
 	/* Passed table bases are already virtual! */
-	lidt   SMPBOOT_IDT(%rdi)
-	lgdt   SMPBOOT_GDT(%rdi)
+	lidt   SMPBOOT_IDTR(%rdi)
+	lgdt   SMPBOOT_GDTR(%rdi)
 
 	/* We're no longer physical addresses dependent, use
 	 * BSC's page tables which have no identity maps */

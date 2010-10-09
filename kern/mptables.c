@@ -25,6 +25,14 @@
 #include <smpboot.h>
 
 /*
+ * Usable cores count
+ *
+ * The BIOS knows if a core is usable by checking its
+ * Builtin-self-test (BIST) result in %rax after RESET#
+ */
+static int nr_cpus;
+
+/*
  * Parsed MP configuration table entries data to be exported
  * to other subsystems
  */
@@ -188,8 +196,8 @@ static void parse_cpu(void *addr)
 	if (nr_cpus >= CPUS_MAX)
 		panic("Only %d logical CPU cores supported\n", nr_cpus);
 
-	cpu_descs[nr_cpus].apic_id = cpu->lapic_id;
-	cpu_descs[nr_cpus].bsc = cpu->bsc;
+	cpus[nr_cpus].apic_id = cpu->lapic_id;
+	cpus[nr_cpus].bootstrap = cpu->bsc;
 
 	++nr_cpus;
 }
@@ -275,6 +283,13 @@ static int parse_mpc(struct mpc_table *mpc)
 	}
 
 	return 1;
+}
+
+int mptables_get_nr_cpus(void)
+{
+	assert(nr_cpus > 0);
+
+	return nr_cpus;
 }
 
 void mptables_init(void)

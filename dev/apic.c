@@ -279,10 +279,10 @@ void apic_monotonic(int ms, uint8_t vector)
  * by the destination core, or timeout. As advised by Intel,
  * this should be checked after sending each IPI.
  *
- * Return 1 in case of delivery success, else return 0
+ * Return 'true' in case of delivery success.
  * FIXME: fine-grained timeouts using micro-seconds.
  */
-int apic_ipi_acked(void)
+bool apic_ipi_acked(void)
 {
 	union apic_icr icr = { .value = 0 };
 	int timeout = 100;
@@ -291,12 +291,12 @@ int apic_ipi_acked(void)
 		icr.value_low = apic_read(APIC_ICRL);
 
 		if (icr.delivery_status == APIC_DELSTATE_IDLE)
-			break;
+			return true;
 
 		pit_mdelay(1);
 	}
 
-	return timeout;
+	return false;
 }
 
 /*

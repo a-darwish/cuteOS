@@ -22,14 +22,15 @@
 #define SMPBOOT_PARAMS		0x20000	/* AP parameters base */
 
 #define SMPBOOT_CR3		(0)
-#define SMPBOOT_IDT		(SMPBOOT_CR3 + 8)
-#define SMPBOOT_IDT_LIMIT	(SMPBOOT_IDT)
-#define SMPBOOT_IDT_BASE	(SMPBOOT_IDT_LIMIT + 2)
-#define SMPBOOT_GDT		(SMPBOOT_IDT + 10)
-#define SMPBOOT_GDT_LIMIT	(SMPBOOT_GDT)
-#define SMPBOOT_GDT_BASE	(SMPBOOT_GDT_LIMIT + 2)
+#define SMPBOOT_IDTR		(SMPBOOT_CR3 + 8)
+#define SMPBOOT_IDTR_LIMIT	(SMPBOOT_IDTR)
+#define SMPBOOT_IDTR_BASE	(SMPBOOT_IDTR_LIMIT + 2)
+#define SMPBOOT_GDTR		(SMPBOOT_IDTR + 10)
+#define SMPBOOT_GDTR_LIMIT	(SMPBOOT_GDTR)
+#define SMPBOOT_GDTR_BASE	(SMPBOOT_GDTR_LIMIT + 2)
 
-#define SMPBOOT_PARAMS_END	(SMPBOOT_PARAMS + SMPBOOT_GDT_BASE + 8)
+#define SMPBOOT_PARAMS_END	(SMPBOOT_PARAMS + SMPBOOT_GDTR_BASE + 8)
+#define SMPBOOT_PARAMS_SIZE	(SMPBOOT_PARAMS_END - SMPBOOT_PARAMS)
 
 #ifndef __ASSEMBLY__
 
@@ -37,62 +38,20 @@
 #include <segment.h>
 #include <idt.h>
 
-/* Number of cpu cores started so far */
-extern int nr_alive_cpus;
+#define TRAMPOLINE_START	VIRTUAL(SMPBOOT_START)
+#define TRAMPOLINE_PARAMS	VIRTUAL(SMPBOOT_PARAMS)
 
 /*
- * System-wide logical CPUs descriptors. Data is gathered
- * from either MP-tables, ACPI MADT tables, or self probing.
+ * CPU Descriptors
  */
 
-/* MP or ACPI reported usable cores count. The BIOS knows if
- * a core is usable by checking its Builtin-self-test (BIST)
- * result in the %rax register after RESET# */
-extern int nr_cpus;
-
-struct cpu_desc {
+struct cpu {
 	int apic_id;			/* local APIC ID */
-	int bsc;			/* bootstrap core? */
+	int bootstrap;			/* bootstrap core? */
 };
 
-#define CPUS_MAX	32
-extern struct cpu_desc cpu_descs[CPUS_MAX];
-
-/*
- * Parameters to be sent to other AP cores.
- */
-
-struct smpboot_params {
-	uintptr_t cr3;
-	struct idt_descriptor idt_desc;
-	struct gdt_descriptor gdt_desc;
-} __packed;
-
-/* Compile-time validation of parameters offsets sent to
- * assembly trampoline code */
-static inline void smpboot_params_validate_offsets(void)
-{
-	assert(SMPBOOT_CR3 == offsetof(struct smpboot_params, cr3));
-
-	assert(SMPBOOT_IDT == offsetof(struct smpboot_params, idt_desc));
-
-	assert(SMPBOOT_IDT_LIMIT == offsetof(struct smpboot_params, idt_desc) +
-	       offsetof(struct idt_descriptor, limit));
-
-	assert(SMPBOOT_IDT_BASE == offsetof(struct smpboot_params, idt_desc) +
-	       offsetof(struct idt_descriptor, base));
-
-	assert(SMPBOOT_GDT == offsetof(struct smpboot_params, gdt_desc));
-
-	assert(SMPBOOT_GDT_LIMIT == offsetof(struct smpboot_params, gdt_desc) +
-	       offsetof(struct gdt_descriptor, limit));
-
-	assert(SMPBOOT_GDT_BASE == offsetof(struct smpboot_params, gdt_desc) +
-	       offsetof(struct gdt_descriptor, base));
-
-	assert((SMPBOOT_PARAMS_END - SMPBOOT_PARAMS) ==
-	       sizeof(struct smpboot_params));
-}
+#define CPUS_MAX		64
+extern struct cpu cpus[CPUS_MAX];
 
 void smpboot_init(void);
 

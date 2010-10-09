@@ -112,6 +112,16 @@ void __no_return panic(const char *fmt, ...);
 	} while (0);
 
 /*
+ * Compiler memory barrier (fence)
+ *
+ * The 'memory' constraint will "cause GCC to not keep memory
+ * values cached in registers across the assembler instruction
+ * and not optimize stores or loads to that memory." --GCC
+ */
+#define barrier()						\
+	asm volatile ("":::"memory");
+
+/*
  * For spin-loops, use x86 'pause' and a memory barrier to:
  * - force gcc to reload any values from memory over the busy
  *   loop, avoiding the often-buggy C volatile keyword

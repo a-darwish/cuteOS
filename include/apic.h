@@ -286,7 +286,7 @@ static inline uint32_t apic_read(uint32_t reg)
 }
 
 void apic_init(void);
-int apic_ipi_acked(void);
+bool apic_ipi_acked(void);
 int apic_bootstrap_id(void);
 
 void apic_udelay(uint64_t us);
