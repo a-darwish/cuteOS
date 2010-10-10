@@ -286,12 +286,14 @@ static inline uint32_t apic_read(uint32_t reg)
 }
 
 void apic_init(void);
-bool apic_ipi_acked(void);
 int apic_bootstrap_id(void);
 
 void apic_udelay(uint64_t us);
 void apic_mdelay(int ms);
 void apic_monotonic(int ms, uint8_t vector);
+
+void apic_send_ipi(int dst_id, int del_mode, int vector);
+bool apic_ipi_acked(void);
 
 #if	APIC_TESTS
 

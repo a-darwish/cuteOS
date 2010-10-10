@@ -274,6 +274,26 @@ void apic_monotonic(int ms, uint8_t vector)
  * Inter-Processor Interrupts
  */
 
+void apic_send_ipi(int dst_apic_id, int delivery_mode, int vector)
+{
+	union apic_icr icr = { .value = 0 };
+
+	icr.vector = vector;
+	icr.delivery_mode = delivery_mode;
+
+	icr.dest_mode = APIC_DESTMOD_PHYSICAL;
+	icr.dest = dst_apic_id;
+
+	/* "Edge" and "deassert" are for 82489DX */
+	icr.level = APIC_LEVEL_ASSERT;
+	icr.trigger = APIC_TRIGGER_EDGE;
+
+	/* Writing the low doubleword of the ICR causes
+	 * the IPI to be sent: prepare high-word first. */
+	apic_write(APIC_ICRH, icr.value_high);
+	apic_write(APIC_ICRL, icr.value_low);
+}
+
 /*
  * Poll the delivery status bit till the latest IPI is acked
  * by the destination core, or timeout. As advised by Intel,

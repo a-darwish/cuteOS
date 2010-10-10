@@ -1,7 +1,7 @@
 /*
  * Multiple-Processor (MP) Initialization
  *
- * Copyright (C) 2009 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2009-2010 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -85,51 +85,23 @@ static int nr_alive_cpus = 1;
  */
 
 /*
- * Send an INIT IPI to all cores, except self.
+ * Zero INIT vector field for "future compatibility".
  */
-static void broadcast_init_ipi(void)
+static inline void send_init_ipi(int apic_id)
 {
-	union apic_icr icr = { .value = 0 };
-
-	/* Zero for "future compatibility" */
-	icr.vector = 0;
-
-	icr.delivery_mode = APIC_DELMOD_INIT;
-
-	/* "Edge" and "deassert" are for 82489DX */
-	icr.level = APIC_LEVEL_ASSERT;
-	icr.trigger = APIC_TRIGGER_EDGE;
-
-	icr.dest_mode = APIC_DESTMOD_PHYSICAL;
-	icr.dest_shorthand = APIC_DEST_SHORTHAND_ALL_BUT_SELF;
-
-	/* Using shorthand, writing ICR low-word is enough */
-	apic_write(APIC_ICRL, icr.value_low);
+	apic_send_ipi(apic_id, APIC_DELMOD_INIT, 0);
 }
 
-static void send_startup_ipi(uint32_t start_vector, int apic_id)
+/*
+ * ICR's vector field is 8-bits; For the value 0xVV,
+ * SIPI target core will start from 0xVV000.
+ */
+static inline void send_startup_ipi(int apic_id, uint32_t start_vector)
 {
-	union apic_icr icr = { .value = 0 };
-
-	/* ICR's vector field is 8-bits; For the value
-	 * 0xVV, target core will start from 0xVV000 */
 	assert(page_aligned(start_vector));
 	assert(start_vector >= 0x10000 && start_vector <= 0x90000);
-	icr.vector = start_vector >> 12;
 
-	icr.delivery_mode = APIC_DELMOD_START;
-
-	/* "Edge" and "deassert" are for 82489DX */
-	icr.level = APIC_LEVEL_ASSERT;
-	icr.trigger = APIC_TRIGGER_EDGE;
-
-	icr.dest_mode = APIC_DESTMOD_PHYSICAL;
-	icr.dest = apic_id;
-
-	/* Writing the low doubleword of the ICR causes
-	 * the IPI to be sent: prepare high-word first. */
-	apic_write(APIC_ICRH, icr.value_high);
-	apic_write(APIC_ICRL, icr.value_low);
+	apic_send_ipi(apic_id, APIC_DELMOD_START, start_vector >> 12);
 }
 
 /*
@@ -140,55 +112,61 @@ static void send_startup_ipi(uint32_t start_vector, int apic_id)
 #define MAX_SIPI_RETRY	3
 
 /*
- * Start each AP core iteratively as the trampoline code
- * cannot be executed in parallel.
+ * Do not broadcast Intel's INIT-SIPI-SIPI sequence as this
+ * may wake-up CPUs marked by the BIOS as faulty, or defeat
+ * the user choice of disabing a certain core in BIOS setup.
+ *
+ * The trampoline code cannot also be executed in parallel.
  *
  * FIXME: 200 micro-second delay between the SIPIs
- * FIXME: fine-grained timeouts using micro-seconds.
+ * FIXME: fine-grained timeouts using micro-seconds
  */
-static int start_secondary_cpus(void)
+static int start_secondary_cpu(int apic_id)
 {
-	int nr_cpus, count, apic_id, acked, timeout;
+	int count, acked, timeout;
 
-	nr_cpus = mptables_get_nr_cpus();
-	for (int i = 0; i < nr_cpus; i++) {
-		if (cpus[i].bootstrap)
-			continue;
+	barrier();
+	count = nr_alive_cpus;
 
-		barrier();
-		count = nr_alive_cpus;
+	/* INIT: wakeup the core from its deep (IF=0)
+	 * halted state and let it wait for the SIPIs */
+	send_init_ipi(apic_id);
+	acked = apic_ipi_acked();
+	if (!acked) {
+		printk("SMP: Failed to deliver INIT to CPU#%d\n", apic_id);
+		return 1;
+	}
 
-		apic_id = cpus[i].apic_id;
+	pit_mdelay(10);
 
-		for (int j = 1; j <= MAX_SIPI_RETRY; j++) {
-			send_startup_ipi(SMPBOOT_START, apic_id);
-			acked = apic_ipi_acked();
-			if (acked)
-				break;
+	for (int j = 1; j <= MAX_SIPI_RETRY; j++) {
+		send_startup_ipi(apic_id, SMPBOOT_START);
+		acked = apic_ipi_acked();
+		if (acked)
+			break;
 
-			printk("SMP: Failed to deliver SIPI#%d to CPU#%d\n",
-			       j, apic_id);
+		printk("SMP: Failed to deliver SIPI#%d to CPU#%d\n",
+		       j, apic_id);
 
-			if (j == MAX_SIPI_RETRY) {
-				printk("SMP: Giving-up SIPI delivery\n");
-				return 1;
-			}
-
-			printk("SMP: Retrying SIPI delivery\n");
-		}
-
-		/* The just-started AP core should now signal us
-		 * by incrementing the active-CPUs counter by one */
-		timeout = 1000;
-		while (timeout-- && count == nr_alive_cpus) {
-			barrier();
-			pit_mdelay(1);
-		}
-		if (timeout == -1) {
-			printk("SMP: Timeout waiting for CPU#%d to start\n",
-			       apic_id);
+		if (j == MAX_SIPI_RETRY) {
+			printk("SMP: Giving-up SIPI delivery\n");
 			return 1;
 		}
+
+		printk("SMP: Retrying SIPI delivery\n");
+	}
+
+	/* The just-started AP core should now signal us
+	 * by incrementing the active-CPUs counter by one */
+	timeout = 1000;
+	while (timeout-- && count == nr_alive_cpus) {
+		barrier();
+		pit_mdelay(1);
+	}
+	if (timeout == -1) {
+		printk("SMP: Timeout waiting for CPU#%d to start\n",
+		       apic_id);
+		return 1;
 	}
 
 	return 0;
@@ -214,13 +192,10 @@ void __no_return secondary_start(void)
 
 void smpboot_init(void)
 {
-	int res, acked, nr_cpus;
+	int res, nr_cpus, apic_id;
 	struct smpboot_params params;
 
 	smpboot_params_validate_offsets();
-
-	nr_cpus = mptables_get_nr_cpus();
-	printk("SMP: %d usable CPUs found\n", nr_cpus);
 
 	params.cr3 = get_cr3();
 	params.idtr = get_idt();
@@ -229,18 +204,18 @@ void smpboot_init(void)
 	memcpy(TRAMPOLINE_START, trampoline, trampoline_end - trampoline);
 	memcpy(TRAMPOLINE_PARAMS, &params, sizeof(params));
 
-	/* Wakeup AP cores from their deep halted state (IF=0)
-	 * and let them wait for the SIPIs */
-	broadcast_init_ipi();
-	acked = apic_ipi_acked();
-	if (!acked)
-		panic("Could not broadcast the INIT IPI\n");
+	nr_cpus = mptables_get_nr_cpus();
+	printk("SMP: %d usable CPUs found\n", nr_cpus);
 
-	pit_mdelay(10);
+	for (int i = 0; i < nr_cpus; i++) {
+		if (cpus[i].bootstrap)
+			continue;
 
-	res = start_secondary_cpus();
-	if (res)
-		panic("Could not start-up all AP cores\n");
+		apic_id = cpus[i].apic_id;
+		res = start_secondary_cpu(apic_id);
+		if (res)
+			panic("Could not start-up all AP cores\n");
+	}
 
 	barrier();
 	assert(nr_alive_cpus == nr_cpus);
