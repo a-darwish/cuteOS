@@ -59,7 +59,8 @@ static inline void set_rflags(union x86_rflags flags)
 	asm volatile ("pushq %0;"
 		      "popfq;"
 		      :
-		      :"r"(flags.raw));
+		      :"r"(flags.raw)
+		      :"cc");
 }
 
 /*

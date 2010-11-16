@@ -259,6 +259,10 @@ static inline void *page_base(struct pml2e *pml2e)
 
 /*
  * %CR3
+ *
+ * "Flags affected by `Move to/from Control Registers':
+ * The OF, SF, ZF, AF, PF, and CF flags are undefined."
+ *	--Intel, vol. 2A
  */
 
 static inline void load_cr3(uint64_t cr3)
@@ -266,7 +270,7 @@ static inline void load_cr3(uint64_t cr3)
 	asm volatile("mov %0, %%cr3"
 		     :
 		     :"a"(cr3)
-		     :"memory");
+		     :"cc", "memory");
 }
 
 static inline uint64_t get_cr3(void)
@@ -276,7 +280,7 @@ static inline uint64_t get_cr3(void)
 	asm volatile("mov %%cr3, %0"
 		     :"=a"(cr3)
 		     :
-		     :"memory");
+		     :"cc", "memory");
 
 	return cr3;
 }

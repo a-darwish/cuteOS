@@ -127,14 +127,14 @@ static inline void local_irq_disable(void)
 {
 	asm volatile ("cli"
 		      ::
-		      :"memory");
+		      :"cc", "memory");
 }
 
 static inline void local_irq_enable(void)
 {
 	asm volatile ("sti"
 		      ::
-		      :"memory");
+		      :"cc", "memory");
 }
 
 #endif /* !__ASSEMBLY__ */

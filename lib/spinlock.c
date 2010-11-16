@@ -50,12 +50,12 @@ void spin_lock(spinlock_t *lock)
 {
 	asm volatile (
 		"1: \n"
-		"lock decl %0;"
+		"lock decl %0;"		/* rflags */
 		"jns 3f;"
 
 		"2: \n"
 		"pause;"
-		"cmpl $0, %0;"
+		"cmpl $0, %0;"		/* rflags */
 		"jle 2b;"
 
 		"jmp 1b;"
@@ -63,7 +63,7 @@ void spin_lock(spinlock_t *lock)
 		"3: \n"
 		: "+m"(*lock)
 		:
-		: "memory");
+		: "cc", "memory");
 }
 
 /*

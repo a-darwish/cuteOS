@@ -7,8 +7,8 @@
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
  *
- * Optimized string methods are tested using LD_PRELOAD with
- * heavy programs like Firefox, Google Chrome and OpenOffice.
+ * Optimized string methods are tested using LD_PRELOAD with heavy
+ * programs like Firefox, Google Chrome and OpenOffice.
  */
 
 #include <stdint.h>
@@ -16,13 +16,24 @@
 #include <string.h>
 
 /*
- * For more speed, we should let movsq and stosq read
- * arguments (source) be 8 byte aligned.
+ * GCC "does not parse the assembler instruction template and does not
+ * know what it means or even whether it is valid assembler input." Thus,
+ * it needs to be told the list of registers __implicitly__ clobbered by
+ * such inlined assembly snippets.
+ *
+ * A good way to stress-test GCC extended assembler constraints is to
+ * always inline the assembler snippets (C99 'static inline'), compile
+ * the kernel at -O3 or -Os, and roll!
+ *
+ * Output registers are (explicitly) clobbered by definition. 'CCR' is
+ * the x86's condition code register %rflags.
  */
 
 /*
  * Copy @len bytes from @src to @dst. Return a pointer
  * to @dst
+ *
+ * The AMD64 ABI guarantees a DF=0 upon function entry.
  */
 void *memcpy(void *dst, const void *src, int len)
 {
@@ -31,14 +42,15 @@ void *memcpy(void *dst, const void *src, int len)
 
 	asm volatile (
 	    "movl %[len], %[tmp];"
-	    "andl $7, %[len];"
+	    "andl $7, %[len];"			/* CCR */
 	    "rep  movsb;"
 	    "movl %[tmp], %[len];"
-	    "shrl $3, %[len];"
-	    "rep  movsq;"
-	    : [dst] "=&D"(d0), [len] "=&c"(len), [tmp] "=&r"(tmp)
-	    : "S"(src), "[dst]"(dst), "[len]"(len), "[tmp]"(tmp)
-	    : "memory");
+	    "shrl $3, %[len];"			/* CCR */
+	    "rep  movsq;"			/* rdi, rsi, rcx */
+	    : [dst] "=&D"(d0), "+&S"(src), [len] "+&c"(len),
+	      [tmp] "+&r"(tmp)
+	    : "[dst]"(dst)
+	    : "cc", "memory");
 
 	return dst;
 }
@@ -46,6 +58,12 @@ void *memcpy(void *dst, const void *src, int len)
 /*
  * Fill memory with the constant byte @ch. Returns pointer
  * to memory area @dst; no return value reserved for error
+ *
+ * "Note that a REP STOS instruction is the fastest way to
+ * initialize a large block of memory." --Intel, vol. 2B
+ *
+ * To copy the @ch byte repetitively over an 8-byte block,
+ * we multiply its value with (0xffffffffffffffff / 0xff).
  */
 void *memset(void *dst, uint8_t ch, uint32_t len)
 {
@@ -57,20 +75,18 @@ void *memset(void *dst, uint8_t ch, uint32_t len)
 	uch &= 0xff;
 	asm volatile (
 	    "mov  %[len], %[tmp];"
-	    "and  $7, %[len];"
-	    "rep  stosb;"
+	    "and  $7, %[len];"			/* CCR */
+	    "rep  stosb;"			/* rdi, rcx */
 	    "mov  %[tmp], %[len];"
-	    "shr  $3, %[len];"
-	    /* Copy the right-most byte to the rest 7 bytes.
-	     * multiplier extracted by 0xffffffffffffffff/0xff */
+	    "shr  $3, %[len];"			/* CCR */
 	    "mov  %[ch], %[tmp];"
 	    "mov  $0x0101010101010101, %[ch];"
-	    "mul  %[tmp];"
-	    "rep  stosq;"
-	    : [tmp] "=&r"(tmp), [dst] "=&D"(d0), [ch] "=&a"(uch),
-	      [len] "=&c"(ulen)
-	    : "[dst]"(dst), "[ch]"(uch), "[len]"(ulen), "[tmp]"(tmp)
-	    : "memory");
+	    "mul  %[tmp];"			/* rdx! CCR */
+	    "rep  stosq;"			/* rdi, rcx */
+	    : [tmp] "+&r"(tmp), [dst] "=&D"(d0), [ch] "+&a"(uch),
+	      [len] "+&c"(ulen)
+	    : "[dst]"(dst)
+	    : "rdx", "cc", "memory");
 
 	return dst;
 }
@@ -89,9 +105,9 @@ void *memset32(void *dst, uint32_t val, uint64_t len)
 	uval = ((uint64_t)val << 32) + val;
 
 	asm volatile (
-	    "rep stosq"
-	    : [dst] "=&D"(d0)
-	    : "[dst]"(dst), "a"(uval), "c"(len)
+	    "rep stosq"				/* rdi, rcx */
+	    : [dst] "=&D"(d0), "+&c"(len)
+	    : "[dst]"(dst), "a"(uval)
 	    : "memory");
 
 	return dst;
@@ -109,9 +125,9 @@ void *memset64(void *dst, uint64_t val, uint64_t len)
 	len = len / 8;
 
 	asm volatile (
-	    "rep stosq"
-	    : [dst] "=&D"(d0)
-	    : "[dst]"(dst), "a"(val), "c"(len)
+	    "rep stosq"				/* rdi, rcx */
+	    : [dst] "=&D"(d0), "+&c"(len)
+	    : "[dst]"(dst), "a"(val)
 	    : "memory");
 
 	return dst;
