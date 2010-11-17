@@ -30,22 +30,19 @@
  */
 
 /*
- * Copy @len bytes from @src to @dst. Return a pointer
- * to @dst
- *
  * The AMD64 ABI guarantees a DF=0 upon function entry.
  */
-void *memcpy(void *dst, const void *src, int len)
+static void *__memcpy_forward(void *dst, const void *src, size_t len)
 {
-	int __uninitialized(tmp);
+	size_t __uninitialized(tmp);
 	uintptr_t d0;
 
 	asm volatile (
-	    "movl %[len], %[tmp];"
-	    "andl $7, %[len];"			/* CCR */
+	    "mov  %[len], %[tmp];"
+	    "and  $7, %[len];"			/* CCR */
 	    "rep  movsb;"
-	    "movl %[tmp], %[len];"
-	    "shrl $3, %[len];"			/* CCR */
+	    "mov  %[tmp], %[len];"
+	    "shr  $3, %[len];"			/* CCR */
 	    "rep  movsq;"			/* rdi, rsi, rcx */
 	    : [dst] "=&D"(d0), "+&S"(src), [len] "+&c"(len),
 	      [tmp] "+&r"(tmp)
@@ -56,18 +53,75 @@ void *memcpy(void *dst, const void *src, int len)
 }
 
 /*
- * Fill memory with the constant byte @ch. Returns pointer
- * to memory area @dst; no return value reserved for error
+ * We do tolerate overlapping regions here if src > dst. In
+ * such case, (src - dst) must be bigger than movsq's block
+ * copy factor: 8 bytes.
+ */
+void *memcpy_forward(void *dst, const void *src, size_t len)
+{
+	uintptr_t udst, usrc;
+	bool bad_overlap;
+
+	udst = (uintptr_t)dst;
+	usrc = (uintptr_t)src;
+
+	bad_overlap = (udst + 8 > usrc) && (usrc + len > udst);
+	if (__unlikely(bad_overlap))
+		panic("%s: badly-overlapped regions, src=0x%lx, dst"
+		      "=0x%lx, len=0x%lx", __func__, src, dst, len);
+
+	return __memcpy_forward(dst, src, len);
+}
+
+/*
+ * C99-compliant, with extra sanity checks.
+ */
+void *memcpy(void * restrict dst, const void * restrict src, size_t len)
+{
+	uintptr_t udst, usrc;
+	bool overlap;
+
+	udst = (uintptr_t)dst;
+	usrc = (uintptr_t)src;
+
+	overlap = (udst + len > usrc) && (usrc + len > udst);
+	if (__unlikely(overlap))
+		panic("%s: overlapped regions, src=0x%lx, dst=0x"
+		      "%lx, len=0x%lx", __func__, src, dst, len);
+
+	return __memcpy_forward(dst, src, len);
+}
+
+/*
+ * memcpy(), minus the checks
  *
+ * Sanity checks overhead cannot be tolerated for HOT copying
+ * paths like screen scrolling.
+ *
+ * This is also useful for code implicitly called by panic():
+ * a sanity check failure there will lead to a stack overflow.
+ */
+
+void *memcpy_forward_nocheck(void *dst, const void *src, size_t len)
+{
+	return __memcpy_forward(dst, src, len);
+}
+
+void *memcpy_nocheck(void * restrict dst, const void * restrict src, size_t len)
+{
+	return __memcpy_forward(dst, src, len);
+}
+
+/*
  * "Note that a REP STOS instruction is the fastest way to
  * initialize a large block of memory." --Intel, vol. 2B
  *
  * To copy the @ch byte repetitively over an 8-byte block,
  * we multiply its value with (0xffffffffffffffff / 0xff).
  */
-void *memset(void *dst, uint8_t ch, uint32_t len)
+void *memset(void *dst, uint8_t ch, size_t len)
 {
-	uint64_t __uninitialized(tmp);
+	size_t __uninitialized(tmp);
 	uint64_t uch = ch;
 	uint64_t ulen = len;
 	uintptr_t d0;
@@ -196,3 +250,47 @@ int memcmp(const void *s1, const void *s2, uint32_t n)
 
 	return res;
 }
+
+#if STRING_TESTS
+
+#define _ARRAY_LEN	100
+static uint8_t _arr[_ARRAY_LEN];
+
+static void memcpy_test_overlaps(void)
+{
+	memset(_arr, 0x55, _ARRAY_LEN);
+
+	/* Should succeed */
+
+	memcpy(_arr, _arr + 20, 10);		/* Regular */
+	memcpy(_arr + 20, _arr, 10);		/* Regular */
+	memcpy(_arr, _arr + 20, 20);		/* Regular, bounds */
+	memcpy(_arr + 20, _arr, 20);		/* Regular, bounds */
+
+	memcpy_forward(_arr, _arr + 20, 10);	/* Regular */
+	memcpy_forward(_arr + 20, _arr, 10);	/* Regular */
+	memcpy_forward(_arr, _arr + 20, 20);	/* Regular, bounds */
+	memcpy_forward(_arr + 20, _arr, 20);	/* Regular, bounds */
+	memcpy_forward(_arr, _arr + 10, 20);	/* Good overlap */
+	memcpy_forward(_arr, _arr + 10, 11);	/* Good overlap, bounds */
+
+	/* Should fail */
+
+	/* memcpy(_arr, _arr + 20, 40);		/\* Overlap *\/ */
+	/* memcpy(_arr + 20, _arr, 40);		/\* Overlap *\/ */
+	/* memcpy(_arr, _arr + 20, 21);		/\* Overlap, bounds *\/ */
+	/* memcpy(_arr + 20, _arr, 21);		/\* Overlap, bounds *\/ */
+
+	/* memcpy_forward(_arr, _arr + 7, 10);	/\* Good overlap, but < 8-byte *\/ */
+	/* memcpy_forward(_arr + 20, _arr, 40);	/\* Bad overlap *\/ */
+	/* memcpy_forward(_arr + 20, _arr, 21);	/\* Bad overlap, bounds *\/ */
+}
+
+void string_run_tests(void)
+{
+	memcpy_test_overlaps();
+}
+
+#endif /* STRING_TESTS */
+
+

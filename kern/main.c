@@ -66,6 +66,7 @@ static void print_info(void)
  */
 static void run_test_cases(void)
 {
+	string_run_tests();
 	printk_run_tests();
 	vm_run_tests();
 	pagealloc_run_tests();

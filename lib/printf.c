@@ -319,13 +319,13 @@ static void vga_scrollup(int color) {
 	dst = vga_buffer;
 	rows_24 = 2 * ((VGA_MAXROWS - 1) * VGA_MAXCOLS);
 
-	memcpy(dst, src, rows_24);
+	memcpy_forward_nocheck(dst, src, rows_24);
 
 	vgap = (uint16_t *)(vga_buffer + rows_24);
 	for (int i = 0; i < VGA_MAXCOLS; i++)
 		*vgap++ = (color << 8) + ' ';
 
-	memcpy(VGA_BASE, vga_buffer, VGA_AREA);
+	memcpy_nocheck(VGA_BASE, vga_buffer, VGA_AREA);
 	vga_xpos = 0;
 	vga_ypos--;
 }
@@ -373,7 +373,7 @@ static void vga_write(char *buf, int n, int color)
 
 	offset = 2 * (old_ypos * max_xpos + old_xpos);
 	area = 2 * ((vga_ypos - old_ypos) * max_xpos + vga_xpos);
-	memcpy(VGA_BASE + offset, vga_buffer + offset, area);
+	memcpy_nocheck(VGA_BASE + offset, vga_buffer + offset, area);
 
 	spin_unlock_irqrestore(&vga_lock, flags);
 }

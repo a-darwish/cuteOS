@@ -33,6 +33,8 @@ typedef unsigned long uint64_t;
 typedef signed long int	intptr_t;
 typedef unsigned long int uintptr_t;
 
+typedef uint64_t size_t;
+
 /*
  * MAXs and MINs
  */

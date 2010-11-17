@@ -11,6 +11,7 @@
 #ifndef _TESTS_H
 #define _TESTS_H
 
+#define		STRING_TESTS		0
 #define		PRINTK_TESTS		0
 #define		VM_TESTS		0
 #define		PAGEALLOC_TESTS		0
