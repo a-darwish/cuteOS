@@ -1,5 +1,5 @@
 /*
- * Standard C string methods
+ * Optimized C string methods
  *
  * Copyright (C) 2009-2010 Ahmed S. Darwish <darwish.07@gmail.com>
  *
@@ -7,13 +7,19 @@
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
  *
- * Optimized string methods are tested using LD_PRELOAD with heavy
- * programs like Firefox, Google Chrome and OpenOffice.
+ * These methods were tested, using LD_PRELOAD, with heavy programs like
+ * Firefox, Google Chrome and OpenOffice.
  */
 
 #include <stdint.h>
 #include <kernel.h>
 #include <string.h>
+
+/*
+ * NOTE: Always put as much logic as possibe out of the inlined assembly
+ * code to the asm-constraints C expressions. This gives the optimizer
+ * way more freedom, especially regarding constant propagation.
+ */
 
 /*
  * GCC "does not parse the assembler instruction template and does not
@@ -34,20 +40,16 @@
  */
 static void *__memcpy_forward(void *dst, const void *src, size_t len)
 {
-	size_t __uninitialized(tmp);
 	uintptr_t d0;
 
 	asm volatile (
-	    "mov  %[len], %[tmp];"
-	    "and  $7, %[len];"			/* CCR */
-	    "rep  movsb;"
-	    "mov  %[tmp], %[len];"
-	    "shr  $3, %[len];"			/* CCR */
-	    "rep  movsq;"			/* rdi, rsi, rcx */
-	    : [dst] "=&D"(d0), "+&S"(src), [len] "+&c"(len),
-	      [tmp] "+&r"(tmp)
-	    : "[dst]"(dst)
-	    : "cc", "memory");
+		"mov %3, %%rcx;"
+		"rep movsb;"			/* rdi, rsi, rcx */
+		"mov %4, %%rcx;"
+		"rep movsq;"			/* ~~~ */
+		:"=&D" (d0), "+&S" (src)
+		:"0" (dst), "ir" (len & 7), "ir" (len >> 3)
+		:"rcx", "memory");
 
 	return dst;
 }
@@ -121,26 +123,19 @@ void *memcpy_nocheck(void * restrict dst, const void * restrict src, size_t len)
  */
 void *memset(void *dst, uint8_t ch, size_t len)
 {
-	size_t __uninitialized(tmp);
-	uint64_t uch = ch;
-	uint64_t ulen = len;
+	uint64_t uch;
 	uintptr_t d0;
 
-	uch &= 0xff;
+	uch = ch;
 	asm volatile (
-	    "mov  %[len], %[tmp];"
-	    "and  $7, %[len];"			/* CCR */
-	    "rep  stosb;"			/* rdi, rcx */
-	    "mov  %[tmp], %[len];"
-	    "shr  $3, %[len];"			/* CCR */
-	    "mov  %[ch], %[tmp];"
-	    "mov  $0x0101010101010101, %[ch];"
-	    "mul  %[tmp];"			/* rdx! CCR */
-	    "rep  stosq;"			/* rdi, rcx */
-	    : [tmp] "+&r"(tmp), [dst] "=&D"(d0), [ch] "+&a"(uch),
-	      [len] "+&c"(ulen)
-	    : "[dst]"(dst)
-	    : "rdx", "cc", "memory");
+		"mov  %3, %%rcx;"
+		"rep  stosb;"			/* rdi, rcx */
+		"mov  %4, %%rcx;"
+		"rep  stosq;"			/* ~~~ */
+		:"=&D" (d0)
+		:"0" (dst), "a" (uch * 0x0101010101010101),
+		 "ir" (len & 7), "ir" (len >> 3)
+		:"rcx", "memory");
 
 	return dst;
 }
@@ -156,13 +151,13 @@ void *memset32(void *dst, uint32_t val, uint64_t len)
 
 	assert((len % 8) == 0);
 	len = len / 8;
-	uval = ((uint64_t)val << 32) + val;
 
+	uval = ((uint64_t)val << 32) + val;
 	asm volatile (
-	    "rep stosq"				/* rdi, rcx */
-	    : [dst] "=&D"(d0), "+&c"(len)
-	    : "[dst]"(dst), "a"(uval)
-	    : "memory");
+		"rep stosq"			/* rdi, rcx */
+		:"=&D" (d0), "+&c" (len)
+		:"0" (dst), "a" (uval)
+		:"memory");
 
 	return dst;
 }
@@ -179,10 +174,10 @@ void *memset64(void *dst, uint64_t val, uint64_t len)
 	len = len / 8;
 
 	asm volatile (
-	    "rep stosq"				/* rdi, rcx */
-	    : [dst] "=&D"(d0), "+&c"(len)
-	    : "[dst]"(dst), "a"(val)
-	    : "memory");
+		"rep stosq"			/* rdi, rcx */
+		:"=&D" (d0), "+&c" (len)
+		:"0" (dst), "a" (val)
+		:"memory");
 
 	return dst;
 }
@@ -256,7 +251,7 @@ int memcmp(const void *s1, const void *s2, uint32_t n)
 #define _ARRAY_LEN	100
 static uint8_t _arr[_ARRAY_LEN];
 
-static void memcpy_test_overlaps(void)
+static void test_memcpy_overlaps(void)
 {
 	memset(_arr, 0x55, _ARRAY_LEN);
 
@@ -288,7 +283,7 @@ static void memcpy_test_overlaps(void)
 
 void string_run_tests(void)
 {
-	memcpy_test_overlaps();
+	test_memcpy_overlaps();
 }
 
 #endif /* STRING_TESTS */
