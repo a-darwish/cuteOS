@@ -269,7 +269,7 @@ static inline void load_cr3(uint64_t cr3)
 {
 	asm volatile("mov %0, %%cr3"
 		     :
-		     :"a"(cr3)
+		     :"r"(cr3)
 		     :"cc", "memory");
 }
 
@@ -278,7 +278,7 @@ static inline uint64_t get_cr3(void)
 	uint64_t cr3;
 
 	asm volatile("mov %%cr3, %0"
-		     :"=a"(cr3)
+		     :"=r"(cr3)
 		     :
 		     :"cc", "memory");
 
