@@ -31,24 +31,21 @@
  */
 struct proc *current;
 
-/* Our 'runque' :) */
-static struct proc *next;
+/* Our 'runque': check-out anytime, but never leave */
+#define PROC_ARRAY_LEN	150
+static int proc_total = 1;
+static struct proc *proc_arr[PROC_ARRAY_LEN];
 
 /*
  * Return next process to schedule
  * FIXME: Avoid interrupting threads holding locks
  */
+static int cur_proc;
 struct proc *schedule(void)
 {
-	struct proc *ret;
+	cur_proc = (cur_proc + 1) % proc_total;
 
-	ret = current;
-	if (next != NULL) {
-		ret = next;
-		next = current;
-	}
-
-	return ret;
+	return proc_arr[cur_proc];
 }
 
 /*
@@ -67,6 +64,7 @@ void kthread_create(void (*func)(void))
 	proc = kmalloc(sizeof(*proc));
 	proc_init(proc);
 
+	/* A placeholder, for now */
 	proc->pid = 1;
 
 	/* New thread stack, moving down */
@@ -99,8 +97,8 @@ void kthread_create(void (*func)(void))
 	proc->pcb.rsp = (uintptr_t)irq_ctx;
 
 	/* Push the now completed proc to the 'runqueu' :) */
-	assert(next == NULL);
-	next = proc;
+	assert(proc_total != PROC_ARRAY_LEN);
+	proc_arr[proc_total++] = proc;
 }
 
 void timer_handler(void);
@@ -115,6 +113,7 @@ void sched_init(void)
 	current = kmalloc(sizeof(*current));
 	proc_init(current);
 	current->pid = 0;
+	proc_arr[0] = current;
 
 	/*
 	 * Setup the timer ticks handler
@@ -141,24 +140,36 @@ void sched_init(void)
 
 #include <vga.h>
 
-static void __no_return test_thread(void)
+static void __no_return loop_print(char ch, int color)
 {
 	while (true) {
-		putc_colored('B', VGA_LIGHT_GREEN);
+		putc_colored(ch, color);
 		for (int i = 0; i < 0xffff; i++)
 			cpu_pause();
 	}
 }
 
+static void __no_return test1(void) { loop_print('A', VGA_BLUE); }
+static void __no_return test2(void) { loop_print('B', VGA_GREEN); }
+static void __no_return test3(void) { loop_print('C', VGA_CYAN); }
+static void __no_return test4(void) { loop_print('D', VGA_RED); }
+static void __no_return test5(void) { loop_print('E', VGA_MAGNETA); }
+static void __no_return test6(void) { loop_print('F', VGA_GRAY); }
+static void __no_return test7(void) { loop_print('G', VGA_YELLOW); }
+
 void __no_return sched_run_tests(void)
 {
-	kthread_create(test_thread);
-
-	while (true) {
-		putc_colored('A', VGA_LIGHT_RED);
-		for (int i = 0; i < 0xffff; i++)
-			cpu_pause();
+	for (int i = 0; i < 15; i++) {
+		kthread_create(test1);
+		kthread_create(test2);
+		kthread_create(test3);
+		kthread_create(test4);
+		kthread_create(test5);
+		kthread_create(test6);
+		kthread_create(test7);
 	}
+
+	loop_print('H', VGA_WHITE);
 }
 
 #endif /* SCHED_TESTS */

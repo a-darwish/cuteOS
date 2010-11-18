@@ -287,5 +287,3 @@ void string_run_tests(void)
 }
 
 #endif /* STRING_TESTS */
-
-
