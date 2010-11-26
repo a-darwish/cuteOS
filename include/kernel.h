@@ -46,6 +46,7 @@
 
 /*
  * Semi type-safe min macro using GNU extensions
+ * The type-checking trick is taken from Linux-2.6.
  */
 #define min(x, y)		    \
 ({				    \

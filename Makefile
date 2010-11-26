@@ -172,6 +172,7 @@ DEV_OBJS =		\
 # Isolated library code
 DEPS_DIRS		+= $(DEPS_ROOT_DIR)/lib
 LIB_OBJS =		\
+  lib/list.o		\
   lib/string.o		\
   lib/printf.o		\
   lib/spinlock.o

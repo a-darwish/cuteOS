@@ -282,8 +282,10 @@ int vsnprintf(char *buf, int size, const char *fmt, va_list args)
 
 /*
  * VGA text-mode memory (0xb8000-0xbffff) access
+ *
  * @vga_xpos and @vga_ypos forms the current cursor position
  * @vga_buffer: A buffer to access VGA RAM in a write-only mode.
+ *
  * For scrolling, we need to copy the last 24 rows up one row, but
  * reading from VGA RAM is pretty darn slow and buggy[1], thus the
  * need for a dedicated buffer. As also once advised by Travis

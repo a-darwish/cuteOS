@@ -11,14 +11,15 @@
 #ifndef _TESTS_H
 #define _TESTS_H
 
-#define		STRING_TESTS		0
-#define		PRINTK_TESTS		0
-#define		VM_TESTS		0
-#define		PAGEALLOC_TESTS		0
-#define		KMALLOC_TESTS		0
-#define		PIT_TESTS		0
-#define		APIC_TESTS		0
-#define		SCHED_TESTS		0
+#define		LIST_TESTS		0	/* Linked stack/queue tests */
+#define		STRING_TESTS		0	/* Optimized string methods */
+#define		PRINTK_TESTS		0	/* printk(fmt, ...) */
+#define		VM_TESTS		0	/* Kernel VM mappings */
+#define		PAGEALLOC_TESTS		0	/* Page allocator */
+#define		KMALLOC_TESTS		0	/* Dynamic memory allocator */
+#define		PIT_TESTS		0	/* PIT timer tests */
+#define		APIC_TESTS		0	/* Local APIC timer and IPI */
+#define		SCHED_TESTS		0	/* Scheduler tests */
 
 #if	(SCHED_TESTS == 1) && (PIT_TESTS == 1)
 
