@@ -1,0 +1,84 @@
+
+* What?
+-------
+
+Cute! is a 64-bit SMP-safe POSIX-compatible kernel for the PC architecture.
+
+It's 'cute' in the sense of having the source code as simple and fun to
+work with as possible, hopefully without sacrificing performance.
+
+
+* Navigation:
+-------------
+
+To begin your way throughout the kernel source, I'd recommend checking
+the freestanding isolated parts first. Begin with the `lib/' folder,
+which includes optimized C string methods, type-generic linked-lists,
+spinlocks, a printf() implementation, etc.
+
+Most of the kernel heavily-used idioms are included in 'kernel.h';
+it'll be handy to have it open while checking the rest of the source.
+
+This kernel source is tracked by 'git' from day 0: if you'd like to
+know how to write a bootloader and a kernel from scratch, the git
+history (with its carefully written commit logs) should be very
+valuable.
+
+By now, you can go anywhere. ALWAYS check a module's header file
+BEFORE checking its code. Due to compilers inefficiencies [1] and C
+parsing semantics, a lot of details are put in *.h.  Comments in the
+*.c files also assume reading such headers FIRST, unless otherwise
+stated.
+
+[1] To be fixed by GCC-4.5 `link-time optimization': constant folding,
+    code inlining, and further analysis across separate object modules.
+
+
+README
+	- this file.
+
+boot/
+	- early bootstrap code: a 512-Kbyte bootloader, assembly for
+	  jumping to C, code to jump to 'real-mode' and return back,
+	  the SMP trampoline, etc.
+
+lib/
+	- library: as stated above, freestanding components like
+	  C string methods, linked-lists (for stacks and queues),
+	  spinlocks, a printf(), etc
+
+mm/
+	- memory management: dynamic memory allocation and virtual
+	  memory.
+
+dev/
+	- device drivers: interrupt controllers, timers, keyboard,
+	  inter-processor interrupts (local APICs), etc
+
+kern/
+	- the rest: context switching, thread scheduling, BIOS table
+	  parsers, IRQ handling, system-wide panic(), etc.
+
+
+* Books?
+--------
+
+Beside the datasheets, specifications, and research papers saved
+in our `references' git repository [**], below books proved to be
+tremendously helpful:
+
+
+	- M.K. McKusick and G.V. Neville-Neil: `The Design and
+	  Implementation of the FreeBSD Operating System', 2004
+
+	- J. Mauro and R. McDougall: `Solaris Internals, Core Kernel
+	  Components', first edition, 2000
+
+	- U. Vahalia: `Unix Internals, The New Frontiers', 1996
+
+
+[**] http://gitorious.org/cute-os/references
+
+
+
+			--Ahmed S. Darwish <darwish.07@gmail.com>
