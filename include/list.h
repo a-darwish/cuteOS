@@ -143,15 +143,30 @@ static inline void list_add_tail(struct list_node *node, struct list_node *new)
 /*
  * Scan the list, beginning from @node, using the iterator
  * @struc. @struc is of type pointer to the structure
- * containing @node. @node_name is the node's name inside
- * that structure (the one containing @node) declaration.
+ * containing @node. @name is the node's name inside that
+ * structure (the one containing @node) declaration.
  *
- * I won't like to see the preprocessor output of this :)
+ * NOTE! Don't delete the the iterator's list node inside
+ * loop: we use it in the initialization of next iteration.
  */
 #define list_for_each(node, struc, name)				\
 	for (struc = list_entry((node)->next, typeof(*struc), name);	\
 	     &(struc->name) != (node);					\
 	     struc = list_entry(struc->name.next, typeof(*struc), name))
+
+/*
+ * Same as list_for_each(), but with making it safe to
+ * delete the iterator's list node inside the loop. This
+ * is useful for popping-up list elements as you go.
+ *
+ * You'll need to give us a spare iterator for this.
+ */
+#define list_for_each_safe(node, struc, spare_struc, name)		       \
+	for (struc = list_entry((node)->next, typeof(*struc), name),	       \
+	     spare_struc = list_entry(struc->name.next, typeof(*struc), name); \
+	     &(struc->name) != (node);					       \
+	     struc = spare_struc,					       \
+	     spare_struc = list_entry(struc->name.next, typeof(*struc), name))
 
 /*
  * Pop @node out of its connected neighbours.

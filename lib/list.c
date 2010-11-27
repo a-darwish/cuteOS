@@ -24,7 +24,7 @@ struct test {
 
 static void test_0_elements(void)
 {
-	struct test *t1, *t2, *t3;
+	struct test *t1, *t2, *t3, *spare;
 	uint64_t x;
 
 	t1 = kmalloc(sizeof(struct test));
@@ -36,6 +36,9 @@ static void test_0_elements(void)
 	assert(t1 == t2);
 
 	list_for_each(&t1->node, t3, node)
+		assert(false);
+
+	list_for_each_safe(&t1->node, t3, spare, node)
 		assert(false);
 
 	list_del(&t1->node);
@@ -53,7 +56,7 @@ enum list_type {
 static void test_1_element(int type)
 {
 	struct list_node head;
-	struct test *t1, *t2, *t3;
+	struct test *t1, *t2, *t3, *spare;
 
 	list_init(&head);
 	assert(list_empty(&head));
@@ -77,7 +80,13 @@ static void test_1_element(int type)
 	list_for_each(&head, t3, node)
 		assert(t1 == t3);
 
-	list_del(&t2->node);
+	list_for_each_safe(&head, t3, spare, node) {
+		assert(t1 == t3);
+
+		list_del(&t3->node);
+		assert(t1->x == t3->x);
+	}
+
 	assert(t1->x == t2->x);
 	kfree(t2);
 
@@ -89,7 +98,7 @@ static void test_1_element(int type)
 static void test_several_elements(int count, int type)
 {
 	struct list_node head;
-	struct test **t, *te;
+	struct test **t, *te, *spare;
 
 	list_init(&head);
 	assert(list_empty(&head));
@@ -113,8 +122,7 @@ static void test_several_elements(int count, int type)
 	printk("\n");
 
 	/* Then, popup elements as you go */
-	for (int i = 0; i < count; i++) {
-		te = list_entry(head.next, struct test, node);
+	list_for_each_safe(&head, te, spare, node) {
 		printk(" %ld ", te->x);
 		list_del(&te->node);
 		kfree(te);
