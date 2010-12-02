@@ -240,8 +240,10 @@ timer_handler:
 
 	/* Pick the new process to run */
 	call   schedule
-	movq   %rax, %rdi
+	cmpq   current, %rax
+	je     2f
 
+	movq   %rax, %rdi
 	movq   current, %rax
 
 	/* Save scratch regs to current->pcb */
@@ -278,7 +280,8 @@ timer_handler:
 	 *   CPU will implicitly pop those from the new stack.
 	 */
 
-	jmp    irq_end
+2:	jmp    irq_end
+
 
 /*
  * Interrupt handlers stubs ..
