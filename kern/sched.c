@@ -18,10 +18,7 @@
 #include <pit.h>
 #include <vectors.h>
 #include <proc.h>
-#include <segment.h>
-#include <x86.h>
 #include <kmalloc.h>
-#include <string.h>
 #include <sched.h>
 #include <tests.h>
 
@@ -33,7 +30,7 @@ struct proc *current;
 
 /* Our 'runque': check-out anytime, but never leave */
 #define PROC_ARRAY_LEN	150
-static int proc_total = 1;
+static int proc_total;
 static struct proc *proc_arr[PROC_ARRAY_LEN];
 
 /*
@@ -48,55 +45,8 @@ struct proc *schedule(void)
 	return proc_arr[cur_proc];
 }
 
-/*
- * Create a new kernel thread running given
- * function code, and attach it to the runqueue.
- *
- * NOTE! given function must never exit!
- */
-#define STACK_SIZE PAGE_SIZE
-void kthread_create(void (*func)(void))
+void sched_enqueue(struct proc *proc)
 {
-	struct proc *proc;
-	struct irq_ctx *irq_ctx;
-	char *stack;
-
-	proc = kmalloc(sizeof(*proc));
-	proc_init(proc);
-
-	/* A placeholder, for now */
-	proc->pid = 1;
-
-	/* New thread stack, moving down */
-	stack = kmalloc(STACK_SIZE);
-	stack = stack + STACK_SIZE;
-
-	/* Reserve space for our IRQ stack protocol */
-	irq_ctx = (struct irq_ctx *)(stack - sizeof(*irq_ctx));
-	irq_ctx_init(irq_ctx);
-
-	/*
-	 * Values for the code to-be-executed once scheduled.
-	 * They will get popped and used automatically by the
-	 * processor at ticks handler `iretq'.
-	 *
-	 * Set to-be-executed code's %rsp to the top of the
-	 * newly allocated stack since this new code doesn't
-	 * care about the values currently 'pushed'; only
-	 * the ctontext switching code does.
-	 */
-	irq_ctx->cs = KERNEL_CS;
-	irq_ctx->rip = (uintptr_t)func;
-	irq_ctx->ss = 0;
-	irq_ctx->rsp = (uintptr_t)stack;
-	irq_ctx->rflags = default_rflags().raw;
-
-	/* For context switching code, which runs at the
-	 * ticks handler context, give a stack that respects
-	 * our IRQ stack protocol */
-	proc->pcb.rsp = (uintptr_t)irq_ctx;
-
-	/* Push the now completed proc to the 'runqueu' :) */
 	assert(proc_total != PROC_ARRAY_LEN);
 	proc_arr[proc_total++] = proc;
 }
@@ -113,7 +63,7 @@ void sched_init(void)
 	current = kmalloc(sizeof(*current));
 	proc_init(current);
 	current->pid = 0;
-	proc_arr[0] = current;
+	sched_enqueue(current);
 
 	/*
 	 * Setup the timer ticks handler

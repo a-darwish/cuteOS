@@ -15,6 +15,7 @@
 
 #ifndef __ASSEMBLY__
 
+#include <kernel.h>
 #include <stdint.h>
 #include <string.h>
 

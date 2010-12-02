@@ -41,6 +41,7 @@
  *   ocator is more than enough for our purposes so far.
  */
 
+#include <kernel.h>
 #include <stdint.h>
 #include <paging.h>
 #include <tests.h>

@@ -188,6 +188,7 @@ KERN_OBJS =		\
   kern/mptables.o	\
   kern/smpboot.o	\
   kern/sched.o		\
+  kern/kthread.o	\
   kern/common.o		\
   kern/main.o
 

@@ -11,12 +11,15 @@
  *  the Free Software Foundation, version 2.
  */
 
+#include <kernel.h>
 #include <tests.h>
 #include <proc.h>
 
 struct proc *schedule(void);
 
 void sched_init(void);
+void sched_enqueue(struct proc *proc);
+
 void kthread_create(void (*func)(void));
 
 #if	SCHED_TESTS

@@ -13,6 +13,7 @@
  * Please see comments on top of kmalloc.c first ..
  */
 
+#include <kernel.h>
 #include <spinlock.h>
 #include <tests.h>
 

@@ -11,6 +11,7 @@
  *  the Free Software Foundation, version 2.
  */
 
+#include <kernel.h>
 #include <stdint.h>
 #include <tests.h>
 
@@ -32,7 +33,6 @@ int memcmp(const void *s1, const void *s2, uint32_t len);
 #if    STRING_TESTS
 void string_run_tests(void);
 #else
-#include <kernel.h>
 static void __unused string_run_tests(void) { }
 #endif
 
