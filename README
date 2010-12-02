@@ -7,6 +7,12 @@ Cute! is a 64-bit SMP-safe POSIX-compatible kernel for the PC architecture.
 It's 'cute' in the sense of having the source code as simple and fun to
 work with as possible, hopefully without sacrificing performance.
 
+Throughout this project, a huge number of questions were (and are) asked
+to the great people at #osdev. Special thanks to:
+
+	- Brendan Trotter (bcos), <btrotter@gmail.com>, the BCOS project
+	- Travis Geiselbrecht (geist), http://tkgeisel.com
+
 
 * Navigation:
 -------------
@@ -60,6 +66,26 @@ kern/
 	  parsers, IRQ handling, system-wide panic(), etc.
 
 
+* Influences?
+-------------
+
+One of the MAJOR goals of this project is examining the current literature
+of Operating Systems in the process:
+
+
+	- The page allocator is influenced by SVR2 buffer-cache lists,
+	  with tweaks for zoning and PC's sparse physical memory.
+
+	- Dynamic memory allocation uses the McKusick-Karels algorithm
+	  originally found in 4.3-BSD.
+
+	- Overall kernel coding style and APIs are heavily influenced by
+	  Linux-2.6. I used that style in the past, and I love it.
+
+	- The scheduler MLFQ parameters are taken from Solaris, with
+	  influences from the FreeBSD ULE (2.0) scheduler.
+
+
 * Books?
 --------
 
@@ -67,6 +93,9 @@ Beside the datasheets, specifications, and research papers saved
 in our `references' git repository [**], below books proved to be
 tremendously helpful:
 
+
+	- M. Bach: `The Design of the UNIX Operating System', 1986
+	  That book is __perfect__ for understanding the basics.
 
 	- M.K. McKusick and G.V. Neville-Neil: `The Design and
 	  Implementation of the FreeBSD Operating System', 2004
