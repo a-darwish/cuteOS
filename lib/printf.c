@@ -15,6 +15,7 @@
 #include <spinlock.h>
 #include <mmio.h>
 #include <vga.h>
+#include <serial.h>
 #include <tests.h>
 
 /*
@@ -382,12 +383,11 @@ static void vga_write(char *buf, int n, int color)
 
 /*
  * Without any formatting overhead, write a single
- * charactor to screen
- */
-
-/*
+ * charactor to screen.
+ *
  * @color: VGA_COLOR(bg, fg); check vga.h
  */
+
 void putc_colored(char c, int color)
 {
 	vga_write(&c, 1, color);
@@ -399,12 +399,11 @@ void putc(char c)
 }
 
 /*
- * Main kernel print method
+ * Kernel print, for VGA and serial outputs
  */
 
-static char buf[1024];
-static spinlock_t printk_lock = SPIN_UNLOCKED();
-
+static char kbuf[1024];
+static spinlock_t kbuf_lock = SPIN_UNLOCKED();
 void printk(const char *fmt, ...)
 {
 	union x86_rflags flags;
@@ -414,22 +413,47 @@ void printk(const char *fmt, ...)
 	/* NOTE! This will deadlock if the code enclosed
 	 * by this lock triggered exceptions: the default
 	 * exception handlers already call printk() */
-	flags = spin_lock_irqsave(&printk_lock);
+	flags = spin_lock_irqsave(&kbuf_lock);
 
 	va_start(args, fmt);
-	n = vsnprintf(buf, sizeof(buf), fmt, args);
+	n = vsnprintf(kbuf, sizeof(kbuf), fmt, args);
 	va_end(args);
 
-	vga_write(buf, n, VGA_DEFAULT_COLOR);
+	vga_write(kbuf, n, VGA_DEFAULT_COLOR);
 
-	spin_unlock_irqrestore(&printk_lock, flags);
+	spin_unlock_irqrestore(&kbuf_lock, flags);
+}
+
+static char sbuf[1024];
+static spinlock_t sbuf_lock = SPIN_UNLOCKED();
+void prints(const char *fmt, ...)
+{
+	union x86_rflags flags;
+	va_list args;
+	int n;
+
+	flags = spin_lock_irqsave(&sbuf_lock);
+
+	va_start(args, fmt);
+	n = vsnprintf(sbuf, sizeof(sbuf), fmt, args);
+	va_end(args);
+
+	serial_write(sbuf, n);
+
+	spin_unlock_irqrestore(&sbuf_lock, flags);
 }
 
 /*
  * Minimal printk test cases
  */
 
-#if	PRINTK_TESTS
+#if	PRINTK_TESTS || PRINTS_TESTS
+
+#if	PRINTS_TESTS
+#define	printk(fmt, ...)	prints(fmt, ##__VA_ARGS__)
+#define	putc_colored(ch, col)	serial_putc(ch)
+#define	putc(ch)		serial_putc(ch)
+#endif	/* PRINTS_TESTS */
 
 static void printk_test_int(void)
 {
@@ -543,4 +567,4 @@ void printk_run_tests(void)
 	printk_test_colors();
 }
 
-#endif /* PRINTK_TESTS */
+#endif /* (PRINTK_TESTS || PRINTS_TESTS) */

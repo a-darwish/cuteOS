@@ -85,10 +85,11 @@
  */
 int vsnprintf(char *buf, int size, const char *fmt, va_list args);
 void printk(const char *fmt, ...);
+void prints(const char *fmt, ...);
 void putc(char c);
 void putc_colored(char c, int color);
 
-#if	PRINTK_TESTS
+#if	PRINTK_TESTS || PRINTS_TESTS
 void printk_run_tests(void);
 #else
 static void __unused printk_run_tests(void) { }

@@ -163,6 +163,7 @@ MM_OBJS =		\
 # Devices
 DEPS_DIRS		+= $(DEPS_ROOT_DIR)/dev
 DEV_OBJS =		\
+  dev/serial.o		\
   dev/i8259.o		\
   dev/apic.o		\
   dev/ioapic.o		\

@@ -13,6 +13,7 @@
 #include <segment.h>
 #include <idt.h>
 #include <mptables.h>
+#include <serial.h>
 #include <i8259.h>
 #include <pit.h>
 #include <apic.h>
@@ -105,6 +106,7 @@ void __no_return kernel_start(void)
 	 * data before initializing the APICs */
 	mptables_init();
 
+	serial_init();
 	i8259_init();
 
 	/* Initialize the APICs (and map their
