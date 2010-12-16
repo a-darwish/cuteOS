@@ -234,12 +234,12 @@ irq_end:
  *
  * NOTE! Only clobber scratch registers here.
  */
-.globl timer_handler
-timer_handler:
+.globl ticks_handler
+ticks_handler:
 	PUSH_REGS
 
 	/* Pick the new process to run */
-	call   schedule
+	call   sched_tick
 	cmpq   current, %rax
 	je     2f
 

@@ -31,9 +31,6 @@ void kthread_create(void (*func)(void))
 	proc = kmalloc(sizeof(*proc));
 	proc_init(proc);
 
-	/* A placeholder, for now */
-	proc->pid = 1;
-
 	/* New thread stack, moving down */
 	stack = kmalloc(STACK_SIZE);
 	stack = stack + STACK_SIZE;

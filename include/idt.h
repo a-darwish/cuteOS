@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <segment.h>
 #include <paging.h>
+#include <x86.h>
 
 struct idt_gate {
 	uint16_t offset_low;
@@ -135,6 +136,27 @@ static inline void local_irq_enable(void)
 	asm volatile ("sti"
 		      ::
 		      :"cc", "memory");
+}
+
+/*
+ * Disable interrupts, but restore the original %rflags
+ * interrupt enable flag (IF) state afterwards.
+ */
+
+static inline union x86_rflags local_irq_disable_save(void)
+{
+	union x86_rflags flags;
+
+	flags = get_rflags();
+	if (flags.irqs_enabled)
+		local_irq_disable();
+
+	return flags;
+}
+
+static inline void local_irq_restore(union x86_rflags flags)
+{
+	set_rflags(flags);
 }
 
 #endif /* !__ASSEMBLY__ */

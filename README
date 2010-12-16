@@ -65,6 +65,10 @@ kern/
 	- the rest: context switching, thread scheduling, BIOS table
 	  parsers, IRQ handling, system-wide panic(), etc.
 
+tools/
+	- userspace tools: Python-2.6+/3.0+ programs that generate
+	  gnuplot scripts out of the kernel scheduling statistics.
+
 
 * Influences?
 -------------

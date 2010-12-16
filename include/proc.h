@@ -18,6 +18,8 @@
 #include <kernel.h>
 #include <stdint.h>
 #include <string.h>
+#include <list.h>
+#include <sched.h>
 
 /*
  * IRQ 'stack protocol'.
@@ -99,15 +101,38 @@ static inline void pcb_init(struct pcb *pcb)
  */
 struct proc {
 	uint64_t pid;
-	struct pcb pcb;
-	int lock_count;
+	struct pcb pcb;			/* Hardware state (for ctxt switch) */
+	int state;			/* Current process state */
+	struct list_node pnode;		/* for the runqueue lists */
+	clock_t runtime;		/* # ticks running on the CPU */
+	clock_t enter_runqueue_ts;	/* Timestamp runqueue entrance */
+
+	struct {			/* Scheduler statistics .. */
+		clock_t runtime_overall;/* Overall runtime (in ticks) */
+		uint dispatch_count;	/* # got chosen from the runqueue */
+		clock_t rqwait_overall;	/* Overall wait in runqueue (ticks) */
+		clock_t prio_map[MAX_PRIO+1];/* # runtime ticks at priority i */
+		uint preempt_high_prio;	/* cause of a higher-priority thread */
+		uint preempt_slice_end; /* cause of timeslice end */
+	} stats;
 };
+
+enum proc_state {
+	TD_RUNNABLE,			/* In the runqueues, to be dispatched */
+	TD_ONCPU,			/* Currently runnning on the CPU */
+	TD_INVALID,			/* NULL mark */
+};
+
+uint64_t proc_alloc_pid(void);
 
 static inline void proc_init(struct proc *proc)
 {
-	proc->pid = UINT64_MAX;
+	memset(proc, 0, sizeof(struct proc));
+
+	proc->pid = proc_alloc_pid();
 	pcb_init(&proc->pcb);
-	proc->lock_count = 0;
+	proc->state = TD_INVALID;
+	list_init(&proc->pnode);
 }
 
 #endif	/* !_ASSEMBLY */

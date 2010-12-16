@@ -45,15 +45,29 @@
 #define __uninitialized(x)	(x) = (x)
 
 /*
- * Semi type-safe min macro using GNU extensions
+ * Semi type-safe min and max using GNU extensions
  * The type-checking trick is taken from Linux-2.6.
  */
-#define min(x, y)		    \
-({				    \
-        typeof(x) _m1 = (x);	    \
+#define min(x, y) ({		    \
+	typeof(x) _m1 = (x);	    \
 	typeof(y) _m2 = (y);	    \
 	(void) (&_m1 == &_m2);	    \
 	_m1 < _m2 ? _m1 : _m2;	    \
+})
+#define max(x, y) ({		    \
+	typeof(x) _m1 = (x);	    \
+	typeof(y) _m2 = (y);	    \
+	(void) (&_m1 == &_m2);	    \
+	_m1 > _m2 ? _m1 : _m2;	    \
+})
+#define swap(x, y) ({		    \
+	typeof(x) _m1 = (x);	    \
+	typeof(y) _m2 = (y);	    \
+	typeof(x) _m3;		    \
+	(void) (&_m1 == &_m2);	    \
+	_m3 = (x);		    \
+	(x) = (y);		    \
+	(y) = _m3;		    \
 })
 
 #define offsetof(type, elem)	((uint64_t) &((type *) 0)->elem)
@@ -163,5 +177,7 @@ void __unused __undefined_method(void);
 	compiler_assert(__arr_size(arr) <= (uint64_t)INT32_MAX);\
 	(int32_t)__arr_size(arr);				\
 })
+
+void __no_return kernel_start(void);
 
 #endif /* _KERNEL_H */

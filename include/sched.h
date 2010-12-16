@@ -2,7 +2,7 @@
 #define _SCHED_H
 
 /*
- * Scheduler and kernel threads
+ * Thread Scheduling
  *
  * Copyright (C) 2010 Ahmed S. Darwish <darwish.07@gmail.com>
  *
@@ -11,25 +11,26 @@
  *  the Free Software Foundation, version 2.
  */
 
-#include <kernel.h>
 #include <tests.h>
-#include <proc.h>
 
-struct proc *schedule(void);
+/*
+ * Threads priority boundaries
+ */
+#define		MIN_PRIO		0
+#define		MAX_PRIO		19
+
+struct proc;
 
 void sched_init(void);
-void sched_enqueue(struct proc *proc);
+struct proc *sched_tick(void);
 
+void sched_enqueue(struct proc *);
 void kthread_create(void (*func)(void));
 
 #if	SCHED_TESTS
-
 void sched_run_tests(void);
-
 #else
-
 static void __unused sched_run_tests(void) { }
-
 #endif
 
 #endif /* _SCHED_H */

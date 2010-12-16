@@ -26,6 +26,7 @@ typedef unsigned char uint8_t;
 typedef unsigned short int uint16_t;
 typedef unsigned int  uint32_t;
 typedef unsigned long uint64_t;
+typedef uint32_t uint;
 
 /*
  * Integral types large enough to hold any pointer
@@ -34,6 +35,7 @@ typedef signed long int	intptr_t;
 typedef unsigned long int uintptr_t;
 
 typedef uint64_t size_t;
+typedef uint64_t clock_t;
 
 /*
  * MAXs and MINs
