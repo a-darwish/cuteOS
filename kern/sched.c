@@ -28,7 +28,6 @@
  * sound algorithms, I sticked with a strict-fairness design.
  *
  * FIXME: Add SMP support.
- * FIXME: Do not preempt threads holding spin locks!
  * FIXME: Do not preempt threads holding per-cpu variables.
  * FIXME: Get highest queue priority with runnable threads in O(1).
  */
@@ -66,10 +65,12 @@
 	(MIN_PRIO <= (prio) && (prio) <= MAX_PRIO)
 
 /*
- * At any point in time, this refers to the currently
- * running process, and its priority.
+ * At any point in time, this refers to the currently running
+ * process, and its priority. XXX: Make 'current' per-CPU.
+ * 'current' is derefernced everywhere, it must never be NULL.
  */
-struct proc *current;
+static struct proc swapper;
+struct proc *current = &swapper;
 static int current_prio;
 
 /*
@@ -378,7 +379,6 @@ void sched_init(void)
 	pcb_validate_offsets();
 
 	/* Let current code path be a schedulable entity */
-	current = kmalloc(sizeof(*current));
 	proc_init(current);
 	current->state = TD_ONCPU;
 	current_prio = DEFAULT_PRIO;

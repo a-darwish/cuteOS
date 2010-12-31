@@ -339,7 +339,6 @@ static void vga_scrollup(int color) {
  */
 static void vga_write(char *buf, int n, int color)
 {
-	union x86_rflags flags;
 	int max_xpos = VGA_MAXCOLS;
 	int max_ypos = VGA_MAXROWS;
 	int old_xpos, old_ypos;
@@ -348,7 +347,7 @@ static void vga_write(char *buf, int n, int color)
 	/* NOTE! This will deadlock if the code enclosed
 	 * by this lock triggered exceptions: the default
 	 * exception handlers implicitly call vga_write() */
-	flags = spin_lock_irqsave(&vga_lock);
+	spin_lock(&vga_lock);
 
 	old_xpos = vga_xpos;
 	old_ypos = vga_ypos;
@@ -378,7 +377,7 @@ static void vga_write(char *buf, int n, int color)
 	area = 2 * ((vga_ypos - old_ypos) * max_xpos + vga_xpos);
 	memcpy_nocheck(VGA_BASE + offset, vga_buffer + offset, area);
 
-	spin_unlock_irqrestore(&vga_lock, flags);
+	spin_unlock(&vga_lock);
 }
 
 /*
@@ -406,14 +405,13 @@ static char kbuf[1024];
 static spinlock_t kbuf_lock = SPIN_UNLOCKED();
 void printk(const char *fmt, ...)
 {
-	union x86_rflags flags;
 	va_list args;
 	int n;
 
 	/* NOTE! This will deadlock if the code enclosed
 	 * by this lock triggered exceptions: the default
 	 * exception handlers already call printk() */
-	flags = spin_lock_irqsave(&kbuf_lock);
+	spin_lock(&kbuf_lock);
 
 	va_start(args, fmt);
 	n = vsnprintf(kbuf, sizeof(kbuf), fmt, args);
@@ -421,18 +419,17 @@ void printk(const char *fmt, ...)
 
 	vga_write(kbuf, n, VGA_DEFAULT_COLOR);
 
-	spin_unlock_irqrestore(&kbuf_lock, flags);
+	spin_unlock(&kbuf_lock);
 }
 
 static char sbuf[1024];
 static spinlock_t sbuf_lock = SPIN_UNLOCKED();
 void prints(const char *fmt, ...)
 {
-	union x86_rflags flags;
 	va_list args;
 	int n;
 
-	flags = spin_lock_irqsave(&sbuf_lock);
+	spin_lock(&sbuf_lock);
 
 	va_start(args, fmt);
 	n = vsnprintf(sbuf, sizeof(sbuf), fmt, args);
@@ -440,7 +437,7 @@ void prints(const char *fmt, ...)
 
 	serial_write(sbuf, n);
 
-	spin_unlock_irqrestore(&sbuf_lock, flags);
+	spin_unlock(&sbuf_lock);
 }
 
 /*

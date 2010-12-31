@@ -14,19 +14,24 @@
 #include <stdint.h>
 #include <x86.h>
 
-typedef int32_t spinlock_t;
+/*
+ * Careful! Spinlocks, ironically enough, are globals and thus
+ * must be themselves protected against concurrent SMP access.
+ */
+typedef struct lock_spin {
+	uint32_t val;
+} spinlock_t;
 
-#define SPIN_UNLOCKED()		((spinlock_t) 1)
+#define _SPIN_LOCKED		1
+#define _SPIN_UNLOCKED		0
 
-static inline void spin_init(spinlock_t *lock)
-{
-	*lock = 1;
-}
+#define SPIN_UNLOCKED()			\
+	{				\
+		.val = _SPIN_UNLOCKED,	\
+	};
 
+void spin_init(spinlock_t *lock);
 void spin_lock(spinlock_t *lock);
 void spin_unlock(spinlock_t *lock);
-
-union x86_rflags spin_lock_irqsave(spinlock_t *lock);
-void spin_unlock_irqrestore(spinlock_t *lock, union x86_rflags flags);
 
 #endif /* _SPINLOCK_H */

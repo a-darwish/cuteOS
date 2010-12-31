@@ -20,6 +20,7 @@
 #include <string.h>
 #include <list.h>
 #include <sched.h>
+#include <x86.h>
 
 /*
  * IRQ 'stack protocol'.
@@ -107,6 +108,14 @@ struct proc {
 	clock_t runtime;		/* # ticks running on the CPU */
 	clock_t enter_runqueue_ts;	/* Timestamp runqueue entrance */
 
+	/*
+	 * Track number of spinlocks acquired: enable IRQs, while
+	 * spinning, only if zero locks are already held. XXX: Save
+	 * space by making these per-CPU instead.
+	 */
+	int spinlock_count;
+	union x86_rflags rflags;	/* Original state before IRQ disable */
+
 	struct {			/* Scheduler statistics .. */
 		clock_t runtime_overall;/* Overall runtime (in ticks) */
 		uint dispatch_count;	/* # got chosen from the runqueue */
@@ -134,6 +143,8 @@ static inline void proc_init(struct proc *proc)
 	proc->state = TD_INVALID;
 	list_init(&proc->pnode);
 }
+
+extern struct proc *current;
 
 #endif	/* !_ASSEMBLY */
 

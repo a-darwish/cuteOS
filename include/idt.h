@@ -156,7 +156,8 @@ static inline union x86_rflags local_irq_disable_save(void)
 
 static inline void local_irq_restore(union x86_rflags flags)
 {
-	set_rflags(flags);
+	if (flags.irqs_enabled)
+		set_rflags(flags);
 }
 
 #endif /* !__ASSEMBLY__ */

@@ -203,7 +203,7 @@ void *kmalloc_asm(int size)
 void kmalloc_init(void)
 {
 	for (int i = 0; i <= MAXBUCKET_IDX; i++)
-		kmembuckets[i].lock = SPIN_UNLOCKED();
+		spin_init(&kmembuckets[i].lock);
 }
 
 /*

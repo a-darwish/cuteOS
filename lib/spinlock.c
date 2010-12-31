@@ -1,14 +1,13 @@
 /*
  * SMP spinlocks
  *
- * Copyright (C) 2009 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2009-2011 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
  *
- * Textbook spinlocks: a value of one indicates the lock is available.
- * The more negative the value of the lock, the more lock contention.
+ * Textbook locks: Allow only one code path in the critical region.
  *
  * The LOCK prefix insures that a read-modify-write operation on memory
  * is carried out atomically. While the LOCK# signal is asserted,
@@ -18,98 +17,115 @@
  * If the area of memory being locked is cached in the processor and is
  * completely contained in a cache line, the CPU may not assert LOCK# on
  * the bus. Instead, it will modify the location internally and depend
- * on the "cache locking" feature of the cache coherency mechanism.
+ * on the “cache locking” feature of the x86 cache coherency mechanism.
  *
- * During "cache locking", the cache coherency mechanism automatically
- * prevents two or more cores that have cached the same area of memory
- * from simultaneously modifying data in that area (cache line).
+ * During cache locking, cache coherency prevents two or more cores that
+ * have cached the same area of memory from simultaneously moifying data
+ * in that area (cache line).
+ *
+ * NOTE1: Always use x86 'pause' for busy-wait loops, check cpu_pause()
+ * [kernel.h] for rationale; it's is an agnostic REP NOP for old cores.
+ *
+ * Please check the “Intel 64 and IA-32 Optimization Reference Manual”,
+ * Chapter 8: Multicore and Hyper-Threading Tech, for further details.
+ *
+ * NOTE2: Without caution, it's possible to interrupt the very core
+ * holding a lock: the irq handler may busy-loop waiting for the core
+ * to release its lock, but the core is already interrupted and can't
+ * release such lock till the irq handler finishes [deadlock]. Thus,
+ * _local_ interrupts are disabled before holding ANY locks.
+ *
+ * Not to halt the system in the unfortunate state of lock contention,
+ * if IRQs were originally on, we re-enable them while spinning.
+ *
+ * NOTE3: An intentional byproduct of disabling IRQs at lock entrance
+ * is disabling kernel preemption in all critical regions. This is a
+ * necessity:
+ * a) If a thread holding a spin lock got preempted, it will let a
+ *    possibly huge number of other threads consume their entire time
+ *    slice (which is in the order of milliseconds) just spinning!
+ * b) If that preempted thread (which is now in the scheduler runqueue)
+ *    got killed, we can deadlock the entire system!
+ *
+ * This spin design is closer, in spirit, to FreeBSD rather than Linux.
+ * Upon lock entrance, the latter only disables preemption by default.
  */
 
+#include <kernel.h>
 #include <stdint.h>
 #include <spinlock.h>
 #include <idt.h>
-#include <x86.h>
+#include <proc.h>
 
 /*
- * Always try to acquire (decrement) the lock while LOCK# is asserted.
- * Should the decrement result be negative, busy loop till the lock is
- * marked by its owner as free (positive). Several cores might have
- * observed this free state, let each one try to reacquire (decrement)
- * the lock again under LOCK#: only one CPU will be able to see the
- * positive value and win. Others will re-enter the busy-loop state.
- *
- * Intel recommends the use of the 'pause' instruction in busy wait
- * loops: it serves as a hint to the CPU to avoid memory order
- * violations and to reduce power usage in the busy loop state. It's
- * an agnostic REP NOP for older cores.
- *
- * NOTE! To avoid deadlocks, do not use this in any code that may get
- * invoked in an irq context, see spin_lock_irqsave().
+ * _SPIN_UNLOCKED = 0, _SPIN_LOCKED = 1
  */
-void spin_lock(spinlock_t *lock)
+
+/*
+ * Atomically execute the following code:
+ *	old = *val & 0x1; *val |= 0x1;
+ *	return old;
+ */
+static uint8_t atomic_bit_test_and_set(uint32_t *val)
 {
+	uint8_t ret;
+
 	asm volatile (
-		"1: \n"
-		"lock decl %0;"		/* rflags */
-		"jns 3f;"
-
-		"2: \n"
-		"pause;"
-		"cmpl $0, %0;"		/* rflags */
-		"jle 2b;"
-
-		"jmp 1b;"
-
-		"3: \n"
-		: "+m"(*lock)
+		"LOCK bts $0, %0;"
+		"     setc    %1;"
+		: "+m" (*val), "=qm" (ret)
 		:
 		: "cc", "memory");
+
+	return ret;
+}
+
+void spin_init(struct lock_spin *lock)
+{
+	lock->val = _SPIN_UNLOCKED;
+}
+
+/*
+ * Always try to acquire the lock while LOCK# is asserted. Shoud the
+ * lock be already acquired, busy loop till that lock is marked by its
+ * owner as free. Several cores might have observed that free state,
+ * let each one try to reacquire the lock again under LOCK#: only _one_
+ * CPU will see the lock free state again and win. Others will just
+ * re-enter the busy-wait state.
+ *
+ * This intentionally minimizes accessing data while LOCK# is asserted.
+ *
+ * XXX: spinlock_count get dereferenced twice in each iteration cause
+ * of the cpu_pause memory barrier. Should we manually cache it away?
+ */
+void spin_lock(struct lock_spin *lock)
+{
+	if (current->spinlock_count == 0)
+		current->rflags = local_irq_disable_save();
+
+	while (atomic_bit_test_and_set(&lock->val) == _SPIN_LOCKED) {
+		if (current->spinlock_count == 0)
+			local_irq_restore(current->rflags);
+
+		while (lock->val == _SPIN_LOCKED)
+			cpu_pause();
+
+		if (current->spinlock_count == 0)
+			local_irq_disable();
+	}
+
+	current->spinlock_count++;
 }
 
 /*
  * Mark the lock as available
  */
-void spin_unlock(spinlock_t *lock)
+void spin_unlock(struct lock_spin *lock)
 {
-	asm volatile (
-		"movl $1, %0;"
-		: "=m"(*lock)
-		:
-		: "memory");
-}
+	barrier();
+	lock->val = _SPIN_UNLOCKED;
 
-/*
- * Spinlocks for code which can be called in irq handlers.
- *
- * Using regular spinlocks, it's possible to interrupt the very core
- * holding the lock: the irq handler will busy-loop waiting for the
- * core to release the lock, but the core is already interrupted and
- * can't release the lock till the irq handler finishes [deadlock].
- *
- * Disabling local interrupts before holding the lock is enough: it's
- * ok if another core's interrupt handler tries to acquire the lock.
- *
- * FIXME: Performance: if irqs are enabled in %rflags, we should re-
- * enable them temporarily while spinning.
- */
-union x86_rflags spin_lock_irqsave(spinlock_t *lock)
-{
-	union x86_rflags flags;
-
-	flags = get_rflags();
-	if (flags.irqs_enabled)
-		local_irq_disable();
-
-	spin_lock(lock);
-
-	return flags;
-}
-
-/*
- * Restore irqs state after lock release.
- */
-void spin_unlock_irqrestore(spinlock_t *lock, union x86_rflags flags)
-{
-	spin_unlock(lock);
-	set_rflags(flags);
+	current->spinlock_count--;
+	if (current->spinlock_count == 0)
+		local_irq_restore(current->rflags);
 }

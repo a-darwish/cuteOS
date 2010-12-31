@@ -274,13 +274,12 @@ static int __putc(uint8_t byte)
 
 void serial_write(const char *buf, int len)
 {
-	union x86_rflags flags;
 	int ret;
 
 	if (port_base == 0)
 		return;
 
-	flags = spin_lock_irqsave(&port_lock);
+	spin_lock(&port_lock);
 
 	if (port_is_broken)
 		goto out;
@@ -289,7 +288,7 @@ void serial_write(const char *buf, int len)
 	while (*buf && len-- && ret == 0)
 		ret = __putc(*buf++);
 
-out:	spin_unlock_irqrestore(&port_lock, flags);
+out:	spin_unlock(&port_lock);
 }
 
 void serial_putc(char ch)
