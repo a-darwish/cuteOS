@@ -52,6 +52,7 @@
  */
 
 #include <kernel.h>
+#include <percpu.h>
 #include <stdint.h>
 #include <spinlock.h>
 #include <idt.h>

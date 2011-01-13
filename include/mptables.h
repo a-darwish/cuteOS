@@ -169,7 +169,7 @@ extern int nr_mpcirqs;
 extern struct mpc_irq mp_irqs[];
 
 void mptables_init(void);
-int mptables_get_nr_cpus(void);
+int __pure_const mptables_get_nr_cpus(void);
 
 /*
  * Dump tables in case of critical errors

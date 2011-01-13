@@ -28,8 +28,10 @@
 #define SMPBOOT_GDTR		(SMPBOOT_IDTR + 10)
 #define SMPBOOT_GDTR_LIMIT	(SMPBOOT_GDTR)
 #define SMPBOOT_GDTR_BASE	(SMPBOOT_GDTR_LIMIT + 2)
+#define SMPBOOT_STACK_PTR	(SMPBOOT_GDTR + 10)
+#define SMPBOOT_PERCPU_PTR	(SMPBOOT_STACK_PTR + 8)
 
-#define SMPBOOT_PARAMS_END	(SMPBOOT_PARAMS + SMPBOOT_GDTR_BASE + 8)
+#define SMPBOOT_PARAMS_END	(SMPBOOT_PARAMS + SMPBOOT_PERCPU_PTR + 8)
 #define SMPBOOT_PARAMS_SIZE	(SMPBOOT_PARAMS_END - SMPBOOT_PARAMS)
 
 #ifndef __ASSEMBLY__
@@ -41,19 +43,8 @@
 #define TRAMPOLINE_START	VIRTUAL(SMPBOOT_START)
 #define TRAMPOLINE_PARAMS	VIRTUAL(SMPBOOT_PARAMS)
 
-/*
- * CPU Descriptors
- */
-
-struct cpu {
-	int apic_id;			/* local APIC ID */
-	int bootstrap;			/* bootstrap core? */
-};
-
-#define CPUS_MAX		64
-extern struct cpu cpus[CPUS_MAX];
-
 void smpboot_init(void);
+void __no_return secondary_start(void);	/* Silence-out GCC */
 
 #endif /* !__ASSEMBLY__ */
 

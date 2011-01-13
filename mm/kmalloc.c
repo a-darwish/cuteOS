@@ -189,17 +189,6 @@ void kfree(void *addr)
 	spin_unlock(&bucket->lock);
 }
 
-/*
- * Provide kmalloc() as an x86-64 ABI-conforming method.
- *
- * The standard kmalloc() is only a C macro, making its
- * services unreachable to assembly code.
- */
-void *kmalloc_asm(int size)
-{
-	return kmalloc(size);
-}
-
 void kmalloc_init(void)
 {
 	for (int i = 0; i <= MAXBUCKET_IDX; i++)

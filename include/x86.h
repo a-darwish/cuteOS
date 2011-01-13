@@ -11,8 +11,14 @@
  *  the Free Software Foundation, version 2.
  */
 
+#define MSR_FS_BASE	0xC0000100
+#define MSR_GS_BASE	0xC0000101
+
+#ifndef __ASSEMBLY__
+
 #include <kernel.h>
 #include <stdint.h>
+#include <msr.h>
 
 union x86_rflags {
 	uint64_t raw;
@@ -79,4 +85,20 @@ static inline union x86_rflags default_rflags(void)
 	return flags;
 }
 
+/*
+ * The given FS.base and GS.base values must be in canonical
+ * form or a general-protection (#GP) exception will occur.
+ */
+
+static inline void set_fs(uint64_t val)
+{
+	write_msr(MSR_FS_BASE, val);
+}
+
+static inline void set_gs(uint64_t val)
+{
+	write_msr(MSR_GS_BASE, val);
+}
+
+#endif /* !__ASSEMBLY__ */
 #endif /* _X86_H */

@@ -21,7 +21,6 @@
  *
  * NOTE! given function must never exit!
  */
-#define STACK_SIZE PAGE_SIZE
 void kthread_create(void (*func)(void))
 {
 	struct proc *proc;

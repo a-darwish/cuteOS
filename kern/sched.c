@@ -28,11 +28,11 @@
  * sound algorithms, I sticked with a strict-fairness design.
  *
  * FIXME: Add SMP support.
- * FIXME: Do not preempt threads holding per-cpu variables.
  * FIXME: Get highest queue priority with runnable threads in O(1).
  */
 
 #include <kernel.h>
+#include <percpu.h>
 #include <list.h>
 #include <serial.h>
 #include <idt.h>
@@ -65,12 +65,10 @@
 	(MIN_PRIO <= (prio) && (prio) <= MAX_PRIO)
 
 /*
- * At any point in time, this refers to the currently running
- * process, and its priority. XXX: Make 'current' per-CPU.
- * 'current' is derefernced everywhere, it must never be NULL.
+ * Statically allocate the booting-thread descriptor: ‘current’
+ * must be available in all contexts, including early boot.
  */
-static struct proc swapper;
-struct proc *current = &swapper;
+struct proc swapper;
 static int current_prio;
 
 /*

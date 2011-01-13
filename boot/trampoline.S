@@ -1,7 +1,7 @@
 /*
  * SMP trampoline
  *
- * Copyright (C) 2009 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2009-2011 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@
 #include <smpboot.h>
 #include <segment.h>
 #include <paging.h>
+#include <x86.h>
 
 .code16
 
@@ -130,42 +131,43 @@ startup_64:
 	movw   %ax, %es
 	movw   %ax, %fs
 	movw   %ax, %gs
-
-	/* Setup the stack */
 	movw   %ax, %ss
-	movq   $trampoline_stack, %rsp
 
-	/* As in head.S, setup -2GB virtual mappings */
+	/* As in head.S, setup temporary -2GB virtual mappings */
 	movq   $(identity_pml3 + 0x007), (identity_pml4 + 511 * 8)
 	movq   $(init_pml2 + 0x007), (identity_pml3 + 510 * 8)
 
-	/* Virtualize %rip and %rsp */
-	addq   $KTEXT_PAGE_OFFSET, %rsp
+	/* Virtualize %rip */
 	movq   $KTEXT_VIRTUAL(SMPBOOT_START + (1f - trampoline)), %rax
 	jmpq   *%rax
 
 1:
-
 	movq   $SMPBOOT_PARAMS, %rdi
 
-	/* Passed table bases are already virtual! */
+	/* All passed addreses are in VIRTUAL() form */
 	lidt   SMPBOOT_IDTR(%rdi)
 	lgdt   SMPBOOT_GDTR(%rdi)
+	movq   SMPBOOT_STACK_PTR(%rdi), %rsp
+	movq   SMPBOOT_PERCPU_PTR(%rdi), %rdx
 
 	/* We're no longer physical addresses dependent, use
 	 * BSC's page tables which have no identity maps */
 	movq   SMPBOOT_CR3(%rdi), %rax
 	movq   %rax, %cr3
 
-	/* The x86-64 ABI mandates a cleared direction flag
-	 * upon C functions entry; let it be */
+	/*
+	 * Three pre-requisites to enter kernel C code:
+	 * - A unique stack (done above)
+	 * - A cleared direction flag (x86-64 ABI mandate)
+	 * - %gs set to our unique per-CPU area
+	 */
+
 	cld
 
-	/* Well, C code also expects a stack :) */
-	movq   $PAGE_SIZE, %rdi
-	movq   $kmalloc_asm, %rax
-	callq  *%rax
-	leaq   PAGE_SIZE(%rax), %rsp
+	movl   $MSR_GS_BASE,%ecx
+	movl   %edx, %eax
+	shrq   $32, %rdx
+	wrmsr
 
 	/* Jump to AP cores init code; we're done */
 	movq   $secondary_start, %rax
@@ -207,11 +209,7 @@ trampoline_end:
 /*
  * Artificial BSS section: nothing copied to SMPBOOT_START
  * vector after trampoline_end
- */
-
-.equ	trampoline_stack, SMPBOOT_START + PAGE_SIZE
-
-/*
+ *
  * Mandatorily 4K-aligned Page Tables resides after the
  * first trampoline page.
  */

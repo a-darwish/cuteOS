@@ -1,7 +1,7 @@
 /*
  * Multiple-Processor (MP) Initialization
  *
- * Copyright (C) 2009-2010 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2009-2011 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -16,6 +16,9 @@
 #include <idt.h>
 #include <pit.h>
 #include <mptables.h>
+#include <proc.h>
+#include <percpu.h>
+#include <kmalloc.h>
 
 /*
  * Assembly trampoline code start and end pointers
@@ -30,6 +33,10 @@ struct smpboot_params {
 	uintptr_t cr3;
 	struct idt_descriptor idtr;
 	struct gdt_descriptor gdtr;
+
+	/* Unique values for each core */
+	char *stack_ptr;
+	void *percpu_area_ptr;
 } __packed;
 
 /*
@@ -63,16 +70,15 @@ static inline void smpboot_params_validate_offsets(void)
 	       offsetof(struct smpboot_params, gdtr) +
 	       offsetof(struct gdt_descriptor, base));
 
+	compiler_assert(SMPBOOT_STACK_PTR ==
+	       offsetof(struct smpboot_params, stack_ptr));
+
+	compiler_assert(SMPBOOT_PERCPU_PTR ==
+	       offsetof(struct smpboot_params, percpu_area_ptr));
+
 	compiler_assert(SMPBOOT_PARAMS_SIZE ==
 	       sizeof(struct smpboot_params));
 }
-
-/*
- * CPU Descriptors Table
- *
- * Data is gathered from MP or ACPI MADT tables.
- */
-struct cpu cpus[CPUS_MAX];
 
 /*
  * Number of active CPUs so far: BSC + SIPI-started AP
@@ -121,12 +127,31 @@ static inline void send_startup_ipi(int apic_id, uint32_t start_vector)
  * FIXME: 200 micro-second delay between the SIPIs
  * FIXME: fine-grained timeouts using micro-seconds
  */
-static int start_secondary_cpu(int apic_id)
+static int start_secondary_cpu(struct percpu *cpu, struct smpboot_params *params)
 {
-	int count, acked, timeout;
+	int count, acked, timeout, apic_id;
 
 	barrier();
 	count = nr_alive_cpus;
+	apic_id = cpu->apic_id;
+
+	/*
+	 * Personally allocate a 'current' thread descriptor and a stack
+	 * for given CPU. It can't do this by itself since kmalloc() uses
+	 * lots of spinlocks, which needs a 'current' descriptor, which
+	 * also needs an already setup per-CPU area.
+	 *
+	 * We've statically allocated such structures for the boot core.
+	 */
+
+	cpu->__current = kmalloc(sizeof(struct proc));
+	proc_init(cpu->__current);
+
+	params->stack_ptr = kmalloc(STACK_SIZE);
+	params->stack_ptr += STACK_SIZE;
+	params->percpu_area_ptr = cpu;
+
+	memcpy(TRAMPOLINE_PARAMS, params, sizeof(*params));
 
 	/* INIT: wakeup the core from its deep (IF=0)
 	 * halted state and let it wait for the SIPIs */
@@ -134,7 +159,7 @@ static int start_secondary_cpu(int apic_id)
 	acked = apic_ipi_acked();
 	if (!acked) {
 		printk("SMP: Failed to deliver INIT to CPU#%d\n", apic_id);
-		return 1;
+		goto fail;
 	}
 
 	pit_mdelay(10);
@@ -150,7 +175,7 @@ static int start_secondary_cpu(int apic_id)
 
 		if (j == MAX_SIPI_RETRY) {
 			printk("SMP: Giving-up SIPI delivery\n");
-			return 1;
+			goto fail;
 		}
 
 		printk("SMP: Retrying SIPI delivery\n");
@@ -166,16 +191,29 @@ static int start_secondary_cpu(int apic_id)
 	if (timeout == -1) {
 		printk("SMP: Timeout waiting for CPU#%d to start\n",
 		       apic_id);
-		return 1;
+		goto fail;
 	}
 
 	return 0;
+
+fail:
+	kfree(cpu->__current);
+	kfree(params->stack_ptr - STACK_SIZE);
+	return 1;
 }
 
 /*
+ * @cpu: iterator of type ‘struct percpu *’.
+ */
+#define for_all_cpus(cpu)			\
+	for (cpu = &cpus[0]; cpu != &cpus[mptables_get_nr_cpus()]; cpu++)
+#define for_all_cpus_except_bootstrap(cpu)	\
+	for (cpu = &cpus[1]; cpu != &cpus[mptables_get_nr_cpus()]; cpu++)
+
+/*
  * AP cores C code entry. We come here from the trampoline,
- * which has assigned bootstrap's gdt, idt, and page tables
- * to that core.
+ * which has assigned us a unique stack, a per-CPU area, and
+ * bootstrap's gdt, idt, and page tables.
  */
 void __no_return secondary_start(void)
 {
@@ -192,30 +230,28 @@ void __no_return secondary_start(void)
 
 void smpboot_init(void)
 {
-	int res, nr_cpus, apic_id;
-	struct smpboot_params params;
+	int nr_cpus;
+	struct smpboot_params *params;
+	struct percpu *cpu;
 
 	smpboot_params_validate_offsets();
 
-	params.cr3 = get_cr3();
-	params.idtr = get_idt();
-	params.gdtr = get_gdt();
-
-	memcpy(TRAMPOLINE_START, trampoline, trampoline_end - trampoline);
-	memcpy(TRAMPOLINE_PARAMS, &params, sizeof(params));
+	params = kmalloc(sizeof(*params));
+	params->cr3 = get_cr3();
+	params->idtr = get_idt();
+	params->gdtr = get_gdt();
 
 	nr_cpus = mptables_get_nr_cpus();
-	printk("SMP: %d usable CPUs found\n", nr_cpus);
+	printk("SMP: %d usable CPU(s) found\n", nr_cpus);
 
-	for (int i = 0; i < nr_cpus; i++) {
-		if (cpus[i].bootstrap)
-			continue;
+	memcpy(TRAMPOLINE_START, trampoline, trampoline_end - trampoline);
 
-		apic_id = cpus[i].apic_id;
-		res = start_secondary_cpu(apic_id);
-		if (res)
-			panic("Could not start-up all AP cores\n");
+	for_all_cpus_except_bootstrap(cpu) {
+		if (start_secondary_cpu(cpu, params))
+			panic("SMP: Could not start-up all AP cores\n");
 	}
+
+	kfree(params);
 
 	barrier();
 	assert(nr_alive_cpus == nr_cpus);

@@ -21,9 +21,15 @@
  * "asm volatile" where gcc won't optimize it away.
  *
  * GCC manual notes that "even a volatile asm instruction can be moved
- * relative to other code, including across jump instructions": another
- * reason to use the barrier. Parameters are casted to volatile to assert
- * it's safe to pass a pointer to a volatile object to those accessors.
+ * relative to other code, including across jump instructions". Thus, we
+ * explicitly inform GCC about the memory addresses read from and written
+ * to (in the constraints), so it does not reorder data-dependent ops.
+ *
+ * Constraints are volatile-casted to assert safety of passing a pointer
+ * to volatile memory in those accessors, and as a second marker to GCC
+ * not to let it cache the result in regs (a conformant compiler does not
+ * cache a volatile memory value in regs). For other interesting details
+ * on GCC optimizations, see our percpu_get()/set() comments @ 'percpu.h'.
  *
  * Finally, using those accessors won't clutter the top codebase with
  * volatiles, and will make it explicit we're accessing MMIO.

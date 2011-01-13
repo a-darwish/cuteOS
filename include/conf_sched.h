@@ -19,7 +19,7 @@
 /*
  * COM1: print scheduling statistics?
  */
-#define		SCHED_STATS		1
+#define		SCHED_STATS		0
 
 /*
  * COM1: print stats (if enabled) each @SCHED_STATS_RATE ticks.

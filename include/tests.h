@@ -21,6 +21,7 @@
 #define		PIT_TESTS		0	/* PIT timer tests */
 #define		APIC_TESTS		0	/* Local APIC timer and IPI */
 #define		SCHED_TESTS		0	/* Scheduler tests */
+#define		PERCPU_TESTS		0	/* Per-CPU Data Area tests */
 
 
 #if	(SCHED_TESTS == 1) && (PIT_TESTS == 1)

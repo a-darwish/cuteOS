@@ -27,6 +27,9 @@
  * GCC extensions shorthands
  */
 
+#define __aligned(val)	__attribute__((aligned(val)))
+#define __pure		__attribute__((pure))
+#define __pure_const	__attribute__((const))
 #define __packed	__attribute__((packed))
 #define __unused	__attribute__((__unused__))
 #define __used		__attribute__((__used__))

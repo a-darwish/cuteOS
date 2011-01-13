@@ -23,14 +23,31 @@
 #include <apic.h>
 #include <ioapic.h>
 #include <smpboot.h>
+#include <percpu.h>
+#include <proc.h>
 
 /*
- * Usable cores count
+ * BIOS-reported usable cores count
  *
  * The BIOS knows if a core is usable by checking its
  * Builtin-self-test (BIST) result in %rax after RESET#
  */
-static int nr_cpus;
+static int nr_cpus = 1;
+
+/*
+ * CPU Descriptors Table
+ *
+ * Data is gathered from MP or ACPI MADT tables.
+ *
+ * To make '__current' available to early boot code, it's statically
+ * allocated in the first slot. Thus, slot 0 is reserved for the BSC.
+ */
+extern struct proc swapper;
+struct percpu cpus[CPUS_MAX] = {
+	[0] = {
+		.__current = &swapper,
+	},
+};
 
 /*
  * Parsed MP configuration table entries data to be exported
@@ -189,15 +206,25 @@ static void mpc_dump(struct mpc_table *mpc)
 static void parse_cpu(void *addr)
 {
 	struct mpc_cpu *cpu = addr;
+	static bool bsc_entry_filled;
 
 	if (!cpu->enabled)
 		return;
+
+	if (cpu->bsc) {
+		if (bsc_entry_filled)
+			panic("Two `bootstrap' cores in the MP tables! "
+			      "Either the BIOS or our parser is buggy.");
+
+		cpus[0].apic_id = cpu->lapic_id;
+		bsc_entry_filled = 1;
+		return;
+	}
 
 	if (nr_cpus >= CPUS_MAX)
 		panic("Only %d logical CPU cores supported\n", nr_cpus);
 
 	cpus[nr_cpus].apic_id = cpu->lapic_id;
-	cpus[nr_cpus].bootstrap = cpu->bsc;
 
 	++nr_cpus;
 }
@@ -285,7 +312,7 @@ static int parse_mpc(struct mpc_table *mpc)
 	return 1;
 }
 
-int mptables_get_nr_cpus(void)
+int __pure_const mptables_get_nr_cpus(void)
 {
 	assert(nr_cpus > 0);
 

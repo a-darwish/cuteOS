@@ -33,6 +33,7 @@
 #include <apic.h>
 #include <proc.h>
 #include <tests.h>
+#include <percpu.h>
 
 .code64
 .text

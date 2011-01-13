@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2009-2011 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@
 #include <paging.h>
 #include <kmalloc.h>
 #include <sched.h>
+#include <percpu.h>
 
 static void setup_idt(void)
 {
@@ -35,12 +36,6 @@ static void setup_idt(void)
 	load_idt(&idtdesc);
 }
 
-/*
- * Zero bss section; As said by C99: "All objects with static
- * storage duration shall be initialized before program
- * startup", and that implicit initialization is done with
- * zero. Also kernel assembly code assumes a zeroed bss space
- */
 static void clear_bss(void)
 {
 	memset(__bss_start , 0, __bss_end - __bss_start);
@@ -80,52 +75,75 @@ static void run_test_cases(void)
 }
 
 /*
- * Bootstrap-CPU start
+ * Bootstrap-CPU start; we came from head.S
  */
 void __no_return kernel_start(void)
 {
-	/* Before anything else */
+	/* Before anything else, zero the bss section. As said by C99:
+	 * “All objects with static storage duration shall be inited
+	 * before program startup”, and that the implicit init is done
+	 * with zero. Kernel assembly code also assumes a zeroed BSS
+	 * space */
 	clear_bss();
+
+	/*
+	 * Very-early setup: Do not call any code that will use
+	 * printk(), `current', per-CPU vars, or a spin lock.
+	 */
 
 	setup_idt();
 
+	set_gs(BOOTSTRAP_PERCPU_AREA);
+
+	/*
+	 * Memory Management init
+	 */
+
 	print_info();
 
+	/* First, discover our physical memory map */
 	e820_init();
+
+	/* Then tokenize that physical memory into allocatable pages */
 	pagealloc_init();
 
-	/* Now git rid of our boot page tables
-	 * and setup dynamic permanent ones */
+	/* With the page allocator in place, git rid of our temporary
+	 * early-boot page tables and setup dynamic permanent ones */
 	vm_init();
 
-	/* Enable dynamic heap memory management
-	 * to kernel services early on .. */
+	/* MM basics done, enable dynamic heap memory to kernel code
+	 * early on .. */
 	kmalloc_init();
 
-	/* Parse the MP tables for needed IRQs
-	 * data before initializing the APICs */
+	/*
+	 * Secondary-CPUs startup
+	 */
+
+	/* Discover our secondary-CPUs and system IRQs layout before
+	 * initializing the local APICs */
 	mptables_init();
 
+	/* Remap and mask the PIC; it's just a disturbance */
 	serial_init();
 	i8259_init();
 
-	/* Initialize the APICs (and map their
-	 * MMIO regs) before enabling IRQs, and
-	 * before firing other cores using IPI */
+	/* Initialize the APICs (and map their MMIO regs) before enabling
+	 * IRQs, and before firing other cores using Inter-CPU Interrupts */
 	apic_init();
 	ioapic_init();
 
+	/* SMP infrastructure ready, fire the CPUs! */
 	smpboot_init();
-	sched_init();
 
 	keyboard_init();
 
-	/* Enable interrupts before running the
-	 * test cases */
+	/*
+	 * Startup finished, roll-in the scheduler!
+	 */
+
+	sched_init();
 	local_irq_enable();
 
-	/* Testcases, if compiled */
 	run_test_cases();
-
 	halt();
 }

@@ -98,6 +98,13 @@ static inline void pcb_init(struct pcb *pcb)
 }
 
 /*
+ * EACH thread must have a unique stack resident in memory to let
+ * the kernel freely call functions and service interrupts. Thus,
+ * keep them small to avoid wasting too much physical RAM.
+ */
+#define	STACK_SIZE	PAGE_SIZE
+
+/*
  * Process descriptor; one for each process
  */
 struct proc {
@@ -143,8 +150,6 @@ static inline void proc_init(struct proc *proc)
 	proc->state = TD_INVALID;
 	list_init(&proc->pnode);
 }
-
-extern struct proc *current;
 
 #endif	/* !_ASSEMBLY */
 
