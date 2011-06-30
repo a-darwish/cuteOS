@@ -114,16 +114,33 @@ extern struct percpu cpus[CPUS_MAX];
  *	b) The preempting path might access the same per-CPU variable,
  *	   leading to classical race conditions.
  *
- * Second, We need to infrom GCC about the memory areas accessed not to
- * reorder _seemingly_ unrelated (from the compiler POV) reads and writes:
+ * Second, we could've got the per-CPU variable value by just passing
+ * its offset from the per-CPU area base %gs:
+ *	percpu_get(var) {
+ *		asm ("mov %%gs:%1, %0"
+ *		     : "=r" (res),
+ *		     : "i" (offsetof(struct percpu, var)));
+ *		return res;
+ *	}
+ * but this doesn't inform GCC about the per-CPU variable area accessed,
+ * loosing explicit dependency information between per-CPU accessors. It
+ * also misleads GCC into thinking we have no run-time input at all.
  *
- *	y = percpu_get(A);
- *	percpu_set(A, 0xcafe);	// same variable
- *	z = percpu_get(A);	// same variable
+ * For example, compiling below code at -O3:
  *
- * If not told about the implicit data dependencies between above lines,
- * the compiler will mess with their order pretty badly. At -O3 GCC stores
- * the A value to _both_ y and z before setting it to 0xcafe.
+ *	y = percpu_get(A);	// [1]
+ *	percpu_set(A, 0xcafe);	// [2] same variable
+ *	z = percpu_get(A);	// [3] same variable
+ *
+ * lets GCC store ‘A’s value below to _both_ y and z before setting it
+ * to 0xcafe, violating the order needed for correctness: ‘[3]’ reads
+ * from a memory area written by ‘[2]’, thus ‘[3]’ depends on ‘[2]’.
+ *
+ * Optimizing compilers need to know such run-time depdendencies between
+ * ops to translate code while maintaining correctness and sequentiality.
+ * An illusion of sequentiality can be maintained by "only preserving the
+ * sequential order among memory operations to the same location." i.e.
+ * maintaing program order for _dependent_ per-CPU accessors in our case.
  *
  * Unfortunately though, we cannot precisely tell GCC about the per-CPU
  * area accessed since standard C has no support for segmented memory. As
@@ -135,7 +152,7 @@ extern struct percpu cpus[CPUS_MAX];
  * fits our goal nicely: they are unique for each kind of per-CPU variable,
  * and they correctly calculate relative offsets from the %gs segment base.
  * We do not care about their validity, they just act as markers informing
- * GCC about the implicit data dependencies between reads and writes.
+ * GCC about the implicit data dependencies between pCPU reads and writes.
  *
  * Third, we do _not_ want compilers to cache the following sequence:
  *
@@ -151,7 +168,21 @@ extern struct percpu cpus[CPUS_MAX];
  * than the one accessed as volatile. We don't care since we've chosen a
  * unique address representing each per-CPU variable defined.
  *
- * NOTE_2! Mark the memory area accessed as volatile, not its pointer.
+ * NOTE_2! Casting to a volatile-qualified type as in
+ *
+ *	“(volatile __percpu_type(var))__percpu(var))”
+ *
+ * won't work. As said by the C standard: “Preceding an expression by a
+ * parenthesized type name converts the _value_ of the expression to the
+ * named type.” .. “A cast does not yield an lvalue. Thus, a cast to a
+ * qualified type has the same effect as a cast to the unqualified
+ * version of the type.”
+ *
+ * So such volatile-qualified cast is meaningless: object value (rvalue)
+ * will get extracted using non-volatile semantics then such rvalue will
+ * get aimlessly casted to a volatile. Check section 14 of our notes,
+ * ‘On the C volatile type qualifier’ for further details, especially
+ * the section appendix.
  *
  * Using above tricks, we do not suffer the performance of a full compiler
  * barrier, which would unnecesserily evict unrelated register-cached data.
