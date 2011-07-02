@@ -137,9 +137,9 @@ static int start_secondary_cpu(struct percpu *cpu, struct smpboot_params *params
 
 	/*
 	 * Personally allocate a 'current' thread descriptor and a stack
-	 * for given CPU. It can't do this by itself since kmalloc() uses
-	 * lots of spinlocks, which needs a 'current' descriptor, which
-	 * also needs an already setup per-CPU area.
+	 * for the given CPU. It can't do this by itself since kmalloc()
+	 * uses lots of spinlocks, which need an already allocated
+	 * 'current' thread descriptor (cyclic dependency.)
 	 *
 	 * We've statically allocated such structures for the boot core.
 	 */
@@ -219,10 +219,13 @@ void __no_return secondary_start(void)
 {
 	union apic_id id;
 
-	/* Quickly till the parent we're alive */
+	/* Quickly tell the parent we're alive */
 	++nr_alive_cpus;
 
+	/* Assert validity of our per-CPU area */
 	id.value = apic_read(APIC_ID);
+	assert(id.id == percpu_get(apic_id));
+
 	printk("SMP: CPU apic_id=%d started\n", id.id);
 
 	halt();
