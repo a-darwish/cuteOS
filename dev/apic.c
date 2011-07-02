@@ -16,7 +16,8 @@
 #include <pit.h>
 #include <tsc.h>
 
-static int bootstrap_apic_id = -1;
+static union apic_id bootstrap_apic_id;
+static bool bootstrap_apic_id_saved;
 
 /*
  * Internal and external clock frequencies
@@ -189,10 +190,11 @@ void apic_init(void)
 
 	msr_apicbase_enable();
 
-	bootstrap_apic_id = apic_read(APIC_ID);
+	bootstrap_apic_id.raw = apic_read(APIC_ID);
+	bootstrap_apic_id_saved = true;
 
 	printk("APIC: bootstrap core lapic enabled, apic_id=0x%x\n",
-	       bootstrap_apic_id);
+	       bootstrap_apic_id.id);
 }
 
 /*
@@ -325,9 +327,9 @@ bool apic_ipi_acked(void)
 
 int apic_bootstrap_id(void)
 {
-	assert(bootstrap_apic_id != -1);
+	assert(bootstrap_apic_id_saved == true);
 
-	return bootstrap_apic_id;
+	return bootstrap_apic_id.id;
 }
 
 void *apic_vrbase(void)

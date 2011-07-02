@@ -64,7 +64,7 @@ union apic_id {
 	struct {
 		uint32_t reserved:24, id:8;
 	} __packed;
-	uint32_t value;
+	uint32_t raw;
 };
 
 #define APIC_LVR	0x30	/* APIC Version Register */
@@ -112,7 +112,7 @@ union apic_icr {
 		uint32_t value_high;
 	} __packed;
 
-	uint32_t value;
+	uint64_t value;
 };
 
 /*

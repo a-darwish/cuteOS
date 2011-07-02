@@ -223,7 +223,7 @@ void __no_return secondary_start(void)
 	++nr_alive_cpus;
 
 	/* Assert validity of our per-CPU area */
-	id.value = apic_read(APIC_ID);
+	id.raw = apic_read(APIC_ID);
 	assert(id.id == percpu_get(apic_id));
 
 	printk("SMP: CPU apic_id=%d started\n", id.id);
