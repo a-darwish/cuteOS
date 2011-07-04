@@ -270,6 +270,8 @@ static struct proc *dispatch_runnable_proc(int *ret_prio)
 		return NULL;
 	}
 
+	/* It's now guaranteed: a thread from the runqueues
+	 * will get scheduled; try 'just_queued' next time. */
 	just_queued_turn = 1;
 
 	h_prio = rq_get_highest_prio(rq_active);

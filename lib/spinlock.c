@@ -46,6 +46,10 @@
  *    slice (which is in the order of milliseconds) just spinning!
  * b) If that preempted thread (which is now in the scheduler runqueue)
  *    got killed, we can deadlock the entire system!
+ * c) Classical race conditions may arise if the newly scheduled thread
+ *    accessed the same critical-region the older thread was accessing
+ *    while being preempted. That's why such locks also act as critical
+ *    region markers for preemptive _uniprocessor_ kernels.
  *
  * This spin design is closer, in spirit, to FreeBSD rather than Linux.
  * Upon lock entrance, the latter only disables preemption by default.
