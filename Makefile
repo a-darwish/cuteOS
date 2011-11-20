@@ -176,6 +176,7 @@ LIB_OBJS =		\
   lib/list.o		\
   lib/string.o		\
   lib/printf.o		\
+  lib/atomic.o		\
   lib/spinlock.o
 
 # All other kernel objects

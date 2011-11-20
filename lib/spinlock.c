@@ -57,6 +57,7 @@
 
 #include <kernel.h>
 #include <percpu.h>
+#include <atomic.h>
 #include <stdint.h>
 #include <spinlock.h>
 #include <idt.h>
@@ -65,25 +66,6 @@
 /*
  * _SPIN_UNLOCKED = 0, _SPIN_LOCKED = 1
  */
-
-/*
- * Atomically execute the following code:
- *	old = *val & 0x1; *val |= 0x1;
- *	return old;
- */
-static uint8_t atomic_bit_test_and_set(uint32_t *val)
-{
-	uint8_t ret;
-
-	asm volatile (
-		"LOCK bts $0, %0;"
-		"     setc    %1;"
-		: "+m" (*val), "=qm" (ret)
-		:
-		: "cc", "memory");
-
-	return ret;
-}
 
 void spin_init(struct lock_spin *lock)
 {
