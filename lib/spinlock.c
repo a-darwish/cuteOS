@@ -109,7 +109,6 @@ void spin_lock(struct lock_spin *lock)
  */
 void spin_unlock(struct lock_spin *lock)
 {
-	barrier();
 	lock->val = _SPIN_UNLOCKED;
 
 	current->spinlock_count--;

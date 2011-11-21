@@ -54,19 +54,25 @@ static inline union x86_rflags get_rflags(void)
 
 	asm volatile ("pushfq;"
 		      "popq %0;"
-		      :"=r"(flags.raw)
+		      :"=rm"(flags.raw)
 		      :);
 
 	return flags;
 }
 
+/*
+ * Setting %rflags may enable interrupts, but we often want to
+ * do so in the _exact_ location specified: e.g. spin_unlock()
+ * should be compiled to mark the lock as available (lock->val
+ * = 1) before enabling interrupts, but never after.
+ */
 static inline void set_rflags(union x86_rflags flags)
 {
 	asm volatile ("pushq %0;"
 		      "popfq;"
 		      :
-		      :"r"(flags.raw)
-		      :"cc");
+		      :"g"(flags.raw)
+		      :"cc", "memory");
 }
 
 /*
