@@ -393,7 +393,7 @@ void sched_init(void)
 	 */
 	vector = TICKS_IRQ_VECTOR;
 	set_intr_gate(vector, ticks_handler);
-	ioapic_setup_isairq(0, vector);
+	ioapic_setup_isairq(0, vector, IRQ_BOOTSTRAP);
 
 	/*
 	 * We can program the PIT as one-shot and re-arm it in the

@@ -121,44 +121,49 @@ static uint64_t pit_calibrate_apic_timer(void)
  * Local APIC
  */
 
-void apic_init(void)
+/*
+ * Intialize (the now VM-mapped) APIC registers of the calling CPU
+ * to a well-known state, enabling the local APIC in the process.
+ */
+void apic_local_regs_init(void)
 {
-	union apic_tpr tpr = { .value = 0 };
-	union apic_lvt_timer timer = { .value = 0 };
-	union apic_lvt_thermal thermal = { .value = 0 };
-	union apic_lvt_perfc perfc = { .value = 0 };
-	union apic_lvt_lint lint0 = { .value = 0 };
-	union apic_lvt_lint lint1 = { .value = 0 };
-	union apic_spiv spiv = { .value = 0 };
+	union apic_tpr tpr = { .value = APIC_TPR_RESET };
+	union apic_ldr ldr = { .value = APIC_LDR_RESET };
+	union apic_dfr dfr = { .value = APIC_DFR_RESET };
+	union apic_spiv spiv = { .value = APIC_SPIV_RESET };
 
-	/*
-	 * Basic APIC initialization:
-	 * - Before doing any apic operation, assure the APIC
-	 *   registers base address is set where we expect it
-	 * - Map the MMIO registers region before accessing it
-	 * - Find CPU's internal clock frequency: calibrate TSC
-	 * - Find APIC timer frequency: calibrate CPU's bus clock
-	 */
+	union apic_lvt_timer timer = { .value = APIC_LVT_RESET };
+	union apic_lvt_thermal thermal = { .value = APIC_LVT_RESET };
+	union apic_lvt_perfc perfc = { .value = APIC_LVT_RESET };
+	union apic_lvt_lint lint0 = { .value = APIC_LVT_RESET };
+	union apic_lvt_lint lint1 = { .value = APIC_LVT_RESET };
 
 	msr_apicbase_setaddr(APIC_PHBASE);
 
-	apic_virt_base = vm_kmap(APIC_PHBASE, APIC_MMIO_SPACE);
-
-	cpu_clock = pit_calibrate_cpu(10);
-	printk("APIC: Detected %d.%d MHz processor\n",
-	       cpu_clock / 1000000, (uint8_t)(cpu_clock % 1000000));
-
-	apic_clock = pit_calibrate_apic_timer();
-	printk("APIC: Detected %d.%d MHz bus clock\n",
-	       apic_clock / 1000000, (uint8_t)(apic_clock % 1000000));
-
-	/*
-	 * Intialize now-mapped APIC registers
-	 */
-
-	tpr.subclass = 0;
-	tpr.priority = 0;
+	tpr.subclass = APIC_TPR_DISABLE_IRQ_BALANCE;
+	tpr.priority = APIC_TPR_DISABLE_IRQ_BALANCE;
 	apic_write(APIC_TPR, tpr.value);
+
+	/* In the logical apic destination flat model, a _unique_
+	 * logical ID can be established for up to 8 cores by setting
+	 * a unique bit for each core's LDR logical id.
+	 *
+	 * Each local APIC performs a logical AND of the Message
+	 * Destination Address (set in the IO-APIC irq entry) and its
+	 * logical APIC ID. If a true (non-zero) result is detected,
+	 * the core accepts the message.
+	 *
+	 * To support broadcasting interrupts even in the case of
+	 * more than 8 cores, we set all cores logical IDs to all 1s
+	 * (0xff). By this, we lose the unique identification feature
+	 * while gaining the ability to broadcast messages to all. */
+	ldr.logical_id = 0xff;
+	apic_write(APIC_LDR, ldr.value);
+
+	/* "All processors that have their APIC software enabled
+	 * must have their DFRs programmed identically." --Intel */
+	dfr.apic_model = APIC_MODEL_FLAT;
+	apic_write(APIC_DFR, dfr.value);
 
 	timer.vector = APIC_TIMER_VECTOR;
 	timer.mask = APIC_MASK;
@@ -180,15 +185,46 @@ void apic_init(void)
 	lint1.mask = APIC_MASK;
 	apic_write(APIC_LVT1, lint1.value);
 
-	/*
-	 * Enable local APIC
-	 */
+	/* A spurious APIC interrupt occurs when a CPU core raises
+	 * its task priority (TPR) >= the level of interrupt being
+	 * _currently_ asserted @ the core's INTR wire.
+	 *
+	 * Since we don't use hardware IRQ balancing at all (TPR
+	 * fields always = 0), this shouldn't bother us now; APIC
+	 * spurious IRQs don't need to get acked with an APIC EOI. */
+	spiv.vector = APIC_SPURIOUS_VECTOR;
 
-	spiv.value = apic_read(APIC_SPIV);
+	/* Finally, enable our local APIC */
 	spiv.apic_enable = 1;
 	apic_write(APIC_SPIV, spiv.value);
-
 	msr_apicbase_enable();
+}
+
+void apic_init(void)
+{
+	/*
+	 * Basic APIC initialization:
+	 * - Before doing any apic operation, assure the APIC
+	 *   registers base address is set where we expect it
+	 * - Map the MMIO registers region before accessing it
+	 * - Find CPU's internal clock frequency: calibrate TSC
+	 * - Find APIC timer frequency: calibrate CPU's bus clock
+	 * - Initialize the APIC's full set of registers
+	 */
+
+	msr_apicbase_setaddr(APIC_PHBASE);
+
+	apic_virt_base = vm_kmap(APIC_PHBASE, APIC_MMIO_SPACE);
+
+	cpu_clock = pit_calibrate_cpu(10);
+	printk("APIC: Detected %d.%d MHz processor\n",
+	       cpu_clock / 1000000, (uint8_t)(cpu_clock % 1000000));
+
+	apic_clock = pit_calibrate_apic_timer();
+	printk("APIC: Detected %d.%d MHz bus clock\n",
+	       apic_clock / 1000000, (uint8_t)(apic_clock % 1000000));
+
+	apic_local_regs_init();
 
 	bootstrap_apic_id.raw = apic_read(APIC_ID);
 	bootstrap_apic_id_saved = true;
@@ -325,7 +361,7 @@ bool apic_ipi_acked(void)
  * Basic state accessors
  */
 
-int apic_bootstrap_id(void)
+uint8_t apic_bootstrap_id(void)
 {
 	assert(bootstrap_apic_id_saved == true);
 

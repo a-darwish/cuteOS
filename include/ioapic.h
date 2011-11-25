@@ -153,6 +153,19 @@ enum {
 	IOAPIC_UNMASK = 0x0,
 	IOAPIC_MASK   = 0x1,
 };
+/* Message Destination Address (APIC logical destination mode) */
+enum {
+	 /* Each local APIC performs a logical AND of chosen
+	  * address and its logical APIC ID. If a 'true'
+	  * condition was detected, the IRQ is accepted. */
+	IOAPIC_DEST_BROADCAST = 0xff,
+};
+
+/* Flags: desired destination for legacy ISA IRQs */
+enum irq_dest {
+	IRQ_BROADCAST,			/* Interrupt all cores */
+	IRQ_BOOTSTRAP,			/* Interrupt BSC only */
+};
 
 static inline union ioapic_irqentry ioapic_read_irqentry(int apic, uint8_t irq)
 {
@@ -191,7 +204,7 @@ struct ioapic_pin {
 	int pin;			/* which pin in this ioapic */
 };
 
-void ioapic_setup_isairq(uint8_t irq, uint8_t vector);
+void ioapic_setup_isairq(uint8_t irq, uint8_t vector, enum irq_dest);
 void ioapic_init(void);
 
 #endif /* _IOAPIC_H */

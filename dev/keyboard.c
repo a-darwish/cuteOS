@@ -124,5 +124,5 @@ void keyboard_init(void) {
 
 	vector = KEYBOARD_IRQ_VECTOR;
 	set_intr_gate(vector, kb_handler);
-	ioapic_setup_isairq(1, vector);
+	ioapic_setup_isairq(1, vector, IRQ_BOOTSTRAP);
 }

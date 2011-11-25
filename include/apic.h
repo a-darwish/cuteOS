@@ -81,8 +81,22 @@ union apic_tpr {
 #define APIC_PPR	0xa0	/* Processor Priority Register */
 #define APIC_EOI	0xb0	/* End of Interrupt Register */
 #define APIC_RRR	0xc0	/* Remote Read Register */
+
 #define APIC_LDR	0xd0	/* Logical Desitination Register */
+union apic_ldr {
+	struct {
+		uint32_t reserved:24, logical_id:8;
+	} __packed;
+	uint32_t value;
+};
+
 #define APIC_DFR	0xe0	/* Destination Format Register */
+union apic_dfr {
+	struct {
+		uint32_t reserved:28, apic_model:4;
+	} __packed;
+	uint32_t value;
+};
 
 #define APIC_SPIV	0xf0	/* Spurious Interrupt Vector Register */
 union apic_spiv {
@@ -199,6 +213,17 @@ enum {
  * APIC registers field values
  */
 
+/* TPR priority and subclass */
+enum {
+	APIC_TPR_DISABLE_IRQ_BALANCE = 0,/* Disable hardware IRQ balancing */
+};
+
+/* Logical Destination Mode model (DFR) */
+enum {
+	APIC_MODEL_CLUSTER = 0x0,	/* Hierarchial cluster */
+	APIC_MODEL_FLAT    = 0xf,	/* Unique APIC ID for up to 8 cores */
+};
+
 /* Delivery mode for IPI and LVT entries */
 enum {
 	APIC_DELMOD_FIXED = 0x0,	/* deliver to core in vector field */
@@ -257,6 +282,15 @@ enum {
 	APIC_TIMER_PERIODIC = 0x1,	/* Trigger timer monotonically */
 };
 
+/* APIC entries hardware-reset values, Intel-defined */
+enum {
+	APIC_TPR_RESET  = 0x00000000,	/* priority & priority subclass = 0 */
+	APIC_LDR_RESET  = 0x00000000,	/* destination logical id = 0 */
+	APIC_DFR_RESET  = UINT32_MAX,	/* Flat model, reserved bits all 1s */
+	APIC_SPIV_RESET = 0x000000ff,	/* vector=ff, apic disabled, rsrved=0 */
+	APIC_LVT_RESET  = 0x00010000,	/* All 0s, while setting the mask bit */
+};
+
 /*
  * APIC register accessors
  */
@@ -271,7 +305,6 @@ static inline void apic_write(uint32_t reg, uint32_t val)
 
 	vaddr = apic_vrbase();
 	vaddr = (char *)vaddr + reg;
-
 	writel(val, vaddr);
 }
 
@@ -281,12 +314,13 @@ static inline uint32_t apic_read(uint32_t reg)
 
 	vaddr = apic_vrbase();
 	vaddr = (char *)vaddr + reg;
-
 	return readl(vaddr);
 }
 
 void apic_init(void);
-int apic_bootstrap_id(void);
+void apic_local_regs_init(void);
+
+uint8_t apic_bootstrap_id(void);
 
 void apic_udelay(uint64_t us);
 void apic_mdelay(int ms);

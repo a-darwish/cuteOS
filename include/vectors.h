@@ -31,4 +31,6 @@
 #define APIC_LINT0_VECTOR	0
 #define APIC_LINT1_VECTOR	0
 
+#define APIC_SPURIOUS_VECTOR	0xff	/* Intel-defined default */
+
 #endif /* _VECTORS_H */
