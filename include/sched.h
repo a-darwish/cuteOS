@@ -21,6 +21,12 @@
 
 struct proc;
 
+enum cpu_type {
+	BOOTSTRAP,
+	SECONDARY,
+};
+void schedulify_this_code_path(enum cpu_type);
+
 void sched_init(void);
 struct proc *sched_tick(void);
 

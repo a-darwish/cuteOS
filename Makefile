@@ -192,7 +192,7 @@ KERN_OBJS =		\
   kern/sched.o		\
   kern/kthread.o	\
   kern/common.o		\
-  kern/percpu_tests.o	\
+  kern/percpu.o		\
   kern/main.o
 
 BOOTSECT_OBJS =		\

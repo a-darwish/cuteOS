@@ -25,8 +25,8 @@
 #include <vm.h>
 #include <paging.h>
 #include <kmalloc.h>
-#include <sched.h>
 #include <percpu.h>
+#include <sched.h>
 
 static void setup_idt(void)
 {
@@ -71,6 +71,7 @@ static void run_test_cases(void)
 	kmalloc_run_tests();
 	pit_run_tests();
 	apic_run_tests();
+	percpu_run_tests();
 	sched_run_tests();
 }
 
@@ -93,7 +94,7 @@ void __no_return kernel_start(void)
 
 	setup_idt();
 
-	set_gs(BOOTSTRAP_PERCPU_AREA);
+	schedulify_this_code_path(BOOTSTRAP);
 
 	/*
 	 * Memory Management init

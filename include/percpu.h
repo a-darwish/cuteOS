@@ -87,6 +87,7 @@
 struct percpu {
 	struct proc *__current;		/* Descriptor of the ON_CPU thread */
 	int apic_id;			/* Local APIC ID */
+	uintptr_t self;			/* Address of this per-CPU area */
 #if PERCPU_TESTS
 	uint64_t x64;			/* A 64-bit value (testing) */
 	uint32_t x32;			/* A 32-bit value (testing) */
@@ -192,7 +193,7 @@ extern struct percpu cpus[CPUS_MAX];
  */
 
 #define __percpu(var)		(((struct percpu *) NULL)->var)
-#define __percpu_offset(var)	(&__percpu(var))
+#define __percpu_offset(var)	(uint64_t)(&__percpu(var))
 #define __percpu_type(var)	typeof(__percpu(var))
 #define __percpu_marker(var)	((volatile __percpu_type(var) *)&__percpu(var))
 
@@ -215,6 +216,8 @@ extern struct percpu cpus[CPUS_MAX];
  * Such hueristics worked for the 'get' case cause there, the size of
  * the output register always equals the size of the whole memory area
  * being read.
+ *
+ * FIXME: "ir" constraint can't be used for setting 64bit-wide values.
  */
 
 #define __percpu_set(suffix, var, val)					\
@@ -235,6 +238,16 @@ extern struct percpu cpus[CPUS_MAX];
 	}								\
 })
 
+#define percpu_addr(var)						\
+({									\
+	uintptr_t res;							\
+									\
+	res = percpu_get(self);						\
+	res += __percpu_offset(var);					\
+									\
+	((__percpu_type(var) *)res);					\
+})
+
 /*
  * A thread descriptor address does not change for the lifetime of that
  * thread, even if it moved to another CPU. Thus, inform GCC to _cache_
@@ -253,6 +266,14 @@ static __always_inline __pure_const struct proc *percpu_current_proc(void)
  * Descriptor of thread representing ‘self’, applicable anywhere.
  */
 #define current		(percpu_current_proc())
+
+void percpu_area_init(enum cpu_type);
+
+#if PERCPU_TESTS
+void percpu_run_tests(void);
+#else
+static void __unused percpu_run_tests(void) { }
+#endif
 
 #else
 

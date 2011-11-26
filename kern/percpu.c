@@ -1,5 +1,5 @@
 /*
- * Per-CPU Data Area test-cases
+ * Per-CPU Data Area Init
  *
  * Copyright (C) 2011 Ahmed S. Darwish <darwish.07@gmail.com>
  *
@@ -7,18 +7,40 @@
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
  *
- * NOTE! This code is NOT meant to run: it will corrupt kernel state.
- *
- * Only use this for inspecting the per-CPU accessors assembly output at
- * different GCC optimization levels, especially -O3 and -Os.
+ * The real deal is in the headers: this is only init & test-cases.
  */
 
+#include <kernel.h>
+#include <x86.h>
 #include <percpu.h>
-#include <string.h>
-#include <stdint.h>
+#include <sched.h>
 #include <tests.h>
 
-#if PERCPU_TESTS
+/*
+ * Initialize the calling CPU's per-CPU area.
+ */
+void percpu_area_init(enum cpu_type t)
+{
+	if (t == BOOTSTRAP)
+		set_gs(BOOTSTRAP_PERCPU_AREA);
+
+	/* else, we're on a secondary core where %gs
+	 * is already set-up by the trampoline. */
+
+	percpu_set(self, get_gs());
+}
+
+
+/*
+ * Below code is NOT meant to run: it will corrupt kernel state!
+ *
+ * Only use it for inspecting per-CPU accessors assembly output
+ * at different GCC optimization levels, especially -O3 and -Os.
+ */
+#if	PERCPU_TESTS
+
+#include <string.h>
+#include <stdint.h>
 
 void percpu_inspect_current(void);
 uint64_t percpu_inspect_size(void);
@@ -104,6 +126,38 @@ uint64_t percpu_inspect_order(void)
 	z = percpu_get(x16);
 
 	return z;
+}
+
+/*
+ * Blackbox testing of the per-CPU accessors.
+ */
+void percpu_run_tests(void)
+{
+	int id;
+	uintptr_t self, gs;
+
+	id = percpu_get(apic_id);
+	self = percpu_get(self);
+	gs = get_gs();
+
+	printk("_PerCPU#%d: area address: self = 0x%lx, %%gs = 0x%lx\n",
+		id, self, gs);
+	if (self != gs)
+		panic("_PerCPU#%d: self reference '0x%lx' != %%gs", id, self);
+
+	*percpu_addr(x64) = 0x6464646464646464;
+	percpu_set(x32, 0x32323232);
+	percpu_set(x16, 0x1616);
+	percpu_set(x8, 0x8);
+
+	printk("_PerCPU#%d: x64 address = 0x%lx, val = 0x%lx\n",
+	       id, percpu_addr(x64), percpu_get(x64));
+	printk("_PerCPU#%d: x32 address = 0x%lx, val = 0x%x\n",
+	       id, percpu_addr(x32), percpu_get(x32));
+	printk("_PerCPU#%d: x16 address = 0x%lx, val = 0x%x\n",
+	       id, percpu_addr(x16), percpu_get(x16));
+	printk("_PerCPU#%d: x8  address = 0x%lx, val = 0x%x\n",
+	       id, percpu_addr(x8 ), percpu_get(x8 ));
 }
 
 #endif /* PERCPU_TESTS */

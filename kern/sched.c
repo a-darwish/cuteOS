@@ -368,6 +368,42 @@ struct proc *sched_tick(void)
 	return current;
 }
 
+/*
+ * Let current CPU-init code path be a schedulable entity.
+ *
+ * Once the scheduler's timer starts ticking, every code path
+ * should be in the context of a Schedulable Entity so it can,
+ * once interrupted, get later executed. All cores (bootstrap
+ * and secondary) initialization path should call this method.
+ *
+ * A unique 'current' descriptor, representing the initializa-
+ * tion path, should be already allocated.
+ */
+void schedulify_this_code_path(enum cpu_type t)
+{
+	/* 'Current' is a per-CPU structure */
+	percpu_area_init(t);
+
+	/*
+	 * We tell GCC to cache 'current' as much as possible since
+	 * it does not change for the lifetime of a thread, even if
+	 * that thread moved to another CPU.
+	 *
+	 * Thus GCC usually dereferences %gs:0 and cache the result
+	 * ('current' address) in a general-purpose register before
+	 * executing _any_ of the original function code.
+	 *
+	 * But in this case, getting 'current' address before
+	 * initializing the per-CPU area will just return a garbage
+	 * value (invalid/un-initialized %gs); thus the barrier.
+	 */
+	barrier();
+
+	proc_init(current);
+	current->state = TD_ONCPU;
+	current_prio = DEFAULT_PRIO;
+}
+
 void sched_init(void)
 {
 	extern void ticks_handler(void);
@@ -377,11 +413,6 @@ void sched_init(void)
 	rq_init(rq_expired);
 
 	pcb_validate_offsets();
-
-	/* Let current code path be a schedulable entity */
-	proc_init(current);
-	current->state = TD_ONCPU;
-	current_prio = DEFAULT_PRIO;
 
 	/*
 	 * Setup the timer ticks handler

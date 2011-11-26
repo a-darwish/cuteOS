@@ -222,12 +222,15 @@ void __no_return secondary_start(void)
 	/* Quickly tell the parent we're alive */
 	++nr_alive_cpus;
 
+	/* Don't uncomment this till we get rid of all
+	 * the scheduler globals, making it SMP-safe */
+	// schedulify_this_code_path(SECONDARY);
+
 	/* Assert validity of our per-CPU area */
 	id.raw = apic_read(APIC_ID);
 	assert(id.id == percpu_get(apic_id));
 
 	printk("SMP: CPU apic_id=%d started\n", id.id);
-
 	halt();
 }
 

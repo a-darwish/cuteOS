@@ -106,5 +106,10 @@ static inline void set_gs(uint64_t val)
 	write_msr(MSR_GS_BASE, val);
 }
 
+static inline uint64_t get_gs(void)
+{
+	return read_msr(MSR_GS_BASE);
+}
+
 #endif /* !__ASSEMBLY__ */
 #endif /* _X86_H */
