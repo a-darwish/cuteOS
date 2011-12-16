@@ -95,6 +95,7 @@ static inline uint8_t release(uint8_t make_code)
 	return make_code + 0x80;
 }
 
+void __kb_handler(void);
 void keyboard_init(void);
 
 #endif /* _I8042_H */
