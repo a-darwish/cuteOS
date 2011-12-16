@@ -73,7 +73,7 @@ void spin_init(struct lock_spin *lock)
 }
 
 /*
- * Always try to acquire the lock while LOCK# is asserted. Shoud the
+ * Always try to acquire the lock while LOCK# is asserted. Should the
  * lock be already acquired, busy loop till that lock is marked by its
  * owner as free. Several cores might have observed that free state,
  * let each one try to reacquire the lock again under LOCK#: only _one_
@@ -82,26 +82,33 @@ void spin_init(struct lock_spin *lock)
  *
  * This intentionally minimizes accessing data while LOCK# is asserted.
  *
- * XXX: spinlock_count get dereferenced twice in each iteration cause
- * of the cpu_pause memory barrier. Should we manually cache it away?
+ * NOTE! Take extreme care of triggered interrupts while spinning: IRQ
+ * handlers may execute a new spin_lock() in context of the older lock
+ * spinning loop; i.e. reentrant execution of below code, possibly
+ * using the very same parameter or lock!
  */
 void spin_lock(struct lock_spin *lock)
 {
-	if (current->spinlock_count == 0)
-		current->rflags = local_irq_disable_save();
+	union x86_rflags rflags;
+
+	/* Reentrancy-safe place: stack or a register */
+	rflags = local_irq_disable_save();
 
 	while (atomic_bit_test_and_set(&lock->val) == _SPIN_LOCKED) {
-		if (current->spinlock_count == 0)
-			local_irq_restore(current->rflags);
+		local_irq_restore(rflags);
 
 		while (lock->val == _SPIN_LOCKED)
 			cpu_pause();
 
-		if (current->spinlock_count == 0)
-			local_irq_disable();
+		local_irq_disable();
 	}
 
-	current->spinlock_count++;
+	/*
+	 * Careful! Spinlocks (ironically enough) are globals & thus
+	 * must be themselves protected against concurrent SMP access.
+	 * Access a lock's elements if and only if it's already held.
+	 */
+	lock->rflags = rflags;
 }
 
 /*
@@ -109,9 +116,12 @@ void spin_lock(struct lock_spin *lock)
  */
 void spin_unlock(struct lock_spin *lock)
 {
+	union x86_rflags rflags;
+
+	/* Access a lock's elements iff it's already held. */
+	rflags = lock->rflags;
+	barrier();
 	lock->val = _SPIN_UNLOCKED;
 
-	current->spinlock_count--;
-	if (current->spinlock_count == 0)
-		local_irq_restore(current->rflags);
+	local_irq_restore(rflags);
 }
