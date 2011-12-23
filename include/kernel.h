@@ -166,6 +166,8 @@ void __unused __undefined_method(void);
 #define __arr_size(arr)	(sizeof(arr) / sizeof((arr)[0]))
 
 /*
+ * Return length of given array's first dimension.
+ *
  * Per C99 spec, the 'sizeof' operator returns an unsigned
  * integer. This is bothersome in the very common idiom:
  *
