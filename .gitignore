@@ -17,6 +17,7 @@
 *.o.*
 *.a
 *.bin
+*.elf
 image
 
 #
@@ -32,8 +33,16 @@ image
 #
 .*
 *.orig
+*.rej
 *~
 \#*#
+
+#
+# Old code that is still worthy of attention
+#
+*.old
+*.old[0-9]*
+*.bkp
 
 #
 # Don't ignore ourself
