@@ -144,8 +144,8 @@ static int start_secondary_cpu(struct percpu *cpu, struct smpboot_params *params
 	 * We've statically allocated such structures for the boot core.
 	 */
 
+	/* All cores initialize their own 'current'; dont do it for 'em. */
 	cpu->__current = kmalloc(sizeof(struct proc));
-	proc_init(cpu->__current);
 
 	params->stack_ptr = kmalloc(STACK_SIZE);
 	params->stack_ptr += STACK_SIZE;

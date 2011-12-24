@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.6
+#!/usr/bin/env python
 #
 # Ahmed S. Darwish <darwish.07@gmail.com>, NO rights reserved
 # Python-2.6 _AND_ Python3.0+ compatible
