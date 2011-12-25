@@ -1,7 +1,7 @@
 /*
  * Uniprocessor scheduling
  *
- * Copyright (C) 2010 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2010-2011 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -27,7 +27,6 @@
  * something I OBVIOUSLY lack. So in a search for more theoretically-
  * sound algorithms, I sticked with a strict-fairness design.
  *
- * FIXME: Add SMP support.
  * FIXME: Get highest queue priority with runnable threads in O(1).
  */
 
@@ -47,42 +46,17 @@
 #include <tests.h>
 
 /*
- * System clock ticks per second
+ * Initialize all scheduler globals (runqueues + book-keeping).
+ * Every core has its own unique version of such memory.
+ *
+ * NOTE! Disable interrupts for any code accessing such globals
+ * outside of the timer IRQ context.  Check include/percpu.h
  */
-#define HZ			250
+void sched_percpu_area_init(void)
+{
 
-/*
- * A thread round-robin slice in number of ticks
- */
-#define RR_INTERVAL		2
-
-/*
- * Priorities only affect latency, not CPU usage.
- */
-#define DEFAULT_PRIO		10
-#define UNDEF_PRIO		-1
-#define VALID_PRIO(prio)			\
-	(MIN_PRIO <= (prio) && (prio) <= MAX_PRIO)
-
-/*
- * Statically allocate the booting-thread descriptor: ‘current’
- * must be available in all contexts, including early boot.
- */
-struct proc swapper;
-static int current_prio;
-
-/*
- * System ticks counter, incremented for every tick
- */
-static volatile clock_t sys_ticks;
-
-/*
- * The runqueue: a bucket array holding heads of
- * the lists connecting threads of equal priority.
- */
-struct runqueue {
-	struct list_node head[MAX_PRIO + 1];
-};
+/* CPU ticks counter; incremented for every tick */
+	PS->sys_ticks = 0;
 
 /*
  * A multi-level feedback queue with strict fairness:
@@ -121,9 +95,10 @@ struct runqueue {
  * is especially true for low-priority tasks where the chance of a rq
  * swap during their sleep is high.
  */
-static struct runqueue rrq[2];
-static struct runqueue *rq_active = &rrq[0];
-static struct runqueue *rq_expired = &rrq[1];
+	PS->rq_active = &PS->rrq[0];
+	PS->rq_expired = &PS->rrq[1];
+	rq_init(PS->rq_active);
+	rq_init(PS->rq_expired);
 
 /*
  * If we just allowed new runnable threads to get added to the active
@@ -141,30 +116,15 @@ static struct runqueue *rq_expired = &rrq[1];
  * Thus, the new scheduler starvation upper bound = 2*N*RR_INTERVAL
  * ms, where N = number of runnable threads in the active rq.
  */
-static LIST_NODE(just_queued);
-
-static void rq_init(struct runqueue *rq)
-{
-	for (int i = MIN_PRIO; i <= MAX_PRIO; i++)
-		list_init(&rq->head[i]);
+	list_init(&PS->just_queued);
+	PS->just_queued_turn = 1;
 }
 
-static int rq_get_highest_prio(struct runqueue *rq)
-{
-	for (int i = MAX_PRIO; i >= MIN_PRIO; i--)
-		if (!list_empty(&rq->head[i]))
-			return i;
-
-	return UNDEF_PRIO;
-}
-
-static bool rq_empty(struct runqueue *rq)
-{
-	if (rq_get_highest_prio(rq) == UNDEF_PRIO)
-		return true;
-
-	return false;
-}
+/*
+ * Statically allocate the booting-thread descriptor: ‘current’
+ * must be available in all contexts, including early boot.
+ */
+struct proc swapper;
 
 /*
  * @ENQ_NORMAL: Enqueue given thread as if it's a newly created
@@ -184,7 +144,7 @@ static void __rq_add_proc(struct runqueue *rq, struct proc *proc, int prio,
 {
 	assert(VALID_PRIO(prio));
 
-	proc->enter_runqueue_ts = sys_ticks;
+	proc->enter_runqueue_ts = PS->sys_ticks;
 	proc->state = TD_RUNNABLE;
 
 	switch(type) {
@@ -219,12 +179,14 @@ void sched_enqueue(struct proc *proc)
 {
 	union x86_rflags flags;
 
-	proc->enter_runqueue_ts = sys_ticks;
+	flags = local_irq_disable_save();
+
+	proc->enter_runqueue_ts = PS->sys_ticks;
 	proc->state = TD_RUNNABLE;
 	proc->runtime = 0;
 
-	flags = local_irq_disable_save();
-	list_add_tail(&just_queued, &proc->pnode);
+	list_add_tail(&PS->just_queued, &proc->pnode);
+
 	local_irq_restore(flags);
 	sched_dbg("@@ T%d added\n", proc->pid);
 }
@@ -236,49 +198,48 @@ void sched_enqueue(struct proc *proc)
  *
  * Return NULL if all relevant queues are empty.
  */
-static int just_queued_turn = 1;
 static struct proc *dispatch_runnable_proc(int *ret_prio)
 {
 	struct proc *proc, *spare;
 	int h_prio;
 
-	if (just_queued_turn && !list_empty(&just_queued)) {
-		just_queued_turn = 0;
+	if (PS->just_queued_turn && !list_empty(&PS->just_queued)) {
+		PS->just_queued_turn = 0;
 
-		proc = list_entry(just_queued.next, struct proc, pnode);
+		proc = list_entry(PS->just_queued.next, struct proc, pnode);
 		list_del(&proc->pnode);
 		*ret_prio = DEFAULT_PRIO;
 		return proc;
 	}
 
-	if (rq_empty(rq_active)) {
-		rq_dump(rq_expired);
-		swap(rq_active, rq_expired);
+	if (rq_empty(PS->rq_active)) {
+		rq_dump(PS->rq_expired);
+		swap(PS->rq_active, PS->rq_expired);
 
 		/* FIXME: this can be done in O(1) */
-		list_for_each_safe(&just_queued, proc, spare, pnode) {
+		list_for_each_safe(&PS->just_queued, proc, spare, pnode) {
 			list_del(&proc->pnode);
-			rq_add_proc(rq_active, proc, DEFAULT_PRIO);
+			rq_add_proc(PS->rq_active, proc, DEFAULT_PRIO);
 		}
-		rq_dump(rq_active);
+		rq_dump(PS->rq_active);
 	}
 
 	/* The active rq is still empty even after swap and
 	 * popping the just_queued threads? System is idle! */
-	if (rq_empty(rq_active)) {
+	if (rq_empty(PS->rq_active)) {
 		*ret_prio = UNDEF_PRIO;
 		return NULL;
 	}
 
 	/* It's now guaranteed: a thread from the runqueues
 	 * will get scheduled; try 'just_queued' next time. */
-	just_queued_turn = 1;
+	PS->just_queued_turn = 1;
 
-	h_prio = rq_get_highest_prio(rq_active);
+	h_prio = rq_get_highest_prio(PS->rq_active);
 	assert(VALID_PRIO(h_prio));
-	assert(!list_empty(&rq_active->head[h_prio]));
+	assert(!list_empty(&PS->rq_active->head[h_prio]));
 
-	proc = list_entry(rq_active->head[h_prio].next, struct proc,  pnode);
+	proc = list_entry(PS->rq_active->head[h_prio].next, struct proc,  pnode);
 	list_del(&proc->pnode);
 	*ret_prio = h_prio;
 	return proc;
@@ -295,11 +256,11 @@ static struct proc *preempt(struct proc *new_proc, int new_prio)
 	assert(new_proc->state == TD_RUNNABLE);
 
 	assert(VALID_PRIO(new_prio));
-	current_prio = new_prio;
+	PS->current_prio = new_prio;
 
 	new_proc->state = TD_ONCPU;
 	new_proc->stats.dispatch_count++;
-	new_proc->stats.rqwait_overall += sys_ticks -
+	new_proc->stats.rqwait_overall += PS->sys_ticks -
 		new_proc->enter_runqueue_ts;
 
 	sched_dbg("dispatching T%d\n", new_proc->pid);
@@ -314,16 +275,16 @@ struct proc *sched_tick(void)
 	struct proc *new_proc;
 	int new_prio;
 
-	sys_ticks++;
+	PS->sys_ticks++;
 	current->runtime++;
 
 	assert(current->state == TD_ONCPU);
-	assert(VALID_PRIO(current_prio));
+	assert(VALID_PRIO(PS->current_prio));
 
 	current->stats.runtime_overall++;
-	current->stats.prio_map[current_prio]++;
+	current->stats.prio_map[PS->current_prio]++;
 
-	if (sys_ticks % SCHED_STATS_RATE == 0)
+	if (PS->sys_ticks % SCHED_STATS_RATE == 0)
 		print_sched_stats();
 
 	/*
@@ -337,8 +298,8 @@ struct proc *sched_tick(void)
 		if (new_proc == NULL)
 			return current;
 
-		current_prio = max(MIN_PRIO, current_prio - 1);
-		rq_add_proc(rq_expired, current, current_prio);
+		PS->current_prio = max(MIN_PRIO, PS->current_prio - 1);
+		rq_add_proc(PS->rq_expired, current, PS->current_prio);
 		return preempt(new_proc, new_prio);
 	}
 
@@ -347,17 +308,17 @@ struct proc *sched_tick(void)
 	 * thread that has just woken up; dispatch it.
 	 * FIXME: what about the just_queued threads response time?
 	 */
-	new_prio = rq_get_highest_prio(rq_active);
-	if (new_prio > current_prio) {
+	new_prio = rq_get_highest_prio(PS->rq_active);
+	if (new_prio > PS->current_prio) {
 		current->stats.preempt_high_prio++;
 		panic("Sleep support in not yet in the kernel; how "
 		      "did we reach here?");
 
-		new_proc = list_entry(rq_active->head[new_prio].next,
+		new_proc = list_entry(PS->rq_active->head[new_prio].next,
 				      struct proc, pnode);
 		list_del(&new_proc->pnode);
 
-		rq_return_proc(rq_active, current, current_prio);
+		rq_return_proc(PS->rq_active, current, PS->current_prio);
 		return preempt(new_proc, new_prio);
 	}
 
@@ -401,16 +362,13 @@ void schedulify_this_code_path(enum cpu_type t)
 
 	proc_init(current);
 	current->state = TD_ONCPU;
-	current_prio = DEFAULT_PRIO;
+	PS->current_prio = DEFAULT_PRIO;
 }
 
 void sched_init(void)
 {
 	extern void ticks_handler(void);
 	uint8_t vector;
-
-	rq_init(rq_active);
-	rq_init(rq_expired);
 
 	pcb_validate_offsets();
 
@@ -424,7 +382,7 @@ void sched_init(void)
 	 */
 	vector = TICKS_IRQ_VECTOR;
 	set_intr_gate(vector, ticks_handler);
-	ioapic_setup_isairq(0, vector, IRQ_BOOTSTRAP);
+	ioapic_setup_isairq(0, vector, IRQ_BROADCAST);
 
 	/*
 	 * We can program the PIT as one-shot and re-arm it in the
@@ -441,6 +399,10 @@ void sched_init(void)
  */
 
 #if SCHED_STATS
+
+#include <spinlock.h>
+spinlock_t printstats_lock = SPIN_UNLOCKED();
+
 static void print_proc_stats(struct proc *proc, int prio)
 {
 	uint dispatch_count;
@@ -451,7 +413,7 @@ static void print_proc_stats(struct proc *proc, int prio)
 
 	rqwait_overall = proc->stats.rqwait_overall;
 	if (proc != current)
-		rqwait_overall += sys_ticks - proc->enter_runqueue_ts;
+		rqwait_overall += PS->sys_ticks - proc->enter_runqueue_ts;
 
 	prints("%lu:%d:%lu:%lu:%lu:%lu:%u:%u ", proc->pid, prio,
 	       proc->stats.runtime_overall,
@@ -466,30 +428,23 @@ static void print_sched_stats(void)
 {
 	struct proc *proc;
 
-	prints("%lu ", sys_ticks);
+	spin_lock(&printstats_lock);
 
-	print_proc_stats(current, current_prio);
+	prints("%lu ", PS->sys_ticks);
+	print_proc_stats(current, PS->current_prio);
 	for (int i = MIN_PRIO; i <= MAX_PRIO; i++) {
-		list_for_each(&rq_active->head[i], proc, pnode)
+		list_for_each(&PS->rq_active->head[i], proc, pnode)
 			print_proc_stats(proc, i);
-		list_for_each(&rq_expired->head[i], proc, pnode)
+		list_for_each(&PS->rq_expired->head[i], proc, pnode)
 			print_proc_stats(proc, i);
 	}
-	list_for_each(&just_queued, proc, pnode)
+	list_for_each(&PS->just_queued, proc, pnode)
 		print_proc_stats(proc, DEFAULT_PRIO);
-
 	prints("\n");
+
+	spin_unlock(&printstats_lock);
 }
 #endif /* SCHED_STATS */
-
-uint64_t proc_alloc_pid(void)
-{
-	static uint64_t pids;
-
-	assert (pids != UINT64_MAX);
-	return pids++;
-}
-
 
 /*
  * @@@ Tracing: @@@
@@ -503,7 +458,6 @@ static void rq_dump(struct runqueue *rq)
 
 	name = (rq == rq_active) ? "active" : "expired";
 	prints("Dumping %s table:\n", name);
-
 	for (int i = MAX_PRIO; i >= MIN_PRIO; i--)
 		if (!list_empty(&rq->head[i]))
 			list_for_each(&rq->head[i], proc, pnode)
@@ -520,7 +474,7 @@ static void rq_dump(struct runqueue *rq)
 #if SCHED_TESTS
 #include <vga.h>
 
-static void __no_return loop_print(char ch, int color)
+void __no_return loop_print(char ch, int color)
 {
 	while (true) {
 		putc_colored(ch, color);
@@ -529,32 +483,22 @@ static void __no_return loop_print(char ch, int color)
 	}
 }
 
-static void __no_return test0(void) { loop_print('A', VGA_BLUE); }
-static void __no_return test1(void) { loop_print('B', VGA_GREEN); }
-static void __no_return test2(void) { loop_print('C', VGA_CYAN); }
-static void __no_return test3(void) { loop_print('D', VGA_RED); }
-static void __no_return test4(void) { loop_print('E', VGA_MAGNETA); }
-static void __no_return test5(void) { loop_print('F', VGA_BROWN); }
-static void __no_return test6(void) { loop_print('G', VGA_GRAY); }
-static void __no_return test7(void) { loop_print('H', VGA_YELLOW); }
-static void __no_return test8(void) { loop_print('I', VGA_LIGHT_BLUE); }
-static void __no_return test9(void) { loop_print('J', VGA_LIGHT_GREEN); }
+static void __no_return test0(void) { loop_print('A', VGA_LIGHT_BLUE); }
+static void __no_return test1(void) { loop_print('B', VGA_LIGHT_BLUE); }
+static void __no_return test2(void) { loop_print('C', VGA_LIGHT_BLUE); }
+static void __no_return test3(void) { loop_print('D', VGA_LIGHT_CYAN); }
+static void __no_return test4(void) { loop_print('E', VGA_LIGHT_CYAN); }
+static void __no_return test5(void) { loop_print('F', VGA_LIGHT_CYAN); }
 
-void __no_return sched_run_tests(void)
+void sched_run_tests(void)
 {
-	for (int i = 0; i < 10; i++) {
+	for (int i = 0; i < 20; i++) {
 		kthread_create(test0);
 		kthread_create(test1);
 		kthread_create(test2);
 		kthread_create(test3);
 		kthread_create(test4);
 		kthread_create(test5);
-		kthread_create(test6);
-		kthread_create(test7);
-		kthread_create(test8);
-		kthread_create(test9);
 	}
-
-	loop_print('@', VGA_WHITE);
 }
 #endif /* SCHED_TESTS */

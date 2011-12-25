@@ -10,10 +10,21 @@
 
 #include <proc.h>
 #include <sched.h>
+#include <atomic.h>
 #include <x86.h>
 #include <segment.h>
 #include <paging.h>
 #include <kmalloc.h>
+
+/*
+ * Allocate a unique thread ID
+ */
+uint64_t kthread_alloc_pid(void)
+{
+	static uint64_t pids;
+
+	return atomic_inc(&pids);
+}
 
 /*
  * Create a new kernel thread running given function
@@ -21,7 +32,7 @@
  *
  * NOTE! given function must never exit!
  */
-void kthread_create(void (*func)(void))
+void kthread_create(void (* __no_return func)(void))
 {
 	struct proc *proc;
 	struct irq_ctx *irq_ctx;

@@ -5,6 +5,7 @@
 #include <tests.h>
 
 uint8_t atomic_bit_test_and_set(uint32_t *val);
+uint64_t atomic_inc(uint64_t *val);
 
 #if    ATOMIC_TESTS
 void atomic_run_tests(void);

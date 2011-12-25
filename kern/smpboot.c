@@ -19,6 +19,7 @@
 #include <proc.h>
 #include <percpu.h>
 #include <kmalloc.h>
+#include <sched.h>
 
 /*
  * Assembly trampoline code start and end pointers
@@ -212,8 +213,8 @@ fail:
 
 /*
  * AP cores C code entry. We come here from the trampoline,
- * which has assigned us a unique stack, a per-CPU area, and
- * bootstrap's gdt, idt, and page tables.
+ * which has assigned us a unique stack, the per-CPU area
+ * addr in %gs, and bootstrap's gdt, idt, and page tables.
  */
 void __no_return secondary_start(void)
 {
@@ -222,15 +223,17 @@ void __no_return secondary_start(void)
 	/* Quickly tell the parent we're alive */
 	++nr_alive_cpus;
 
-	/* Don't uncomment this till we get rid of all
-	 * the scheduler globals, making it SMP-safe */
-	// schedulify_this_code_path(SECONDARY);
+	schedulify_this_code_path(SECONDARY);
+	apic_local_regs_init();
 
 	/* Assert validity of our per-CPU area */
 	id.raw = apic_read(APIC_ID);
 	assert(id.id == percpu_get(apic_id));
 
 	printk("SMP: CPU apic_id=%d started\n", id.id);
+
+	local_irq_enable();
+	smpboot_run_tests();
 	halt();
 }
 
@@ -262,3 +265,27 @@ void smpboot_init(void)
 	barrier();
 	assert(nr_alive_cpus == nr_cpus);
 }
+
+#if	SCHED_TESTS
+#include <vga.h>
+
+static void __no_return test0(void)  { loop_print('G', VGA_LIGHT_GREEN); }
+static void __no_return test1(void)  { loop_print('H', VGA_LIGHT_GREEN); }
+static void __no_return test2(void)  { loop_print('I', VGA_LIGHT_GREEN); }
+static void __no_return test3(void)  { loop_print('J', VGA_LIGHT_MAGNETA); }
+static void __no_return test4(void)  { loop_print('K', VGA_LIGHT_MAGNETA); }
+static void __no_return test5(void)  { loop_print('L', VGA_LIGHT_MAGNETA); }
+
+void smpboot_run_tests(void)
+{
+	for (int i = 0; i < 20; i++) {
+		kthread_create(test0);
+		kthread_create(test1);
+		kthread_create(test2);
+		kthread_create(test3);
+		kthread_create(test4);
+		kthread_create(test5);
+	}
+}
+
+#endif /* SCHED_TESTS */

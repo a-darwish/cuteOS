@@ -131,13 +131,11 @@ enum proc_state {
 	TD_INVALID,			/* NULL mark */
 };
 
-uint64_t proc_alloc_pid(void);
-
 static inline void proc_init(struct proc *proc)
 {
 	memset(proc, 0, sizeof(struct proc));
 
-	proc->pid = proc_alloc_pid();
+	proc->pid = kthread_alloc_pid();
 	pcb_init(&proc->pcb);
 	proc->state = TD_INVALID;
 	list_init(&proc->pnode);

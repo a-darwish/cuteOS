@@ -34,3 +34,39 @@ uint8_t atomic_bit_test_and_set(uint32_t *val)
 
 	return ret;
 }
+
+/*
+ * Atomically execute:
+ *	return *val++;
+ */
+uint64_t atomic_inc(uint64_t *val)
+{
+	uint64_t i = 1;
+
+	asm volatile (
+		"LOCK xaddq %0, %1"
+		: "+r"(i), "+m" (*val)
+		:
+		: "cc");
+
+	return i;
+}
+
+
+#if    ATOMIC_TESTS
+
+void atomic_run_tests(void)
+{
+	printk("_Atomic: 0 -> 99 should be printed:\n");
+	for (uint64_t i = 0; i < 100; atomic_inc(&i))
+		printk("%d ", i);
+	putc('\n');
+
+	printk("_Atomic: 0xfffffffffffffff0 - 0xffffffffffffffff should "
+	       "be printed:\n");
+	for (uint64_t i = -0x10; i != 0; atomic_inc(&i))
+		printk("0x%lx ", i);
+	putc('\n');
+}
+
+#endif /* ATOMIC_TESTS */

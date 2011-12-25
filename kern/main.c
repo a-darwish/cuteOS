@@ -26,6 +26,7 @@
 #include <paging.h>
 #include <kmalloc.h>
 #include <percpu.h>
+#include <atomic.h>
 #include <sched.h>
 
 static void setup_idt(void)
@@ -72,6 +73,7 @@ static void run_test_cases(void)
 	pit_run_tests();
 	apic_run_tests();
 	percpu_run_tests();
+	atomic_run_tests();
 	sched_run_tests();
 }
 

@@ -28,6 +28,7 @@ void percpu_area_init(enum cpu_type t)
 	 * is already set-up by the trampoline. */
 
 	percpu_set(self, get_gs());
+	sched_percpu_area_init();
 }
 
 
@@ -58,15 +59,12 @@ void percpu_inspect_current(void)
 	current->state = 0x11;
 	current->runtime = 0x22;
 	current->enter_runqueue_ts = 0x33;
-	current->spinlock_count = 0x44;
 
 	memcpy(str1, str2, 100);
 	memcpy(str1+100, str2+100, 100);
 
-	if (current->pid == 0) {
+	if (current->pid == 0)
 		current->pid = 0x55;
-		current->spinlock_count = 0x66;
-	}
 }
 
 /*

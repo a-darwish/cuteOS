@@ -1,0 +1,30 @@
+/* 			-*- mode: C; -*-
+ *
+ * Cute IRQ model:
+ *
+ *			@@IRQ_BOOTSTRAP@@
+ *
+ * - Interrupt Service Routine (ISR) need not to be re-entrant: the
+ *   CPU will _not_ interrupt a handler in execution due to x86's
+ *   "interrupt gate" semantics: setting IF=0 upon handler entry.
+ *
+ * - ISRs need to be thread-safe wrt. other kernel threads accessing
+ *   memory areas handled by the ISR.
+ *
+ * - Functions called by ISRs _must_ be re-entrant. Non-reentrant
+ *   parts of such functions should be protected by spin-locks that
+ *   automatically disable local interrupts upon getting acquired.
+ *
+ *   (Code which acquires a spin lock without disabling interrupts
+ *   is thread-safe, but not re-entrant.)
+ *
+ *
+ *			@@IRQ_BROADCAST@@
+ *
+ * - Such ISRs execute concurrently, but not in a re-entrant fashion;
+ *   they usually make heavy use of Per-CPU variables in our kernel.
+ *
+ * - Kernel code should disable interrupts before accessing per-CPU
+ *   variables handled by such ISRs, thus avoiding pseudo-concurrent
+ *   execution of the per-CPU critical region.
+ */

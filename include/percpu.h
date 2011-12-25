@@ -10,6 +10,38 @@
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
  *
+ *
+ * Usage Details:
+ * --------------
+ *
+ * "While per-CPU variables provide protection against concurrent accesses
+ * from several CPUs, they do not provide protection against accesses from
+ * asynchronous functions (interrupt handlers, deferrable functions). In
+ * these cases, additional synchronization primitives are required.
+ *
+ * Furthermore, per-CPU variables are prone to race conditions caused by
+ * kernel preemption , both in uniprocessor and multiprocessor systems. As
+ * a general rule, a kernel control path should access a per-CPU variable
+ * with kernel preemption disabled. Just consider, for instance, what would
+ * happen if a kernel control path gets the address of its localcopy of a
+ * per-CPU variable, and then it is preempted and moved to another CPU: the
+ * address still refers to the element of the previous CPU." --ULK3
+ *
+ * Which makes us deduce the following rules:
+ * a) Classical race conditions may arise if the newly scheduled thread
+ *    accessed the same perCPU critical-region the older thread was
+ *    accessing while being preempted. ALWAYS disable preemption before
+ *    entering a per-CPU critical region.
+ * b) Similar to spinlocks, if the per-CPU critical region is accessed by
+ *    an IRQ handler, interrupts need to get disabled, or the critical
+ *    region will get pseudo-concurrently executed.
+ * c) PerCPU critical-region protection is _identical_ for the uniprocessor
+ *    and the multiprocessor case.
+ *
+ *
+ * Implementation Details:
+ * -----------------------
+ *
  * The fastest-way possible to access a per-CPU region is to _permanently_
  * assign one of the CPU internal registers with the virtual address of its
  * context area.
@@ -88,6 +120,7 @@ struct percpu {
 	struct proc *__current;		/* Descriptor of the ON_CPU thread */
 	int apic_id;			/* Local APIC ID */
 	uintptr_t self;			/* Address of this per-CPU area */
+	struct percpu_sched sched;
 #if PERCPU_TESTS
 	uint64_t x64;			/* A 64-bit value (testing) */
 	uint32_t x32;			/* A 32-bit value (testing) */
@@ -241,12 +274,12 @@ extern struct percpu cpus[CPUS_MAX];
 #define percpu_addr(var)						\
 ({									\
 	uintptr_t res;							\
-									\
 	res = percpu_get(self);						\
 	res += __percpu_offset(var);					\
-									\
 	((__percpu_type(var) *)res);					\
 })
+
+#define PS	percpu_addr(sched)
 
 /*
  * A thread descriptor address does not change for the lifetime of that
