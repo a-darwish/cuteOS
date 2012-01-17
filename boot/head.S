@@ -335,7 +335,7 @@ gdt_end:
  * when using identity mappings.
  */
 physical_gdtdesc:
-	.word  gdt_end - gdt            # limit
+	.word  gdt_end - gdt - 1	# limit
 	.long  gdt			# Base
 
 /*
@@ -345,7 +345,7 @@ physical_gdtdesc:
  * with a virtual address of the GDT base.
  */
 virtual_gdtdesc:
-	.word  gdt_end - gdt            # limit
+	.word  gdt_end - gdt - 1	# limit
 	.quad  VIRTUAL(gdt)		# Base
 
 .bss

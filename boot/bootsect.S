@@ -390,13 +390,19 @@ sector:
  */
 
 /* As said by linux x86 boot code, there are machines which are
- * known not to boot with the GDT being 8-byte unaligned. Intel
- * also recommends 16 byte alignment, so let it be */
+ * known not to boot with the GDT being 8-byte unaligned. Intel also
+ * recommends 16 byte alignment, so let it be.
+ *
+ * “The limit value is expressed in bytes and is added to the base
+ * address to get the address of the last valid byte.  A limit value
+ * of 0 results in exactly 1 valid byte. Because IDT/GDT entries are
+ * always eight bytes long, the limit should always be one less than
+ * an integral multiple of eight (that is, 8N - 1).”  --Intel */
 .align 16
 gdt:
 	/* since the null descriptor values are not used, we
 	 * save the gdt table descriptor here at its place */
-	.word  gdt_end - gdt	# limit: size of gdt table in bytes
+	.word  gdt_end - gdt -1 # limit
 	.long  MBR_SEG<<4 + gdt	# NOTE! protected mode flat address
 	.word  0x0000		# padding
 gdt_cs:

@@ -335,7 +335,7 @@ apic_timer_handler:
  */
 .globl idtdesc
 idtdesc:
-	.word  idt_end - idt		# limit
+	.word  idt_end - idt - 1	# limit
 	.quad  VIRTUAL(KTEXT_PHYS(idt))	# base
 
 .bss

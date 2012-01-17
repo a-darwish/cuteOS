@@ -180,7 +180,7 @@ startup_64:
 
 .align 16
 gdt:
-	.word  gdt_end - gdt		# limit
+	.word  gdt_end - gdt - 1	# limit
 	.long  SMPBOOT_START + (gdt - trampoline)
 					# base; pmode flat address
 	.word  0x0000			# padding

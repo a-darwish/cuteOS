@@ -300,7 +300,7 @@ pmode32_gdtr:
 	.equ   RIDT_ENTRY_SIZE, 0x4	# 8086 defined
 	.equ   RIDT_ENTRIES, 0x100	# 8086, 286, 386+ defined
 rmode_idtr:
-	.word  RIDT_ENTRIES * RIDT_ENTRY_SIZE
+	.word  RIDT_ENTRIES * RIDT_ENTRY_SIZE - 1
 	.long  RIDT_BASE
 
 pmode16_end:
@@ -312,7 +312,7 @@ pmode16_end:
  */
 pmode16_gdt:
 	/* gdtr */
-	.word  (pmode16_gdt_end - pmode16_gdt)
+	.word  (pmode16_gdt_end - pmode16_gdt - 1)
 	.long  pmode16_gdt		# base
 	.word  0x0000			# padding
 
