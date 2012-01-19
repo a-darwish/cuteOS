@@ -95,9 +95,9 @@ real_start:
 
 	/* Copy the kernel from disk to its destined starting address
 	 * at 0x10000. For simplicity, we'll copy the disk's first
-	 * 1024 sectors post the mbr to ram regardless of the real
+	 * 512 sectors post the mbr to ram regardless of the real
 	 * kernel size; we may optimize later. The kernel will be in
-	 * the range (0x10000-0x90000]; sector size = 512 bytes.
+	 * the range (0x10000-0x50000]; sector size = 512 bytes.
 	 *
 	 * INT 0x13, function 0x42 - extended read sectors
 	 * input  %dl     - drive number (provided by bios in %dl)
@@ -106,7 +106,7 @@ real_start:
 	 * output CF      - error flag (true = error) */
 	.equ   KERNEL_SEGMENT, 0x1000
 	.equ   KERNEL_SEGMENT_END, 0x9000
-	movw   $16, %cx			# 16 * 64 sector = 512K
+	movw   $8, %cx			# 8 * 64 sector (32K) = 256K
 	movw   $disk_address_packet, %si
 	movw   $KERNEL_SEGMENT, buffer_seg
 	movw   $1, sector		# mbr is sector 0
@@ -175,6 +175,8 @@ flush_prefetch:
 	movw   $(gdt_ds - gdt), %ax
 	movw   %ax, %ds
 	movw   %ax, %es
+	movw   %ax, %fs
+	movw   %ax, %gs
 	movw   %ax, %ss
 	movl   $((MBR_SEG << 4) + STACK_OFFSET), %esp
 
@@ -361,24 +363,17 @@ halt:
  */
 
 disk_address_packet:
-/* packet size in bytes */
-packet_size:
-	.byte  0x10
-unused:
-	.byte  0x00
-/* number of blocks to transfer [1 - 127] */
+	.byte  0x10		# Packet size in bytes
+	.byte  0x00		# Unused
 sectors_cnt:
-	.byte  0x00
-unused2:
-	.byte  0x00
-/* read/write buffer address */
+	.byte  0x00		# Number of blocks to transfer [1 - 127]
+	.byte  0x00		# Unused
 buffer_offset:
-	.word  0x00
+	.word  0x00		# Read/Write buffer address
 buffer_seg:
 	.word  0x00
-/* logical sector number */
 sector:
-	.quad  0x00
+	.quad  0x00		# Logical sector number
 
 /*
  * Protected mode GDT
