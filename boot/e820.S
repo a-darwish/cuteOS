@@ -47,11 +47,15 @@ e820:
  * Get system memory map through the E820 BIOS ACPI service
  * and store the result in the system structure described at
  * e820.h
+ *
+ * NOTE! ACPI specifies a minimum e820 entry size of 20 bytes;
+ * it does NOT specify a max. Nonetheless, "Sony VAIO" BIOSes
+ * discard any E820h call with an entry size > 24.  Let it be.
  */
 	.type  get_mmap, @function
 	.equ   e820_sig, E820_BIOS_SIG
 	.equ   init_sig, E820_INIT_SIG
-	.equ   entry_sz, 0x30		# arbitary ( > 20)
+	.equ   entry_sz, 24		# ACPI-v4/SonyVaio
 	.equ   width_sz, 4		# width field size
 	.equ   error_sz, 4		# error field size
 	.equ   chksm_sz, 4		# chksm field size
