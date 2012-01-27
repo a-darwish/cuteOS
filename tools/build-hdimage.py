@@ -35,13 +35,14 @@ import sys
 import os.path
 import struct
 
-kernel_file = 'image'
-data_folder = 'data/'
-final_image = data_folder + 'hd-image'
-ramdisk_file = data_folder + 'ramdisk'
+kernel_folder = 'kern/'
+build_folder  = 'build/'
+kernel_file   = kernel_folder + 'image'
+ramdisk_file  = build_folder  + 'ramdisk'
+final_image   = build_folder  + 'hd-image'
 
-if not os.path.exists(data_folder):
-    os.makedirs(data_folder)
+if not os.path.exists(build_folder):
+    os.makedirs(build_folder)
 
 # Expand kernel image to 512 Kbytes
 size_512k = 512 * 1024
@@ -52,6 +53,7 @@ with open(final_image, 'wb') as f:
     f.write(b'0' * size_512k)
     f.truncate(size_512k)
 
+# Build ramdisk header, and its buffer
 header_length = 8 + 4 + 4 + 8
 ramdisk_length = header_length
 if os.path.exists(ramdisk_file):
@@ -59,7 +61,6 @@ if os.path.exists(ramdisk_file):
     ramdisk_buffer  = open(ramdisk_file, 'rb').read()
 else:
     ramdisk_buffer  = b''
-
 ramdisk_sectors = (ramdisk_length - 1)//512 + 1
 ramdisk_header = struct.pack('=8cII8c',
     b'C', b'U', b'T', b'E', b'-', b'S', b'T', b'A',
@@ -68,6 +69,10 @@ ramdisk_header = struct.pack('=8cII8c',
     b'C', b'U', b'T', b'E', b'-', b'E', b'N', b'D')
 assert len(ramdisk_header) == header_length
 
+# Expand final disk image beyond 1MB: some virtual
+# machine BIOSes fail if that image len is < 1MB
+size_1MB = 1024 * 1024
 with open(final_image, 'ab') as f:
     f.write(ramdisk_header)
     f.write(ramdisk_buffer)
+    f.write(b'#' * size_1MB)

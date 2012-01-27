@@ -1,5 +1,6 @@
 #
 # Cute Makefile
+# (C) 2009-2012 Ahmed S. Darwish <darwish.07@gmail.com>
 #
 
 CC	= gcc
@@ -214,8 +215,7 @@ else
 	Q =
 endif
 
-all: $(BUILD_DIRS) image
-	$(E) "Kernel ready"
+all: final
 
 # Check kernel code against common semantic C errors
 # using the 'sparse' semantic parser
@@ -228,16 +228,39 @@ check: clean
 	$(Q) $(MAKE) REAL_CC=$(CC) CC=$(CGCC) all
 
 #
-# Build final, self-contained, bootable image
+# Build final, self-contained, bootable disk image
 #
 
-BOOTSECT_ELF = boot/bootsect.elf
-BOOTSECT_BIN = boot/bootsect.bin
+BOOT_BIN       = kern/image
+RAMDISK_BIN    = build/ramdisk
+FINAL_HD_IMAGE = build/hd-image
+BUILD_SCRIPT   = tools/build-hdimage.py
 
-KERNEL_ELF   = kern/kernel.elf
-KERNEL_BIN   = kern/kernel.bin
+final: $(BUILD_DIRS) $(FINAL_HD_IMAGE)
+	$(E) "Disk image ready:" $(FINAL_HD_IMAGE)
 
-image: $(BOOTSECT_ELF) $(KERNEL_ELF)
+$(FINAL_HD_IMAGE): $(BOOT_BIN) $(RAMDISK_BIN) $(BUILD_SCRIPT)
+	$(E) "  PYTHON3  " $@
+	$(Q) python $(BUILD_SCRIPT)
+
+# If no ramdisk image exist, create an empty placeholder.
+# Also create the 'build/' directory if it doesn't exist.
+$(RAMDISK_BIN):
+	$(Q) test -d 'build' || (echo "  MKDIR     build")
+	$(Q) mkdir -p build
+	$(E) "  TOUCH    " $@
+	$(Q) touch $@
+
+#
+# Build kernel + bootsector ELF and binaries
+#
+
+BOOTSECT_ELF   = boot/bootsect.elf
+BOOTSECT_BIN   = boot/bootsect.bin
+KERNEL_ELF     = kern/kernel.elf
+KERNEL_BIN     = kern/kernel.bin
+
+$(BOOT_BIN): $(BOOTSECT_ELF) $(KERNEL_ELF)
 	$(E) "  OBJCOPY  " $@
 	$(Q) objcopy -O binary $(BOOTSECT_ELF) $(BOOTSECT_BIN)
 	$(Q) objcopy -O binary $(KERNEL_ELF) $(KERNEL_BIN)
@@ -273,12 +296,12 @@ $(BUILD_DIRS):
 .PHONY: clean
 clean:
 	$(E) "  CLEAN"
-	$(Q) rm -f  image
-	$(Q) rm -f  $(BUILD_OBJS)
 	$(Q) rm -fr $(BUILD_DIRS)
+	$(Q) rm -f  $(BUILD_OBJS)
 	$(Q) rm -f  $(PROCESSED_LD_SCRIPT)
 	$(Q) rm -f  $(BOOTSECT_ELF) $(BOOTSECT_BIN)
 	$(Q) rm -f  $(KERNEL_ELF) $(KERNEL_BIN)
+	$(Q) rm -f  $(BOOT_BIN) $(FINAL_HD_IMAGE)
 
 # Include generated dependency files
 # `-': no error, not even a warning, if any of the given
