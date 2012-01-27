@@ -63,6 +63,7 @@
 #include <paging.h>
 #include <sections.h>
 #include <spinlock.h>
+#include <ramdisk.h>
 #include <e820.h>
 #include <mm.h>
 #include <tests.h>
@@ -452,7 +453,7 @@ void pagealloc_init(void)
 	printk("Memory: Available physical memory = %d MB\n",
 	       ((avail_pages * PAGE_SIZE) / 1024) / 1024);
 
-	pfdtable = VIRTUAL(KTEXT_PHYS(__kernel_end));
+	pfdtable = ramdisk_memory_area_end();
 	pfdtable_top = pfdtable;
 	pfdtable_end = pfdtable + avail_pages;
 

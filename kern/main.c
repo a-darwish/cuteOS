@@ -20,6 +20,7 @@
 #include <ioapic.h>
 #include <keyboard.h>
 #include <smpboot.h>
+#include <ramdisk.h>
 #include <e820.h>
 #include <mm.h>
 #include <vm.h>
@@ -104,10 +105,13 @@ void __no_return kernel_start(void)
 
 	print_info();
 
-	/* First, discover our physical memory map */
+	/* First, don't override the ramdisk area (if any) */
+	ramdisk_init();
+
+	/* Then discover our physical memory map .. */
 	e820_init();
 
-	/* Then tokenize that physical memory into allocatable pages */
+	/* and tokenize the available memory into allocatable pages */
 	pagealloc_init();
 
 	/* With the page allocator in place, git rid of our temporary

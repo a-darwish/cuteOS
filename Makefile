@@ -196,6 +196,7 @@ KERN_OBJS =		\
   kern/kthread.o	\
   kern/common.o		\
   kern/percpu.o		\
+  kern/ramdisk.o	\
   kern/main.o
 
 BOOTSECT_OBJS =		\
