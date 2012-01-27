@@ -26,6 +26,11 @@ SECTIONS
 	/* Where the bootsector loads us */
 	. = 0x100000;
 
+	/* The global GDT is loaded in all CPU modes, including 16-
+	 * bit code where the GDT base addr must not exceed 3 bytes. */
+	ASSERT(global_gdt >> 24 == 0,
+	       "Error: The 'global_gdt' must reside in a 3-byte address")
+
 	/*
 	 * Bootstrap sections can't be merged with the rest
 	 * of the kernel as they're physical-addresses based
@@ -33,14 +38,16 @@ SECTIONS
 
 	.text.head : {
 	      boot/head.o(.text)
+	      boot/rmcall.o(.text)
 	      boot/e820.o(.text)
+	      boot/load_ramdisk.o(.text)
 	}
 
 	.data.head : {
 	      boot/head.o(.data)
+	      boot/rmcall.o(.data)
 	      boot/e820.o(.data)
-	      boot/head.o(.rodata*)
-	      boot/e820.o(.rodata*)
+	      boot/load_ramdisk.o(.data)
 	}
 
 	/* Putting the bootstrap BSS in the middle will force
@@ -51,7 +58,9 @@ SECTIONS
 	 * with the tradeoff price of much extra complexity */
 	.bss.head (NOLOAD) : {
 	      boot/head.o(.bss)
+	      boot/rmcall.o(.bss)
 	      boot/e820.o(.bss)
+	      boot/load_ramdisk.o(.bss)
 	}
 
 	/*
@@ -62,25 +71,37 @@ SECTIONS
 
 	.text : AT(ADDR(.text) - KTEXT_PAGE_OFFSET) {
 	       __text_start = .;
-	       *(EXCLUDE_FILE (*boot/head.o *boot/e820.o) .text)
+	       *(EXCLUDE_FILE (*boot/head.o *boot/rmcall.o \
+			       *boot/e820.o *boot/load_ramdisk.o)
+			       .text)
 	       __text_end = .;
 	}
 
 	.data : {
 	       __data_start = .;
-	       *(EXCLUDE_FILE (*boot/head.o *boot/e820.o) .data)
-	       *(EXCLUDE_FILE (*boot/head.o *boot/e820.o) .rodata*)
+	       *(EXCLUDE_FILE (*boot/head.o *boot/rmcall.o \
+			       *boot/e820.o *boot/load_ramdisk.o)
+			       .data)
+	       *(.rodata)
 	       __data_end = .;
         }
 
 	.bss : {
 		__bss_start = .;
-	       *(EXCLUDE_FILE (*boot/head.o *boot/e820.o) .bss)
-	       *(EXCLUDE_FILE (*boot/head.o *boot/e820.o) COMMON)
+	       *(EXCLUDE_FILE (*boot/head.o *boot/rmcall.o \
+			       *boot/e820.o *boot/load_ramdisk.o)
+			       .bss)
+	       *(EXCLUDE_FILE (*boot/head.o *boot/rmcall.o \
+			       *boot/e820.o *boot/load_ramdisk.o)
+			       COMMON)
 		__bss_end = .;
 	}
 
 	__kernel_end = .;
+
+	/*
+	 * The ramdisk header is loaded directly after the kernel.
+	 */
 
 	/DISCARD/ : {
 		*(.eh_frame)

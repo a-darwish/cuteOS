@@ -31,8 +31,7 @@
 	movw   $msg, %si;  	\
 	call   print_string
 
-/* Arbitary offset > bootsector's 512 bytes code */
-#define STACK_OFFSET	0x3000
+#include "rmcommon.h"
 
 .code16
 
@@ -59,27 +58,17 @@ real_start:
 	movw   %ax, %ss
 	movw   $STACK_OFFSET, %sp
 
+	/* Permanently save the BIOS-passed EDD Drive Number */
+	.equ   driveno, RCODE_DRIVE_NUMBER - MBR_SEG<<4
+	movb   %dl, (driveno)
+
 	MSG    (welcome)
 
 	/* Check for enhanced bios services to move beyond the 8GB
 	 * limit with LBA, or the 504MB limit with no LBA (CHS).
 	 * If no enhanced services exist (a pre-1995 bios), we'll
-	 * gracefully exit.
-	 *
-	 * INT 0x13, function 0x41
-	 * input  %bx     - 0x55aa (defined by ebios standard)
-	 * input  %dl     - drive number (provided by bios in %dl)
-	 * output success - carry = 0 && bx = 0xaa55 &&
-	 *                  cx bit 0 = 1 (enhanced drive access)
-	 * output failure - carry = 1 || bx != 0xaa55 */
-	movb   $0x41, %ah
-	movw   $0x55aa, %bx
-	int    $0x13
-	jc     no_ebios
-	cmpw   $0xaa55, %bx
-	jne    no_ebios
-	shrw   $1, %cx
-	jnc    no_ebios
+	 * gracefully exit. */
+	EDD_CHECK_EXTENSIONS_PRESENT(driveno, no_ebios)
 
 	/* Extended BIOS Data Area grows down the top of low memory
 	 * at 0x9ffff and usually spans to 0x9a000 these days. We load
@@ -107,6 +96,7 @@ real_start:
 	.equ   KERNEL_SEGMENT, 0x1000
 	.equ   KERNEL_SEGMENT_END, 0x9000
 	movw   $8, %cx			# 8 * 64 sector (32K) = 256K
+	movb   (driveno), %dl
 	movw   $disk_address_packet, %si
 	movw   $KERNEL_SEGMENT, buffer_seg
 	movw   $1, sector		# mbr is sector 0
@@ -292,49 +282,7 @@ kpoll_output:
 	jnc    kpoll_output
 	ret
 
-/*
- * Print methods
- *
- * INT 0x10, function 0x0e - write teletype to active page
- * input  %al    - character to write
- * input  %bh    - page number
- * input  %bl    - characters' attribute
- *
- * Character attribute is an 8 bit value, low 4 bits sets
- * foreground color, while the high 4 sets the background.
- * Check vga.h for the actual values.
- */
-
-/* print %dx value in hexadecimal */
-print_hex:
-	xorb   %bh, %bh
-	movw   $4, %cx		     # 4 hex digits (2bytes)
-print_digit:
-	/* extract leftmost digit in %al */
-	rolw   $4, %dx
-	movw   $0x0e0f, %ax
-	andb   %dl, %al
-	/* transform extracted digit to ascii */
-	cmpb   $0x0a, %al
-	jl     digit
-	addb   $0x07, %al
-digit:
-	addb   $0x30, %al
-	int    $0x10
-	loop   print_digit
-	ret
-
-/* print string pointed by %ds:si */
-print_string:
-	xorb   %bh, %bh
-	movb   $0x0e, %ah
-	lodsb
-	cmpb   $0, %al
-	je     end
-	int    $0x10
-	jmp    print_string
-end:
-	ret
+	PUT_PRINT_METHODS()
 
 /*
  * Error conditions

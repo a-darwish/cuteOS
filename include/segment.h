@@ -11,8 +11,10 @@
  *  the Free Software Foundation, version 2.
  */
 
-#define KERNEL_CS 0x08
-#define KERNEL_DS 0x10
+#define KERNEL_CS	0x08
+#define KERNEL_DS	0x10
+#define KERNEL_CS16	0x18
+#define KERNEL_DS16	0x20
 
 #ifndef __ASSEMBLY__
 

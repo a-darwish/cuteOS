@@ -10,6 +10,7 @@
 
 #include <segment.h>
 #include <paging.h>
+#include "rmcommon.h"
 
 .text
 .code32
@@ -20,6 +21,7 @@
  */
 .globl startup_32
 startup_32:
+	cli
 
 	/* Setup a boot stack and assure amd64 support */
 	movl   $stack_end, %esp
@@ -27,9 +29,17 @@ startup_32:
 	testl  %eax, %eax
 	jz     no_longmode
 
-	/* Get what we need from real-mode BIOS services
-	 * before switching to long mode */
+	/* Don't depend on the bootloader's GDT; use our own */
+	lgdt   global_gdt
+
+	/*
+	 * Get what we need from the real-mode BIOS services before
+	 * switching to long mode:
+	 * - Query the system memory map using ACPI's E820h service
+	 * - Load ramdisk image using the BIOS EDD-read service
+	 */
 	call   e820
+	call   load_ramdisk
 
 	/*
 	 *  Long mode initialization
@@ -100,18 +110,9 @@ early_error:
  * unlucky user and halt
  */
 no_longmode:
-	/* Blank screen */
-	movl   $0xb8000, %edi		# VGA base
-	movl   $0x0f200f20, %eax	# white color + ' '
-	movl   $((80 * 25 * 2) / 4), %ecx
-	rep    stosl
-
-	/* Write our message */
-	movl   $0xb80a0, %edi		# VGA base + 1 row
 	movl   $no64_start, %esi
 	movl   $(no64_end - no64_start), %ecx
-	rep    movsb
-
+	call   vga_print
 	jmp    early_error
 
 no64_start:
@@ -125,6 +126,27 @@ no64_start:
 	       'h', 0x0f, 'a', 0x0f, 'l', 0x0f, 't', 0x0f, \
 	       'i', 0x0f, 'n', 0x0f, 'g', 0x0f, ' ', 0x0f
 no64_end:
+
+.globl  blank_screentop
+.type   blank_screentop, @function
+blank_screentop:
+	pushl  %ecx
+	movl   $0xb8000, %edi		# VGA base
+	movw   $0x0f2d, %ax		# white color + '-'
+	movl   $(3 * 80), %ecx		# 3 lines, 80 cols
+	rep    stosw
+	popl   %ecx
+	ret
+.size   blank_screentop, . - blank_screentop
+
+.globl  vga_print
+.type   vga_print, @function
+vga_print:
+	call   blank_screentop
+	movl   $0xb80a0, %edi		# VGA base + 1 row
+	rep    movsb
+	ret
+.size   vga_print, . - vga_print
 
 /*
  * Verify we're running on an amd64-compatible cpu
@@ -314,6 +336,45 @@ zap_identity:
 	ret
 
 .data
+
+/*
+ * All-purpose GDT!
+ *
+ * Bzzzzzz: Since 16-bit code also loads this GDT, its base
+ * address must NOT exceed 3 bytes.  "If the [lgdt] operand
+ * size attribute is 16 bits, a 16bit limit (lower 2 bytes)
+ * and a 24bit base address (third, fourth, and fifth byte)
+ * are loaded." --Intel
+ */
+.align 16
+.globl global_gdt
+.globl global_gdt_size
+	.equ   global_gdt_size, global_gdt_end - global_gdt
+global_gdt:
+	.word  global_gdt_size-1# limit
+	.long  global_gdt	# NOTE! protected mode flat address
+	.word  0x0000		# padding
+gdt_cs:
+	.word  0xffff		# limit = 0xfffff
+	.word  0x0000		# base address = 0x00000
+	.byte  0x00, 0x9a	# P=1, DPL=00, S=1, TYPE=0xA (execute/read)
+	.byte  0xcf, 0x00	# granularity=4K, D=1
+gdt_ds:
+	.word  0xffff		# limit = 0xfffff
+	.word  0x0000		# base address = 0x00000
+	.byte  0x00, 0x92	# P=1, DPL=00, S=1, TYPE=0x2 (read/write)
+	.byte  0xcf, 0x00	# granularity=4K, B=1
+gdt_cs16:
+	.word  0xffff		# limit
+	.word  PMODE16_START	# base
+	.word  0x9a00		# P=1, DPL=00, TYPE=0xA (execute/read)
+	.word  0x0000		# granularity=byte, D=0 (16-bit)
+gdt_ds16:
+	.word  0xffff		# limit
+	.word  PMODE16_START	# base
+	.word  0x9200		# P=1, DPL=00, TYPE=0x2 (read/write)
+	.word  0x0000		# granularity=byte, D=0 (16-bit)
+global_gdt_end:
 
 /*
  * 64-bit GDT. Elements ignored in long-mode are not

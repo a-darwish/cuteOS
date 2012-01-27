@@ -149,8 +149,10 @@ CGCC	= cgcc
 DEPS_DIRS		+= $(DEPS_ROOT_DIR)/boot
 BOOT_OBJS =		\
   boot/head.o		\
+  boot/trampoline.o	\
+  boot/rmcall.o		\
   boot/e820.o		\
-  boot/trampoline.o
+  boot/load_ramdisk.o
 
 # Memory management
 DEPS_DIRS		+= $(DEPS_ROOT_DIR)/mm
