@@ -39,6 +39,7 @@ typedef struct lock_spin {
 
 void spin_init(spinlock_t *lock);
 void spin_lock(spinlock_t *lock);
+bool spin_trylock(spinlock_t *lock);
 void spin_unlock(spinlock_t *lock);
 
 #endif /* _SPINLOCK_H */

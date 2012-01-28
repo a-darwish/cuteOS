@@ -113,6 +113,28 @@ void spin_lock(struct lock_spin *lock)
 }
 
 /*
+ * A spin_lock() carbon-copy, minus the spinning part. lock() could've
+ * been written in terms of trylock(),  but I'll leave it as it is for
+ * code clarity at the cost of duplication.
+ *
+ * Return 'true' if @lock was acquired from the _first_ try.
+ */
+bool spin_trylock(struct lock_spin *lock)
+{
+	union x86_rflags rflags;
+
+	rflags = local_irq_disable_save();
+
+	if (atomic_bit_test_and_set(&lock->val) == _SPIN_LOCKED) {
+		local_irq_restore(rflags);
+		return false;
+	}
+
+	lock->rflags = rflags;
+	return true;
+}
+
+/*
  * Mark the lock as available
  */
 void spin_unlock(struct lock_spin *lock)
@@ -126,3 +148,12 @@ void spin_unlock(struct lock_spin *lock)
 
 	local_irq_restore(rflags);
 }
+
+/*
+ * NOTE! As discussed above, lock() in terms of trylock():
+ *
+ *	while (!spin_trylock(lock))
+ *		while (lock->val == _SPIN_LOCKED)
+ *			cpu_pause();
+ *
+ */
