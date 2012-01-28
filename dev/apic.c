@@ -312,17 +312,27 @@ void apic_monotonic(int ms, uint8_t vector)
  * Inter-Processor Interrupts
  */
 
-void apic_send_ipi(int dst_apic_id, int delivery_mode, int vector)
+static void __apic_send_ipi(int dst_apic_id, int delivery_mode, int vector,
+			    enum irq_dest dest)
 {
 	union apic_icr icr = { .value = 0 };
 
 	icr.vector = vector;
 	icr.delivery_mode = delivery_mode;
 
-	icr.dest_mode = APIC_DESTMOD_PHYSICAL;
-	icr.dest = dst_apic_id;
+	switch (dest) {
+	case IRQ_BROADCAST:
+		icr.dest_shorthand = APIC_DEST_SHORTHAND_ALL_BUT_SELF;
+		break;
+	case IRQ_SINGLE:
+		icr.dest_mode = APIC_DESTMOD_PHYSICAL;
+		icr.dest = dst_apic_id;
+		break;
+	default:
+		assert(false);
+	}
 
-	/* "Edge" and "deassert" are for 82489DX */
+	/* "Level" and "deassert" are for 82489DX */
 	icr.level = APIC_LEVEL_ASSERT;
 	icr.trigger = APIC_TRIGGER_EDGE;
 
@@ -330,6 +340,16 @@ void apic_send_ipi(int dst_apic_id, int delivery_mode, int vector)
 	 * the IPI to be sent: prepare high-word first. */
 	apic_write(APIC_ICRH, icr.value_high);
 	apic_write(APIC_ICRL, icr.value_low);
+}
+
+void apic_send_ipi(int dst_apic_id, int delivery_mode, int vector)
+{
+	__apic_send_ipi(dst_apic_id, delivery_mode, vector, IRQ_SINGLE);
+}
+
+void apic_broadcast_ipi(int delivery_mode, int vector)
+{
+	__apic_send_ipi(0, delivery_mode, vector, IRQ_BROADCAST);
 }
 
 /*

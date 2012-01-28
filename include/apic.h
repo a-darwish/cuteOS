@@ -317,6 +317,12 @@ static inline uint32_t apic_read(uint32_t reg)
 	return readl(vaddr);
 }
 
+enum irq_dest {
+	IRQ_BROADCAST,			/* Interrupt all cores */
+	IRQ_BOOTSTRAP,			/* Interrupt BSC only */
+	IRQ_SINGLE,			/* Interrupt a specific core */
+};
+
 void apic_init(void);
 void apic_local_regs_init(void);
 
@@ -327,6 +333,7 @@ void apic_mdelay(int ms);
 void apic_monotonic(int ms, uint8_t vector);
 
 void apic_send_ipi(int dst_id, int del_mode, int vector);
+void apic_broadcast_ipi(int del_mode, int vector);
 bool apic_ipi_acked(void);
 
 #if	APIC_TESTS

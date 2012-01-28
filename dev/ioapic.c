@@ -123,6 +123,8 @@ void ioapic_setup_isairq(uint8_t irq, uint8_t vector, enum irq_dest dest)
 		entry.dest_mode = IOAPIC_DESTMOD_LOGICAL;
 		entry.dest = IOAPIC_DEST_BROADCAST;
 		break;
+	default:
+		assert(false);
 	}
 
 	ioapic_write_irqentry(pin.apic, pin.pin, entry);

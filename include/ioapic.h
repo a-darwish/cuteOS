@@ -161,12 +161,6 @@ enum {
 	IOAPIC_DEST_BROADCAST = 0xff,
 };
 
-/* Flags: desired destination for legacy ISA IRQs */
-enum irq_dest {
-	IRQ_BROADCAST,			/* Interrupt all cores */
-	IRQ_BOOTSTRAP,			/* Interrupt BSC only */
-};
-
 static inline union ioapic_irqentry ioapic_read_irqentry(int apic, uint8_t irq)
 {
 	union ioapic_irqentry entry = { .value = 0 };
