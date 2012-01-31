@@ -299,29 +299,35 @@ kb_handler:
 	jmp    irq_end
 
 /*
+ * Once a CPU panic()s, it sends an IPI to other cores to jump
+ * here. We just disable local interrupts and halt in response.
+ */
+.globl halt_cpu_ipi_handler
+halt_cpu_ipi_handler:
+	cli
+1:	hlt
+	jmp   1b
+
+/*
  * PIT periodic mode test handler
  */
 #if	PIT_TESTS
-
 .globl pit_periodic_handler
 pit_periodic_handler:
 	PUSH_REGS
 	call   __pit_periodic_handler
 	jmp    irq_end
-
 #endif	/* PIT_TESTS */
 
 /*
  * APIC periodic mode test handler
  */
 #if	APIC_TESTS
-
 .globl apic_timer_handler
 apic_timer_handler:
 	PUSH_REGS
 	call   __apic_timer_handler
 	jmp    irq_end
-
 #endif	/* APIC_TESTS */
 
 .data

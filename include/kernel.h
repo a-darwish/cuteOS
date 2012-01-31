@@ -101,6 +101,7 @@
  * Main kernel print methods
  */
 int vsnprintf(char *buf, int size, const char *fmt, va_list args);
+void printk_bust_all_locks(void);
 void printk(const char *fmt, ...);
 void prints(const char *fmt, ...);
 void putc(char c);
@@ -116,6 +117,7 @@ static void __unused printk_run_tests(void) { }
  * Critical failures
  */
 void __no_return panic(const char *fmt, ...);
+extern void halt_cpu_ipi_handler(void);
 
 #define assert(condition)					\
 	do {							\

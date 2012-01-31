@@ -441,6 +441,17 @@ void prints(const char *fmt, ...)
 }
 
 /*
+ * Do not permit any access to screen state after calling
+ * this method.  This is for panic(), which is important
+ * not to scroll away its critical messages afterwards.
+ */
+void printk_bust_all_locks(void)
+{
+	spin_lock(&vga_lock);
+	spin_lock(&kbuf_lock);
+}
+
+/*
  * Minimal printk test cases
  */
 

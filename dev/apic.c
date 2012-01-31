@@ -312,8 +312,10 @@ void apic_monotonic(int ms, uint8_t vector)
  * Inter-Processor Interrupts
  */
 
-static void __apic_send_ipi(int dst_apic_id, int delivery_mode, int vector,
-			    enum irq_dest dest)
+/* NOTE! This function is implicitly called by panic
+ * code: it should not include any asserts or panics. */
+static void __apic_send_ipi(int dst_apic_id, int delivery_mode,
+			    int vector, enum irq_dest dest)
 {
 	union apic_icr icr = { .value = 0 };
 
@@ -329,7 +331,7 @@ static void __apic_send_ipi(int dst_apic_id, int delivery_mode, int vector,
 		icr.dest = dst_apic_id;
 		break;
 	default:
-		assert(false);
+		compiler_assert(false);
 	}
 
 	/* "Level" and "deassert" are for 82489DX */

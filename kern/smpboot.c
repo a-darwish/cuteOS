@@ -237,6 +237,16 @@ void __no_return secondary_start(void)
 	halt();
 }
 
+/*
+ * NOTE! This function is called by panic(): it should
+ * not include any asserts or panics.
+ */
+int smpboot_get_nr_alive_cpus(void)
+{
+	barrier();
+	return nr_alive_cpus;
+}
+
 void smpboot_init(void)
 {
 	int nr_cpus;

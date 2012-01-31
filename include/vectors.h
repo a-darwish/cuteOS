@@ -36,6 +36,7 @@
 
 // Priority 0xf - Highest priority
 #define TICKS_IRQ_VECTOR	0xf0
+#define HALT_CPU_IPI_VECTOR	0xf1
 #define APIC_SPURIOUS_VECTOR	0xff	// Intel-defined default
 
 // Priority 0x4 - APIC vectors

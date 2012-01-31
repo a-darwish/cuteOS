@@ -194,7 +194,7 @@ KERN_OBJS =		\
   kern/smpboot.o	\
   kern/sched.o		\
   kern/kthread.o	\
-  kern/common.o		\
+  kern/panic.o		\
   kern/percpu.o		\
   kern/ramdisk.o	\
   kern/main.o
