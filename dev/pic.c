@@ -15,8 +15,9 @@
  */
 
 #include <io.h>
-#include <i8259.h>
+#include <pic.h>
 #include <idt.h>
+#include <vectors.h>
 
 /*
  * AT+ standard PIC ports
@@ -30,18 +31,6 @@
  * Where the slave PIC is connected
  */
 #define PIC_CASCADE_IRQ		2
-
-/*
- * The PICs will be entirely masked. Map the IRQs
- * just in case of a triggered 'spurious' interrupt.
- *
- * Assign the least priority possible to those IRQs
- * (biggest vector number = least priority)
- */
-#define PIC_IRQ0_VECTOR		0xf0
-#define PIC_IRQ7_VECTOR		(PIC_IRQ0_VECTOR + 7)
-#define PIC_IRQ8_VECTOR		0xf8
-#define PIC_IRQ15_VECTOR	(PIC_IRQ8_VECTOR + 7)
 
 extern void PIC_handler(void);
 
@@ -67,12 +56,23 @@ static inline void i8259_mask(void)
 }
 
 /*
+ * The PICs will be entirely masked. Map the IRQs in case of a
+ * triggered 'spurious' interrupt.
+ *
  * Unfortunately spuruious PIC interrupts do occur even if the
  * PIC is entirely masked. Thus, we remap the chips away from
  * IBM programmed reserved Intel exception numbers 0x8-0xF to
- * saner values at IRQ0_VECTOR and mask it afterwards.
+ * saner values at PIC_IRQ0_VECTOR and mask it afterwards.
+ *
+ * Those spurious interrupts do occur for an important reason:
+ * sometimes electrical noise makes the CPU INTR pin go high,
+ * so the CPU waits for the vector number from the PIC (using
+ * the i8259A cycle). The PIC does not know why the INTR line
+ * was high, but it has to reply with  __something__, or the
+ * entire CPU will halt! That's also why spurious PIC IRQs can
+ * NOT get masked.	-- http://goo.gl/BMGXl
  */
-void i8259_init(void)
+void pic_init(void)
 {
 	/* Init command 1, cascade mode (D1 = 0), init mode
 	 * (D4 = 1), requires init command 4 (D0 = 1), other

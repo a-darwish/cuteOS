@@ -14,8 +14,8 @@
 #include <idt.h>
 #include <mptables.h>
 #include <serial.h>
-#include <i8259.h>
 #include <pit.h>
+#include <pic.h>
 #include <apic.h>
 #include <ioapic.h>
 #include <keyboard.h>
@@ -132,7 +132,7 @@ void __no_return kernel_start(void)
 
 	/* Remap and mask the PIC; it's just a disturbance */
 	serial_init();
-	i8259_init();
+	pic_init();
 
 	/* Initialize the APICs (and map their MMIO regs) before enabling
 	 * IRQs, and before firing other cores using Inter-CPU Interrupts */

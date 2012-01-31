@@ -11,6 +11,6 @@
  *  the Free Software Foundation, version 2.
  */
 
-void i8259_init(void);
+void pic_init(void);
 
 #endif /* _I8259_H */
