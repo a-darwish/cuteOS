@@ -28,24 +28,18 @@
 #define RDSIG_LEN		8
 #define RDSIG_START		"CUTE-STA"
 #define RDSIG_END		"CUTE-END"
-struct ramdisk_header {
+
+static struct ramdisk_header {
 	char start_signature[RDSIG_LEN];
 	uint32_t sectors;		/* Rdisk len in 512-byte sectors (+hdr)*/
 	uint32_t length;		/* Rdisk len in bytes (without hdr) */
 	char end_signature[RDSIG_LEN];
-} __packed;
+} __packed *rdheader;
 
-static struct ramdisk_header *rdheader;
-static struct ramdisk_desc ramdisk;
-
-/*
- * Export rdisk details to the rest of our kernel
- */
-struct ramdisk_desc ramdisk_get_desc(void)
-{
-	assert(rdheader != NULL);
-	return ramdisk;
-}
+static struct ramdisk {
+	char *buf;
+	int len;
+} ramdisk;
 
 /*
  * The page allocator puts its 'page frame descriptor table'
@@ -74,4 +68,20 @@ void ramdisk_init(void)
 		       ramdisk.buf, ramdisk.len / 1024);
 	else
 		printk("Ramdisk: No disk image loaded\n");
+}
+
+/*
+ * Export ramdisk details to the rest of our kernel
+ */
+
+int ramdisk_get_len(void)
+{
+	assert(rdheader != NULL);
+	return ramdisk.len;
+}
+
+char *ramdisk_get_buf(void)
+{
+	assert(rdheader != NULL);
+	return ramdisk.buf;
 }

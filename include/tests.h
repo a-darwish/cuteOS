@@ -23,7 +23,7 @@
 #define		PERCPU_TESTS		0	/* Per-CPU Data Area tests */
 #define		ATOMIC_TESTS		0	/* Atomic-accessors */
 #define		SCHED_TESTS		0	/* Scheduler tests */
-
+#define		EXT2_TESTS		0	/* File System tests */
 
 #if	(SCHED_TESTS == 1) && (PIT_TESTS == 1)
 #error	Cannot run scheduler test cases with the PIT ones:\

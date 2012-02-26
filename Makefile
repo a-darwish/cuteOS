@@ -173,6 +173,12 @@ DEV_OBJS =		\
   dev/pit.o		\
   dev/keyboard.o
 
+# Ext2 file system
+DEPS_DIRS		+= $(DEPS_ROOT_DIR)/ext2
+EXT2_OBJS =		\
+  ext2/ext2.o		\
+  ext2/ext2_debug.o
+
 # Isolated library code
 DEPS_DIRS		+= $(DEPS_ROOT_DIR)/lib
 LIB_OBJS =		\
@@ -188,6 +194,7 @@ KERN_OBJS =		\
   $(BOOT_OBJS)		\
   $(MM_OBJS)		\
   $(DEV_OBJS)		\
+  $(EXT2_OBJS)		\
   $(LIB_OBJS)		\
   kern/idt.o		\
   kern/mptables.o	\

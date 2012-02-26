@@ -4,7 +4,7 @@
 /*
  * Common methods and definitions
  *
- * Copyright (C) 2009-2010 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2009-2012 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -96,6 +96,23 @@
  */
 #define __mask(x, n)		((typeof(x))((n) - 1))
 #define is_aligned(x, n)	(((x) & __mask(x, n)) == 0)
+
+/*
+ * 'a' Ceil Division 'b'  --  ceil((1.0 * 'a') / 'b')
+ *
+ * This is a very common operator for idioms like: "Amount
+ * of pages needed to render 'x' lines where @a = desired
+ * number of lines, and @b = lines in a single page."
+ *
+ * Or "Number of sectors to hold a a ramdisk image, where
+ * @a = ramdisk number of bytes, @b = bytes in a sector.".
+ */
+static inline uint64_t ceil_div(uint64_t a, uint64_t b)
+{
+	if (a == 0)
+		return a;
+	return ((a - 1) / b) + 1;
+}
 
 /*
  * Main kernel print methods

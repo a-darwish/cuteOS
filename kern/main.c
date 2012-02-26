@@ -30,6 +30,7 @@
 #include <percpu.h>
 #include <atomic.h>
 #include <sched.h>
+#include <ext2.h>
 
 static void setup_idt(void)
 {
@@ -79,6 +80,7 @@ static void run_test_cases(void)
 	percpu_run_tests();
 	atomic_run_tests();
 	sched_run_tests();
+	ext2_run_tests();
 }
 
 /*
@@ -147,13 +149,15 @@ void __no_return kernel_start(void)
 
 	keyboard_init();
 
-	/*
-	 * Startup finished, roll-in the scheduler!
-	 */
-
+	/* Startup finished, roll-in the scheduler! */
 	sched_init();
 	local_irq_enable();
 
+	/*
+	 * Second part of kernel initialization (Scheduler is on!)
+	 */
+
+	ext2_init();
 	run_test_cases();
 	halt();
 }
