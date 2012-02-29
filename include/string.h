@@ -16,6 +16,7 @@
 #include <tests.h>
 
 int strlen(const char *str);
+int strnlen(const char *str, int n);
 char *strncpy(char *dst, const char *src, int n);
 int strncmp(const char *s1, const char *s2, int n);
 

@@ -195,6 +195,21 @@ int strlen(const char *str)
 	return tmp - str;
 }
 
+int strnlen(const char *str, int n)
+{
+	const char *tmp;
+
+	tmp = str;
+	while (n) {
+		if (*tmp == '\0')
+			break;
+		tmp++;
+		n--;
+	}
+
+	return tmp - str;
+}
+
 char *strncpy(char *dst, const char *src, int n)
 {
 	char *tmp = dst;
@@ -248,6 +263,22 @@ int memcmp(const void *s1, const void *s2, uint32_t n)
 
 #if STRING_TESTS
 
+#include <kmalloc.h>
+
+static void test_strnlen(const char *str, int len, int expected_len, bool print)
+{
+	int res;
+
+	res = strnlen(str, len);
+	if (res != expected_len)
+		panic("_STRING - strnlen(\"%s\", %d) returned %d, while %d "
+		      "is expected", (print) ? str : "<binary>", len, res,
+		      expected_len);
+
+	prints("_STRING - strnlen(\"%s\", %d) = %d. Success!\n",
+	       (print) ? str : "<binary>", len, res);
+}
+
 #define _ARRAY_LEN	100
 static uint8_t _arr[_ARRAY_LEN];
 
@@ -283,6 +314,39 @@ static void test_memcpy_overlaps(void)
 
 void string_run_tests(void)
 {
+	char *str;
+	int i;
+
+	/* Strnlen() tests */
+
+	for (i = 0; i <= 10; i++)
+		test_strnlen("", i, 0, true);	/* Bounds, 1 */
+
+	i = 1;
+	str = kmalloc(1024);
+	for (char ch = 'A'; ch <= 'Z'; ch++, i++) {
+		str[i - 1] = ch;
+		str[i] = '\0';
+		test_strnlen(str, 0, 0, true);	/* Bounds, 2 */
+	}
+
+	i = 1;
+	for (char ch = 'A'; ch <= 'Z'; ch++, i++) {
+		str[i - 1] = ch;
+		str[i] = '\0';
+		test_strnlen(str, 1024, i, 1);	/* Test it as a regular strlen */
+	}
+
+	for (i = 0; i <= 'Z' - 'A' + 1; i++)
+		test_strnlen(str, i, i, true);	/* The the 'n' part of strnlen */
+
+	kfree(str);
+	memset(_arr, 0x01, _ARRAY_LEN);
+	for (i = 0; i <= _ARRAY_LEN; i++)
+		test_strnlen((char *)_arr, i, i, 0);   /* Without NULL suffix! */
+
+	/* Memcpy() tests */
+
 	test_memcpy_overlaps();
 }
 
