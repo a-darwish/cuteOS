@@ -24,9 +24,12 @@ enum {
 	EXT2_SUPERBLOCK_OFFSET	= 1024,		/* First Kilobyte */
 	EXT2_GROUP_DESC_OFFSET  = 2048,		/* Second Kilobyte */
 
-	EXT2_LABEL_LEN		= 16,		/* NULL-terminaed string */
-	EXT2_FILENAME_LEN	= 255,		/* Max NULL-terminated filenme */
+	EXT2_LABEL_LEN		= 16,		/* A NULL suffix __may__ exist */
+	EXT2_FILENAME_LEN	= 255,		/* Max filenme length, no NULL */
 	EXT2_LAST_MNT_LEN	= 64,		/* Path when FS was Last mnted */
+
+	EXT2_DIR_ENTRY_MIN_LEN	= 8,		/* 4 ino, 2 rec_len, 2 namelen */
+	EXT2_DIR_ENTRY_ALIGN	= 4,		/* alignmnt for entries, bytes */
 
 	EXT2_INO_NR_BLOCKS	= 15,		/* Data blocks mapped by inode */
 	EXT2_INO_NR_DIRECT_BLKS	= 12,		/* Nr of inode 'direct' blocks */
@@ -266,6 +269,19 @@ struct inode {
 	uint32_t        reserved;
 } __packed;
 
+struct inode *inode_get(uint64_t inum);
+
+static inline bool is_dir(uint64_t inum)
+{
+	return (inode_get(inum)->mode & EXT2_IFILE_FORMAT) == EXT2_IFDIR;
+}
+
+static inline bool is_regular_file(uint64_t inum)
+{
+	return (inode_get(inum)->mode & EXT2_IFILE_FORMAT) == EXT2_IFREG;
+}
+
+;
 /*
  * Directory Entry Format.
  *
@@ -279,7 +295,7 @@ struct inode {
  * @filename[255]     : Name of entry, in ISO-LATIN-1 character set.
  */
 struct dir_entry {
-	uint32_t	inode;
+	uint32_t	inode_num;
 	uint16_t	record_len;
 	uint8_t		filename_len;
 	uint8_t		file_type;
@@ -289,21 +305,34 @@ struct dir_entry {
 void ext2_init(void);
 void block_read(uint64_t block, char *buf, uint blk_offset, uint len);
 uint64_t file_read(struct inode *, char *buf, uint64_t offset, uint64_t len);
-struct inode *inode_get(uint64_t inum);
+uint64_t name_i(const char *path);
+
+/*
+ * Globally export some internal methods if the test-cases
+ * driver was enabled.
+ */
+#if EXT2_TESTS
+
+#define STATIC	extern
+bool dir_entry_valid(uint64_t, struct dir_entry *, uint64_t off, uint64_t len);
+struct dir_entry *find_dir_entry(uint64_t inum, const char *name,uint name_len);
+void ext2_run_tests(void);
+
+#else
+
+#define STATIC	static
+static void __unused ext2_run_tests(void) { }
+
+#endif
 
 /*
  * Dump file system On-Disk structures;  useful for testing.
  */
 void ext2_debug_init(void (*printf)(const char *fmt, ...));
 void superblock_dump(union super_block *);
-void inode_dump(struct inode *, uint64_t inum, const char *path);
 void blockgroup_dump(int bg_idx, struct group_descriptor *,
 		     uint32_t firstb, uint32_t lastb, uint64_t inodetbl_blocks);
-
-#if !EXT2_TESTS
-static void __unused ext2_run_tests(void) { }
-#else
-void ext2_run_tests(void);
-#endif
+void inode_dump(struct inode *, uint64_t inum, const char *path);
+void dentry_dump(struct dir_entry *dentry);
 
 #endif /* _EXT2_H */

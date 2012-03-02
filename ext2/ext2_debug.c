@@ -11,6 +11,8 @@
 #include <kernel.h>
 #include <stdint.h>
 #include <ext2.h>
+#include <kmalloc.h>
+#include <string.h>
 
 /*
  * Desired printf()-like method to use for dumping FS state.
@@ -139,18 +141,38 @@ void inode_dump(struct inode *inode, uint64_t inum, const char *path)
 	(*pr)("\n\n");
 }
 
+void dentry_dump(struct dir_entry *dentry)
+{
+	char *name;
+
+	assert(dentry->filename_len != 0);
+	assert(dentry->filename_len <= EXT2_FILENAME_LEN);
+	name = kmalloc(dentry->filename_len + 1);
+	memcpy(name, dentry->filename, dentry->filename_len);
+	name[dentry->filename_len] = '\0';
+
+	assert(pr != NULL);
+	(*pr)("Dumping Directory Entry contents:\n");
+	(*pr)(".. Inode number = %u\n", dentry->inode_num);
+	(*pr)(".. Record len = %d bytes\n", dentry->record_len);
+	(*pr)(".. Filename len = %d bytes\n", dentry->filename_len);
+	(*pr)(".. File type = %d\n", dentry->file_type);
+	(*pr)(".. Filename = '%s'\n", name);
+	(*pr)("\n");
+}
+
 /*
  * File System test cases
  */
 
 #if EXT2_TESTS
 
-#define	TEST_INODES		0
+#define	TEST_INODES		1
 #define TEST_BLOCK_READS	0
-#define TEST_FILE_READS		0
+#define TEST_FILE_READS		1
+#define TEST_DIR_ENTRIES	0
+#define TEST_PATH_CONVERSION	1
 #define EXT2_DUMP_METHOD	buf_char_dump
-
-#include <kmalloc.h>
 
 extern struct {
 	union super_block	*sb;		/* On-disk Superblock */
@@ -166,12 +188,48 @@ enum {
 	BUF_LEN			= 4096,
 };
 
+/*
+ * All of these file paths should return EXT2_ROOT_INODE!
+ */
+static const __unused char *root_list[] = {
+	"/", "//", "///", "////", "/////", "//////", "///////",
+	"/.", "/./", "/.//", "/.//", "/.///", "/.////", "/./////",
+	"/..", "/../", "/..//", "/..///", "/..////", "/../////",
+
+	"/./.", "/././", "/././/", "/././/", "/.././//", "/././///",
+	"/.//.", "/.//./", "/.//.//", "/.//.///", "/.//.////",
+	"/.///.", "/.///./", "/.///.//", "/.///.///", "/.///.////",
+	"/./..", "/./../", "/./..//", "/./..///", "/./..////",
+	"/.//..", "/.//../", "/.//..//", "/.//..///", "/.//..////",
+	"/.///..", "/.///../", "/.///..//", "/.///..///", "/.///..////",
+
+	"/../.", "/.././", "/.././/", "/.././/", "/.././//", "/.././///",
+	"/..//.", "/..//./", "/..//.//", "/..//.///", "/..//.////",
+	"/..///.", "/..///./", "/..///.//", "/..///.///", "/..///.////",
+	"/../..", "/../../", "/../..//", "/../..///", "/../..////",
+	"/..//..", "/..//../", "/..//..//", "/..//..///", "/..//..////",
+	"/..///..", "/..///../", "/..///..//", "/..///..///", "/..///..////",
+
+	"/../../../../../../../../..", "/../../../../../../../../../",
+	"/././././././././.", "/./././././././././", "/./././././././././/",
+	"/.././/.././/.././/.././/.././/.././/.././/.././/.././/.././/../.",
+	NULL,
+};
+
+/*
+ * For good testing of the code which matches Unix file pathes to
+ * inodes, a comprehensive list of file  paths should be put here.
+ * Check the 'ext2/files_list.c' file for further information.
+ */
+extern const char *ext2_files_list[];
+
 void ext2_run_tests(void)
 {
 	union super_block __unused *sb;
 	struct inode __unused *inode;
+	struct dir_entry __unused *dentry;
 	char *buf;
-	int __unused len;
+	uint64_t __unused len, inum;
 
 	assert(pr != NULL);
 	buf = kmalloc(BUF_LEN);
@@ -205,6 +263,10 @@ void ext2_run_tests(void)
 			(*pr)("Directory!\n");
 			continue;
 		}
+		if (inode->links_count == 0) {
+			(*pr)("Free inode!\n");
+			continue;
+		}
 		len = file_read(inode, buf, 0, BUF_LEN);
 		if (len == 0) {
 			(*pr)("No data!\n");
@@ -214,6 +276,49 @@ void ext2_run_tests(void)
 		EXT2_DUMP_METHOD(buf, len);
 		(*pr)("\n");
 	}
+#endif
+
+#if TEST_DIR_ENTRIES
+	/* Most of these fields are invalid, on purpose */
+	dentry = kmalloc(sizeof(*dentry));
+	dentry->inode_num = 0xffffffff;
+	dentry->record_len = 3;
+	dentry->filename_len = 5;
+	dentry->file_type = 7;
+	memcpy(dentry->filename, "testFile", 8);
+	dir_entry_valid(15, dentry, 10, 5);
+	kfree(dentry);
+#endif
+
+#if TEST_PATH_CONVERSION
+	/* Different forms of EXT2_ROOT_INODE */
+	for (uint i = 0; root_list[i] != NULL; i++) {
+		const char *path = root_list[i];
+		inum = name_i(path);
+
+		(*pr)("Path: '%s', Inode = %lu\n", path, inum);
+		if (inum != EXT2_ROOT_INODE)
+			panic("_EXT2: Path '%s' returned invalid inode #%lu",
+			      root_list[i], inum);
+	}
+
+	/* Custom files list, should be manually checked */
+	for (uint i = 0; ext2_files_list[i] != NULL; i++)
+		(*pr)("Path: '%s', Inode = %lu\n",
+		      ext2_files_list[i], name_i(ext2_files_list[i]));
+
+	/* Path file name length tests */
+	char *path = kmalloc(EXT2_FILENAME_LEN + 4);
+	path[0] = '/';
+	char *p = &path[1];
+	for (int i = 0; i < EXT2_FILENAME_LEN + 1; i++)
+		p[i] = 'A';
+	p[EXT2_FILENAME_LEN + 1] = '\0';	// Should warn (A)
+	(*pr)("Path: '%s', Inode = %lu\n", path, name_i(path));
+	for (int i = 0; i < EXT2_FILENAME_LEN; i++)
+		p[i] = 'B';
+	p[EXT2_FILENAME_LEN] = '\0';		// Should NOT warn (B)
+	(*pr)("Path: '%s', Inode = %lu\n", path, name_i(path));
 #endif
 
 	kfree(buf);

@@ -16,6 +16,7 @@
 #include <ramdisk.h>
 #include <ext2.h>
 #include <string.h>
+#include <kmalloc.h>
 
 /*
  * In-memory Super Block
@@ -61,8 +62,7 @@ void block_read(uint64_t block, char *buf, uint blk_offset, uint len)
  * @len		: Nr of bytes to read, starting from file @offset
  * Return value	: Nr of bytes read, or zero (out of boundary @offset)
  */
-uint64_t __unused file_read(struct inode *inode, char *buf,
-			    uint64_t offset, uint64_t len)
+uint64_t file_read(struct inode *inode, char *buf, uint64_t offset, uint64_t len)
 {
 	uint64_t supported_area, block, blk_offset;
 	uint64_t read_len, ret_len, mode;
@@ -125,6 +125,171 @@ struct inode *inode_get(uint64_t inum)
 	inode_offset = inodetbl_offset + groupi * sb->inode_size;
 	inode = (void *)&isb.buf[inode_offset];
 	return inode;
+}
+
+/*
+ * Return minimum possible length of a directory entry given
+ * the length of filename it holds. Minimum record length is
+ * 8 bytes; each entry offset must be 4-byte aligned.
+ */
+static inline int dir_entry_min_len(int filename_len)
+{
+	return round_up(EXT2_DIR_ENTRY_MIN_LEN + filename_len,
+			EXT2_DIR_ENTRY_ALIGN);
+}
+
+/*
+ * Check the validity of given directory entry. Entry's @offset
+ * is relative to the directory-file start.  @inum is the inode
+ * of directory file holding given @dentry.  @len is the number
+ * of bytes we were able read before reaching EOF.
+ */
+STATIC bool dir_entry_valid(uint64_t inum, struct dir_entry *dentry,
+			    uint64_t offset, uint64_t read_len)
+{
+	if (read_len < EXT2_DIR_ENTRY_MIN_LEN) {
+		printk("EXT2: Truncated dir entry (ino %lu, offset %lu); "
+		       "remaining file len = %lu < 8 bytes\n", inum, offset,
+		       read_len);
+		return false;
+	}
+	if (!is_aligned(offset, EXT2_DIR_ENTRY_ALIGN)) {
+		printk("EXT2: Dir entry (ino %lu) offset %lu is not "
+		       "aligned on four-byte boundary\n", inum, offset);
+		return false;
+	}
+	if (!is_aligned(dentry->record_len, EXT2_DIR_ENTRY_ALIGN)) {
+		printk("EXT2: Dir entry (ino %lu, offset %lu) length %lu is "
+		       "not aligned on four-byte boundary\n", inum, offset,
+		       dentry->record_len);
+		return false;
+	}
+	if (dentry->record_len < dir_entry_min_len(1)) {
+		printk("EXT2: Too small dir entry (ino %lu, offset %lu) "
+		       "len of %u bytes\n", inum, offset, dentry->record_len);
+		return false;
+	}
+	if (dentry->record_len < dir_entry_min_len(dentry->filename_len)) {
+		printk("EXT2: Invalid dir entry (ino %lu, offset %lu) len "
+		       "= %u, while filename len = %u bytes\n", inum, offset,
+		       dentry->record_len, dentry->filename_len);
+		return false;
+	}
+	if (dentry->record_len + (offset % isb.block_size) > isb.block_size) {
+		printk("EXT2: Dir entry (ino %lu, offset %lu) span multiple "
+		       "blocks (entry len = %lu bytes)\n", inum, offset,
+		       dentry->record_len);
+		return false;
+	}
+	if (dentry->record_len + offset > inode_get(inum)->size_low) {
+		printk("EXT2: Dir entry (ino %lu, offset %lu) goes beyond "
+		       "the dir EOF (entry len = %lu, dir len = %lu)\n", inum,
+		       offset, dentry->record_len, inode_get(inum)->size_low);
+		return false;
+	}
+	if (dentry->inode_num > isb.sb->inodes_count) {
+		printk("EXT2: Dir entry (ino %lu, offset %lu) ino field %lu "
+		       "is out of bounds; max ino = %lu\n", inum, offset,
+		       dentry->inode_num, isb.sb->inodes_count);
+		return false;
+	}
+	return true;
+}
+
+/*
+ * Search given directory for an entry with file @name.  Return such
+ * entry if found, or return an entry with zero inode number in case
+ * of search failure.
+ *
+ * @inum        : Inode for the directory to be searched
+ * @name        : Wanted file name, which may not be NULL-terminated
+ * @name_len    : File name len, to avoid requiring the NULL postfix
+ * Return value : Caller must free() the entry's mem area after use!
+ */
+STATIC struct dir_entry *find_dir_entry(uint64_t inum, const char *name,
+					uint name_len)
+{
+	struct inode *dir;
+	struct dir_entry *dentry;
+	uint64_t dentry_len, offset, len;
+
+	assert(is_dir(inum));
+	dir = inode_get(inum);
+	dentry_len = sizeof(struct dir_entry);
+	dentry = kmalloc(dentry_len);
+
+	if (name_len == 0 || name_len > EXT2_FILENAME_LEN)
+		goto notfound;
+
+	assert(name != NULL);
+	for (offset = 0;  ; offset += dentry->record_len) {
+		len = file_read(dir, (char *)dentry, offset, dentry_len);
+		if (len == 0)			/* EOF */
+			goto notfound;
+		if (!dir_entry_valid(inum, dentry, offset, len))
+			goto notfound;
+		if (dentry->inode_num == 0)	/* Unused entry */
+			continue;
+		if (dentry->filename_len != name_len)
+			continue;
+		if (memcmp(dentry->filename, name, name_len))
+			continue;
+		goto found;
+	}
+
+notfound:
+	dentry->inode_num = 0;
+found:
+	return dentry;
+}
+
+/*
+ * Namei - Find the inode of given file path
+ * path         : Absolute, hierarchial, UNIX format, file path
+ * return value : Inode number, or 0 in case of search failure.
+ */
+uint64_t name_i(const char *path)
+{
+	const char *p1, *p2;
+	struct dir_entry *dentry;
+	uint64_t inum, prev_inum;
+
+	assert(path != NULL);
+	switch (*path) {
+	case '\0':
+		return 0;
+	case '/':
+		inum = EXT2_ROOT_INODE; break;
+	default:
+		panic("EXT2: Relative pathes are not yet supported!");
+	}
+
+	p1 = p2 = path;
+	while (*p2 != '\0' && inum != 0) {
+		prev_inum = inum;
+		if (*p2 == '/') {
+			if (!is_dir(prev_inum))
+				return 0;
+			while (*p2 == '/')
+				p1 = ++p2;
+		}
+		if (*p2 == '\0')
+			break;
+
+		while (*p2 != '\0' && *p2 != '/' && p2 - p1 < EXT2_FILENAME_LEN)
+			p2++;
+		if (*p2 != '\0' && *p2 != '/') {
+			printk("EXT2: Name len in '%s' exceeds limits\n", path);
+			return 0;
+		}
+
+		assert(is_dir(prev_inum));
+		dentry = find_dir_entry(prev_inum, p1, p2 - p1);
+		inum = dentry->inode_num;
+		kfree(dentry);
+	}
+
+	return inum;
 }
 
 /*
@@ -227,10 +392,14 @@ void ext2_init(void)
 
 	/* Root Inode sanity checks */
 	rooti = inode_get(EXT2_ROOT_INODE);
-	if ((rooti->mode & EXT2_IFILE_FORMAT) != EXT2_IFDIR)
-		panic("EXT2: Root inode is not a directory!");
+	if (!is_dir(EXT2_ROOT_INODE))
+		panic("EXT2: Root inode ('/') is not a directory!");
 	if (rooti->blocks_count_low == 0 || rooti->size_low == 0)
-		panic("EXT2: Root inode size = 0 bytes!");
+		panic("EXT2: Root inode ('/') size = 0 bytes!");
+	if (name_i("/.") != EXT2_ROOT_INODE)
+		panic("EXT2: Corrupt root directory '.'  entry!");
+	if (name_i("/..") != EXT2_ROOT_INODE)
+		panic("EXT2: Corrupt root directory '..' entry!");
 	inode_dump(rooti, EXT2_ROOT_INODE, "/");
 
 	sb->volume_label[EXT2_LABEL_LEN - 1] = '\0';
