@@ -12,6 +12,7 @@
 #define _TESTS_H
 
 #define		LIST_TESTS		0	/* Linked stack/queue tests */
+#define		UNROLLED_TESTS		0	/* Unrolled linked list tests */
 #define		STRING_TESTS		0	/* Optimized string methods */
 #define		PRINTK_TESTS		0	/* printk(fmt, ...) */
 #define		PRINTS_TESTS		0	/* prints(fmt, ...) */

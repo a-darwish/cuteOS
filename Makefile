@@ -184,6 +184,7 @@ EXT2_OBJS =		\
 DEPS_DIRS		+= $(DEPS_ROOT_DIR)/lib
 LIB_OBJS =		\
   lib/list.o		\
+  lib/unrolled_list.o	\
   lib/string.o		\
   lib/printf.o		\
   lib/atomic.o		\
