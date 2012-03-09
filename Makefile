@@ -178,6 +178,7 @@ DEPS_DIRS		+= $(DEPS_ROOT_DIR)/ext2
 EXT2_OBJS =		\
   ext2/ext2.o		\
   ext2/ext2_debug.o	\
+  ext2/file.o		\
   ext2/files_list.o
 
 # Isolated library code

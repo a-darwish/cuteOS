@@ -13,6 +13,8 @@
 
 #include <kernel.h>
 #include <stdint.h>
+#include <percpu.h>
+#include <errno.h>
 #include <ramdisk.h>
 #include <ext2.h>
 #include <string.h>
@@ -246,9 +248,9 @@ found:
 /*
  * Namei - Find the inode of given file path
  * path         : Absolute, hierarchial, UNIX format, file path
- * return value : Inode number, or 0 in case of search failure.
+ * return value : Inode num, or -ENOENT, -ENOTDIR, -ENAMETOOLONG
  */
-uint64_t name_i(const char *path)
+int64_t name_i(const char *path)
 {
 	const char *p1, *p2;
 	struct dir_entry *dentry;
@@ -257,11 +259,12 @@ uint64_t name_i(const char *path)
 	assert(path != NULL);
 	switch (*path) {
 	case '\0':
-		return 0;
+		inum = 0; break;
 	case '/':
 		inum = EXT2_ROOT_INODE; break;
 	default:
-		panic("EXT2: Relative pathes are not yet supported!");
+		inum = current->working_dir;
+		assert(inum != 0);
 	}
 
 	p1 = p2 = path;
@@ -269,7 +272,7 @@ uint64_t name_i(const char *path)
 		prev_inum = inum;
 		if (*p2 == '/') {
 			if (!is_dir(prev_inum))
-				return 0;
+				return -ENOTDIR;
 			while (*p2 == '/')
 				p1 = ++p2;
 		}
@@ -278,10 +281,8 @@ uint64_t name_i(const char *path)
 
 		while (*p2 != '\0' && *p2 != '/' && p2 - p1 < EXT2_FILENAME_LEN)
 			p2++;
-		if (*p2 != '\0' && *p2 != '/') {
-			printk("EXT2: Name len in '%s' exceeds limits\n", path);
-			return 0;
-		}
+		if (*p2 != '\0' && *p2 != '/')
+			return -ENAMETOOLONG;
 
 		assert(is_dir(prev_inum));
 		dentry = find_dir_entry(prev_inum, p1, p2 - p1);
@@ -289,7 +290,7 @@ uint64_t name_i(const char *path)
 		kfree(dentry);
 	}
 
-	return inum;
+	return inum ? (int64_t)inum : -ENOENT;
 }
 
 /*

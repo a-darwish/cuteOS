@@ -167,9 +167,9 @@ void dentry_dump(struct dir_entry *dentry)
 
 #if EXT2_TESTS
 
-#define	TEST_INODES		1
+#define	TEST_INODES		0
 #define TEST_BLOCK_READS	0
-#define TEST_FILE_READS		1
+#define TEST_FILE_READS		0
 #define TEST_DIR_ENTRIES	0
 #define TEST_PATH_CONVERSION	1
 #define EXT2_DUMP_METHOD	buf_char_dump
@@ -189,39 +189,16 @@ enum {
 };
 
 /*
- * All of these file paths should return EXT2_ROOT_INODE!
- */
-static const __unused char *root_list[] = {
-	"/", "//", "///", "////", "/////", "//////", "///////",
-	"/.", "/./", "/.//", "/.//", "/.///", "/.////", "/./////",
-	"/..", "/../", "/..//", "/..///", "/..////", "/../////",
-
-	"/./.", "/././", "/././/", "/././/", "/.././//", "/././///",
-	"/.//.", "/.//./", "/.//.//", "/.//.///", "/.//.////",
-	"/.///.", "/.///./", "/.///.//", "/.///.///", "/.///.////",
-	"/./..", "/./../", "/./..//", "/./..///", "/./..////",
-	"/.//..", "/.//../", "/.//..//", "/.//..///", "/.//..////",
-	"/.///..", "/.///../", "/.///..//", "/.///..///", "/.///..////",
-
-	"/../.", "/.././", "/.././/", "/.././/", "/.././//", "/.././///",
-	"/..//.", "/..//./", "/..//.//", "/..//.///", "/..//.////",
-	"/..///.", "/..///./", "/..///.//", "/..///.///", "/..///.////",
-	"/../..", "/../../", "/../..//", "/../..///", "/../..////",
-	"/..//..", "/..//../", "/..//..//", "/..//..///", "/..//..////",
-	"/..///..", "/..///../", "/..///..//", "/..///..///", "/..///..////",
-
-	"/../../../../../../../../..", "/../../../../../../../../../",
-	"/././././././././.", "/./././././././././", "/./././././././././/",
-	"/.././/.././/.././/.././/.././/.././/.././/.././/.././/.././/../.",
-	NULL,
-};
-
-/*
  * For good testing of the code which matches Unix file pathes to
  * inodes, a comprehensive list of file  paths should be put here.
  * Check the 'ext2/files_list.c' file for further information.
  */
-extern const char *ext2_files_list[];
+extern struct path_translation ext2_files_list[];
+
+/*
+ * Different paths for the Unix root inode; i.e. '/', '/..', etc.
+ */
+extern const char *ext2_root_list[];
 
 void ext2_run_tests(void)
 {
@@ -292,20 +269,23 @@ void ext2_run_tests(void)
 
 #if TEST_PATH_CONVERSION
 	/* Different forms of EXT2_ROOT_INODE */
-	for (uint i = 0; root_list[i] != NULL; i++) {
-		const char *path = root_list[i];
+	for (uint i = 0; ext2_root_list[i] != NULL; i++) {
+		const char *path = ext2_root_list[i];
 		inum = name_i(path);
 
 		(*pr)("Path: '%s', Inode = %lu\n", path, inum);
 		if (inum != EXT2_ROOT_INODE)
 			panic("_EXT2: Path '%s' returned invalid inode #%lu",
-			      root_list[i], inum);
+			      path, inum);
 	}
 
 	/* Custom files list, should be manually checked */
-	for (uint i = 0; ext2_files_list[i] != NULL; i++)
-		(*pr)("Path: '%s', Inode = %lu\n",
-		      ext2_files_list[i], name_i(ext2_files_list[i]));
+	struct path_translation *file;
+	for (uint i = 0; ext2_files_list[i].path != NULL; i++) {
+		file = &ext2_files_list[i];
+		file->absolute_inum = name_i(file->path);
+		(*pr)("Path: '%s', Inode = %lu\n",file->path,file->absolute_inum);
+	}
 
 	/* Path file name length tests */
 	char *path = kmalloc(EXT2_FILENAME_LEN + 4);

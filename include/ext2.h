@@ -305,7 +305,22 @@ struct dir_entry {
 void ext2_init(void);
 void block_read(uint64_t block, char *buf, uint blk_offset, uint len);
 uint64_t file_read(struct inode *, char *buf, uint64_t offset, uint64_t len);
-uint64_t name_i(const char *path);
+int64_t name_i(const char *path);
+
+#if EXT2_TESTS || FILE_TESTS
+/*
+ * Pahtname translation - Used for testing ext2 code.
+ *
+ * @path              : Absolute, hierarchial, UNIX format, file path
+ * @relative_inum     : Inode# found using name_i() on _each_ subcomponent
+ * @absolute_inum     : Inode# found using name_i() on the path as a whole.
+ */
+struct path_translation {
+       const char *path;
+       uint64_t relative_inum;
+       uint64_t absolute_inum;
+};
+#endif	/* EXT2_TESTS || FILE_TESTS */
 
 /*
  * Globally export some internal methods if the test-cases
@@ -323,7 +338,7 @@ void ext2_run_tests(void);
 #define STATIC	static
 static void __unused ext2_run_tests(void) { }
 
-#endif
+#endif	/* EXT2_TESTS */
 
 /*
  * Dump file system On-Disk structures;  useful for testing.
@@ -335,4 +350,4 @@ void blockgroup_dump(int bg_idx, struct group_descriptor *,
 void inode_dump(struct inode *, uint64_t inum, const char *path);
 void dentry_dump(struct dir_entry *dentry);
 
-#endif /* _EXT2_H */
+#endif	/* _EXT2_H */

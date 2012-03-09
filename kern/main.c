@@ -32,6 +32,7 @@
 #include <atomic.h>
 #include <sched.h>
 #include <ext2.h>
+#include <file.h>
 
 static void setup_idt(void)
 {
@@ -83,6 +84,7 @@ static void run_test_cases(void)
 	atomic_run_tests();
 	sched_run_tests();
 	ext2_run_tests();
+	file_run_tests();
 }
 
 /*
