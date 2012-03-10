@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <list.h>
+#include <unrolled_list.h>
 #include <sched.h>
 #include <x86.h>
 #include <ext2.h>
@@ -115,7 +116,9 @@ struct proc {
 	struct list_node pnode;		/* for the runqueue lists */
 	clock_t runtime;		/* # ticks running on the CPU */
 	clock_t enter_runqueue_ts;	/* Timestamp runqueue entrance */
+
 	uint64_t working_dir;		/* Inode# of Current Working Dir */
+	struct unrolled_head fdtable;	/* File Descriptor Table */
 
 	struct {			/* Scheduler statistics .. */
 		clock_t runtime_overall;/* Overall runtime (in ticks) */
@@ -141,7 +144,9 @@ static inline void proc_init(struct proc *proc)
 	pcb_init(&proc->pcb);
 	proc->state = TD_INVALID;
 	list_init(&proc->pnode);
+
 	proc->working_dir = EXT2_ROOT_INODE;
+	unrolled_init(&proc->fdtable, 32);
 }
 
 #endif	/* !_ASSEMBLY */

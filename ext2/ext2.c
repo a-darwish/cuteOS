@@ -79,9 +79,7 @@ uint64_t file_read(struct inode *inode, char *buf, uint64_t offset, uint64_t len
 	if (offset + len > inode->size_low)
 		len = inode->size_low - offset;
 	if (offset + len > supported_area)
-		panic("EXT2: Asked to read file offset=%lu, len = %lu\n"
-		      "But Indirect blocks access is not yet supported!",
-		      offset, len);
+		len = supported_area  - offset;
 
 	ret_len = len;
 	while (len != 0) {

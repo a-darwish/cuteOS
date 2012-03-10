@@ -306,6 +306,8 @@ void ext2_init(void);
 void block_read(uint64_t block, char *buf, uint blk_offset, uint len);
 uint64_t file_read(struct inode *, char *buf, uint64_t offset, uint64_t len);
 int64_t name_i(const char *path);
+void buf_hex_dump(void *given_buf, uint len);
+void buf_char_dump(void *given_buf, uint len);
 
 #if EXT2_TESTS || FILE_TESTS
 /*
@@ -314,11 +316,13 @@ int64_t name_i(const char *path);
  * @path              : Absolute, hierarchial, UNIX format, file path
  * @relative_inum     : Inode# found using name_i() on _each_ subcomponent
  * @absolute_inum     : Inode# found using name_i() on the path as a whole.
+ * @fd                : File descriptor returned by open(@path, O_RDONLY);
  */
 struct path_translation {
-       const char *path;
-       uint64_t relative_inum;
-       uint64_t absolute_inum;
+	const char *path;
+	uint64_t relative_inum;
+	uint64_t absolute_inum;
+	int fd;
 };
 #endif	/* EXT2_TESTS || FILE_TESTS */
 

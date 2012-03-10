@@ -29,7 +29,7 @@ void ext2_debug_init(void (*printf)(const char *fmt, ...))
  * Print @given_buf, with length of @len bytes, in the format:
  *	$ od --format=x1 --address-radix=none --output-duplicates
  */
-static __unused void buf_hex_dump(void *given_buf, uint len)
+void __unused buf_hex_dump(void *given_buf, uint len)
 {
 	unsigned int bytes_perline = 16, n = 0;
 	uint8_t *buf = given_buf;
@@ -54,7 +54,7 @@ static __unused void buf_hex_dump(void *given_buf, uint len)
 /*
  * Print @given_buf as ASCII text.
  */
-static __unused void buf_char_dump(void *given_buf, uint len)
+void __unused buf_char_dump(void *given_buf, uint len)
 {
 	char *buf = given_buf;
 

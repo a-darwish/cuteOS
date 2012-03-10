@@ -6,6 +6,9 @@
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
+ *
+ * We don't repeat what's written in the POSIX spec here: check the sta-
+ * ndard to make sense of all the syscalls parameters and return values.
  */
 
 #include <kernel.h>
@@ -13,7 +16,45 @@
 #include <errno.h>
 #include <ext2.h>
 #include <file.h>
+#include <fcntl.h>
 #include <tests.h>
+#include <unrolled_list.h>
+#include <spinlock.h>
+#include <kmalloc.h>
+
+/*
+ * File Table Entry
+ *
+ * Each call to open() results in a _new_ allocation of the file
+ * structure below.  Each instance mainly contains a byte offset
+ * field where the kernel expects the next read() or write() op-
+ * eration to begin.
+ *
+ * Classical Unix allocated a table of below structure at system
+ * boot, calling it the system 'file table'.  We don't need such
+ * table anymore: we can allocate each entry dynamically!
+ *
+ * Ken Thompson rightfully notes  that below elements could have
+ * been embedded in each entry of the file descriptor table, but
+ * a separate structure  is used to  allow sharing of the offset
+ * pointer between several user FDs, mainly for fork() and dup().
+ */
+struct file {
+	uint64_t inum;		/* Inode# of the open()-ed file */
+	int flags;		/* Flags passed  to open() call */
+	spinlock_t lock;	/* ONLY FOR offset and refcount */
+	uint64_t offset;	/* MAIN FIELD: File byte offset */
+	int refcount;		/* Reference count; fork,dup,.. */
+};
+
+static void file_init(struct file *file, uint64_t inum, int flags)
+{
+	file->inum = inum;
+	file->flags = flags;
+	spin_init(&file->lock);
+	file->offset = 0;
+	file->refcount = 1;
+}
 
 int sys_chdir(const char *path)
 {
@@ -30,93 +71,57 @@ int sys_chdir(const char *path)
 	return 0;
 }
 
-#if	FILE_TESTS
-
-#include <kmalloc.h>
-
-extern struct path_translation ext2_files_list[];
-extern const char *ext2_root_list[];
-
-/*
- * Test the chdir() system call: given absolute @path, chdir() to all
- * of its middle sub-components, then return inode# of the last one!
- */
-static uint64_t _test_chdir(const char *path)
+int sys_open(const char *path, int flags, __unused mode_t mode)
 {
-	const char *ch;
-	char *str;
-	int i, ret;
 	int64_t inum;
+	struct file *file;
 
-	assert(path != NULL);
-	prints("Testing path: '%s'\n", path);
+	if ((flags & O_ACCMODE) == 0)
+		return -EINVAL;
 
-	assert(*path == '/');
-	while (*path == '/')
-		path++;
-	prints("Changing to dir: '/' .");
-	ret = sys_chdir("/");
-	prints(". returned '%s'\n", errno_to_str(ret));
-	if (ret < 0) return ret;
-	str = kmalloc(EXT2_FILENAME_LEN);
+	if (flags & O_WRONLY || flags & O_CREAT ||
+	    flags & O_EXCL   || flags & O_TRUNC ||
+	    flags & O_APPEND)
+		return -EINVAL;		/* No write support, yet! */
 
-	/* Special case for '/' */
-	if (*path == '\0') {
-		inum = name_i("/");
-		str[0] = '/', str[1] = '\0';
-		goto out;
-	}
-
-	/* Mini-Stateful parser */
-	for (i = 0, ch = path; *ch != '\0';) {
-		if (*ch == '/') {
-			while (*ch == '/') ch++;
-			str[i] = '\0';
-			if (*ch != '\0') i = 0;
-			prints("Changing to dir: '%s/' .", str);
-			ret = sys_chdir(str);
-			prints(". returned '%s'\n", errno_to_str(ret));
-			if (ret < 0) return ret;
-		} else {
-			if (i == EXT2_FILENAME_LEN)
-				panic("_FILE: Too long file name in '%s'", path);
-			str[i] = *ch, ch++, i++;
-		}
-	}
-
-	str[i] = '\0', inum = name_i(str);
+	inum = name_i(path);
 	if (inum < 0)
-		panic("_FILE: path translation for relative path '%s': '%s'",
-		      str, errno_to_str(inum));
-out:
-	prints("Inode num for relative path '%s' = %lu\n\n", str, inum);
-	kfree(str);
-	return inum;
+		return inum;		/* -ENOENT, -ENOTDIR, -ENAMETOOLONG */
+
+	/* All UNIX kernels keep the write permission
+	 * to directories exclusively for themselves! */
+	if (is_dir(inum) && flags & O_WRONLY)
+		return -EISDIR;
+
+	file = kmalloc(sizeof(*file));
+	file_init(file, inum, flags);
+	return unrolled_insert(&current->fdtable, file);
 }
 
-void file_run_tests(void)
+int64_t sys_read(int fd, void *buf, uint64_t count)
 {
-	struct path_translation *file;
-	const char *path;
-	uint64_t inum;
+	struct file *file;
+	struct inode *inode;
+	int64_t read_len;
 
-	for (uint i = 0; ext2_files_list[i].path != NULL; i++) {
-		file = &ext2_files_list[i];
-		file->relative_inum = _test_chdir(file->path);
-		if (file->absolute_inum &&
-		    file->absolute_inum != file->relative_inum)
-			panic("_FILE: Absolute pathname translation for path "
-			      "'%s' = %lu, while relative = %lu", file->path,
-			      file->absolute_inum, file->relative_inum);
-	}
+	file = unrolled_lookup(&current->fdtable, fd);
+	if (file == NULL)
+		return -EBADF;
+	if ((file->flags & O_WRONLY) && !(file->flags & O_RDONLY))
+		return -EBADF;
 
-	for (uint i = 0; ext2_root_list[i] != NULL; i++) {
-		path = ext2_root_list[i];
-		inum = _test_chdir(path);
-		if (inum != EXT2_ROOT_INODE)
-			panic("_FILE: Relative pathname translation for '%s' "
-			      "= %lu; while it should've been root inode 2!");
-	}
+	assert(file->inum > 0);
+	if (is_dir(file->inum))
+		return -EISDIR;
+	if (!is_regular_file(file->inum))
+		return -EBADF;
+	inode = inode_get(file->inum);
+
+	spin_lock(&file->lock);
+	read_len = file_read(inode, buf, file->offset, count);
+	assert(file->offset + read_len <= inode->size_low);
+	file->offset += read_len;
+	spin_unlock(&file->lock);
+
+	return read_len;
 }
-
-#endif	/* FILE_TESTS */
