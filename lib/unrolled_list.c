@@ -43,8 +43,6 @@ static struct __node *__unode_new(uint node_num, uint array_len)
 	node->array_nrfree = array_len;
 	node->num = node_num;
 	node->next = NULL;
-
-	assert(array_len > 0);
 	return node;
 }
 
@@ -104,6 +102,9 @@ static struct __node *__get_node(struct unrolled_head *head, uint key,
 	uint node_num;
 
 	node = head->node;
+	if (!node)				/* Empty list */
+		return NULL;
+
 	node_num = key / node->array_len;
 	*array_idx = key % node->array_len;
 	while (node_num--) {
@@ -126,7 +127,9 @@ static struct __node *__get_node(struct unrolled_head *head, uint key,
  */
 void unrolled_init(struct unrolled_head *head, uint array_len)
 {
-	head->node = __unode_new(0, array_len);
+	head->node = NULL;
+	head->array_len = array_len;
+	assert(head->array_len > 0);
 }
 
 /*
@@ -160,6 +163,9 @@ uint unrolled_insert(struct unrolled_head *head, void *val)
 	struct __node *node, *prev;
 	uint idx;
 
+	if (head->node == NULL)
+		head->node = __unode_new(0, head->array_len);
+
 	assert(val != NULL);
 	assert(head->node != NULL);
 	for (node = head->node; node != NULL; node = node->next) {
@@ -182,6 +188,7 @@ uint unrolled_insert(struct unrolled_head *head, void *val)
  * unrolled_lookup - Find the value attached with given key
  * @head        : Unrolled linked list head
  * @key         : Key used to search the mapping structure
+ * Return value : Desired value, or NULL if key was invalid
  */
 void *unrolled_lookup(struct unrolled_head *head, uint key)
 {
@@ -189,9 +196,8 @@ void *unrolled_lookup(struct unrolled_head *head, uint key)
 	uint array_idx;
 
 	node = __get_node(head, key, &array_idx);
-	if (node == NULL || node->array[array_idx] == NULL)
-		panic("UNROLLED: Looking up the structure using "
-		      "non-existing key %u", key);
+	if (node == NULL)
+		return node;
 
 	return node->array[array_idx];
 }
@@ -252,7 +258,7 @@ static void _test_generated_keys(struct unrolled_head *head)
 	void *val;
 
 	printk("_UNROLLED: _test_generated_keys(): ");
-	nr_elements = head->node->array_len * 10;
+	nr_elements = head->array_len * 10;
 	for (uintptr_t i = 0; i < nr_elements; i++) {
 		idx = unrolled_insert(head, (void *)(i + 5));
 		if (idx != i)

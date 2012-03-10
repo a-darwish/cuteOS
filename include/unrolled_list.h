@@ -15,10 +15,13 @@
 
 /*
  * Singly-linked unrolled list node
+ *
+ * NOTE! the  data array could've been embedded in the node using
+ * declaration ‘void *array[]’, and putting that at structure end?
  */
 struct __node {
 	void **array;		/* Array of void pointers to data! */
-	uint array_len;		/* Number of cells in the @array */
+	uint array_len;		/* Number of cells in the @array (Redundant!)*/
 	uint array_nrfree;	/* Number of free cells in the @array */
 	uint num;		/* Node number in the linked list, from 0 */
 	struct __node *next;	/* Next node in this list, or NULL */
@@ -29,7 +32,8 @@ struct __node {
  * desired kernel structure.
  */
 struct unrolled_head {
-	struct __node *node;
+	struct __node *node;	/* Singly-linked list of unrolled nodes */
+	uint array_len;		/* Number of cells in each node array */
 };
 
 /*
