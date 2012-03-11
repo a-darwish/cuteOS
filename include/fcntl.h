@@ -14,8 +14,18 @@
  * NOTE!! "They shall be bitwise distinct" --POSIX
  */
 
-/* File access modes: "Applications shall specify exactly one
- * of the file access modes values in open()." --POSIX */
+/*
+ * File access modes: "Applications shall specify exactly one
+ * of the file access modes values in open()." --POSIX
+ *
+ * "Early UNIX implementations used the numbers 0, 1, and 2
+ * instead of the POSIX names shown.  Most modern UNIX implem-
+ * entations define these constants to have those values."
+ * --M. Kerrisk.
+ *
+ * To let 'O_RDWR = O_RDONLY | O_WRONLY',we don't follow that
+ * historical convention!
+ */
 #define	O_RDONLY	0x0001		/* Open for reading only */
 #define	O_WRONLY	0x0002		/* Open for writing only */
 #define	O_RDWR		0x0003		/* Open for reading and writing */

@@ -13,10 +13,18 @@
 #include <ext2.h>
 #include <file.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include <tests.h>
 #include <kmalloc.h>
+#include <unrolled_list.h>
+#include <percpu.h>
 
 #if	FILE_TESTS
+
+#define TEST_CHDIR	1
+#define TEST_OPEN	1
+#define TEST_READ	1
+#define TEST_LSEEK	1
 
 extern struct path_translation ext2_files_list[];
 extern const char *ext2_root_list[];
@@ -146,14 +154,73 @@ static void __unused _test_read(int read_chunk)
 	kfree(buf);
 }
 
+/* Break some Software Engineering rules to minimize code duplication: */
+#define _test_lseek_state(SEEK_WHENCE, EXPECTED_VALUE)			\
+sys_lseek(p->fd, 0, SEEK_SET);						\
+for (uint64_t i = 0; i < inode_get(file->inum)->size_low; i++) {	\
+	prints("seek(%d, %lu, " #SEEK_WHENCE "): ", p->fd, i);		\
+	uint64_t old_offset = file->offset;				\
+	if ((ret = sys_lseek(p->fd, i, SEEK_WHENCE)) < 0)		\
+		panic("failure: '%s'", errno_to_str(ret));		\
+	if (file->offset != (EXPECTED_VALUE))				\
+		panic("lseek failure, path='%s', lseek(" #SEEK_WHENCE	\
+		      ",%lu), old offset = %lu, returned offset = %lu",	\
+		      p->path, i, old_offset, file->offset);		\
+	prints("offset = %lu, Success!\n", file->offset);		\
+}
+
+static void _test_lseek(void)
+{
+	struct test_file *file;
+	struct path_translation *p;
+	struct inode *inode;
+	int64_t ret, fd;
+
+	ret = sys_lseek(0xffffffff, 3, SEEK_SET);
+	assert(ret == -EBADF);
+
+	fd = sys_open("/", O_RDONLY, 0);
+	ret = sys_lseek(fd, 3, 4);		/* Wrong 'whence' parameter */
+	assert(ret == -EINVAL);
+
+	ret = sys_lseek(fd, UINT64_MAX / 2, SEEK_SET);
+	assert(ret == UINT64_MAX / 2);
+
+	ret = sys_lseek(fd, (UINT64_MAX / 2) + 2, SEEK_CUR);
+	assert(ret == -EOVERFLOW);
+
+	for (uint i = 0; ext2_files_list[i].path != NULL; i++) {
+		p = &ext2_files_list[i];
+		prints("\n_FILE: Lseek()-ing path '%s': ", p->path);
+		p->fd = sys_open(p->path, O_RDONLY, 0);
+		assert(p->fd >= 0);
+		file = unrolled_lookup(&current->fdtable, p->fd);
+		assert(file != NULL);
+		inode = inode_get(file->inum);
+
+		_test_lseek_state(SEEK_SET, i);
+		_test_lseek_state(SEEK_CUR, i + old_offset);
+		_test_lseek_state(SEEK_END, i + inode->size_low);
+	}
+}
+
 void file_run_tests(void)
 {
-//	_test_chdir();
+#if TEST_CHDIR
+	_test_chdir();
+#endif
+#if TEST_OPEN
 	_test_open();
+#endif
+#if TEST_READ
 	for (int chunk = 4096; chunk != 0; chunk /= 2) {
 		prints("*** Issuing read()s with chunk len of %d bytes!", chunk);
 		_test_read(chunk);
 	}
+#endif
+#if TEST_LSEEK
+	_test_lseek();
+#endif
 }
 
 #endif	/* FILE_TESTS */

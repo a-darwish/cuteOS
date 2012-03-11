@@ -17,6 +17,7 @@
 #include <ext2.h>
 #include <file.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include <tests.h>
 #include <unrolled_list.h>
 #include <spinlock.h>
@@ -124,4 +125,45 @@ int64_t sys_read(int fd, void *buf, uint64_t count)
 	spin_unlock(&file->lock);
 
 	return read_len;
+}
+
+/*
+ * "The l in the name lseek() derives from the fact that the
+ * offset argument and the return value were both originally
+ * typed as long. Early UNIX implementations provided a seek()
+ * system call, which typed these values as int" --M. Kerrisk
+ */
+int64_t sys_lseek(int fd, uint64_t offset, uint whence)
+{
+	struct file *file;
+	struct inode *inode;
+	uint64_t offset_base;
+	int error = 0;
+
+	file = unrolled_lookup(&current->fdtable, fd);
+	if (file == NULL)
+		return -EBADF;
+
+	assert(file->inum > 0);
+	if (is_fifo(file->inum) || is_socket(file->inum))
+		return -ESPIPE;
+	inode = inode_get(file->inum);
+
+	spin_lock(&file->lock);
+
+	switch (whence) {
+	case SEEK_SET: offset_base = 0; break;
+	case SEEK_CUR: offset_base = file->offset; break;
+	case SEEK_END: offset_base = inode->size_low; break;
+	default: error = -EINVAL; goto out;
+	}
+
+	if ((offset_base + offset) < offset_base) {
+		error = -EOVERFLOW;
+		goto out;
+	}
+
+	file->offset = offset_base + offset;
+out:	spin_unlock(&file->lock);
+	return error ? error : (int64_t)file->offset;
 }

@@ -281,7 +281,16 @@ static inline bool is_regular_file(uint64_t inum)
 	return (inode_get(inum)->mode & EXT2_IFILE_FORMAT) == EXT2_IFREG;
 }
 
-;
+static inline bool is_socket(uint64_t inum)
+{
+	return (inode_get(inum)->mode & EXT2_IFILE_FORMAT) == EXT2_IFSOCK;
+}
+
+static inline bool is_fifo(uint64_t inum)
+{
+	return (inode_get(inum)->mode & EXT2_IFILE_FORMAT) == EXT2_IFIFO;
+}
+
 /*
  * Directory Entry Format.
  *

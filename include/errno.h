@@ -60,6 +60,7 @@
 // Newer errnos:
 #define	ELOOP		35	/* Too many symbolic links encountered */
 #define	ENAMETOOLONG	36	/* File name too long */
+#define EOVERFLOW	37	/* Value too large to be stored in data type */
 
 /*
  * Descriptions are copied  verbatim from the “Single Unix Specification,
