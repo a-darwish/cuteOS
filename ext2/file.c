@@ -17,11 +17,13 @@
 #include <ext2.h>
 #include <file.h>
 #include <fcntl.h>
+#include <stat.h>
 #include <unistd.h>
 #include <tests.h>
 #include <unrolled_list.h>
 #include <spinlock.h>
 #include <kmalloc.h>
+#include <string.h>
 
 /*
  * File Table Entry
@@ -57,13 +59,33 @@ static void file_init(struct file *file, uint64_t inum, int flags)
 	file->refcount = 1;
 }
 
+static void fill_statbuf(uint64_t inum, struct stat *buf)
+{
+	struct inode *inode;
+
+	assert(inum > 0);
+	assert(buf != NULL);
+	inode = inode_get(inum);
+
+	memset(buf, 0, sizeof(*buf));
+	buf->st_ino = inum;
+	buf->st_mode = inode->mode;
+	buf->st_nlink = inode->links_count;
+	buf->st_uid = inode->uid;
+	buf->st_gid = inode->gid_low;
+	buf->st_size = inode->size_low;
+	buf->st_atime = inode->atime;
+	buf->st_mtime = inode->mtime;
+	buf->st_ctime = inode->ctime;
+}
+
 int sys_chdir(const char *path)
 {
 	int64_t inum;
 
 	inum = name_i(path);
 	if (inum < 0)
-		return inum;
+		return inum;		/* -ENOENT, -ENOTDIR, -ENAMETOOLONG */
 	if (!is_dir(inum))
 		return -ENOTDIR;
 
@@ -97,6 +119,30 @@ int sys_open(const char *path, int flags, __unused mode_t mode)
 	file = kmalloc(sizeof(*file));
 	file_init(file, inum, flags);
 	return unrolled_insert(&current->fdtable, file);
+}
+
+int sys_fstat(int fd, struct stat *buf)
+{
+	struct file *file;
+
+	file = unrolled_lookup(&current->fdtable, fd);
+	if (file == NULL)
+		return -EBADF;
+
+	fill_statbuf(file->inum, buf);
+	return 0;
+}
+
+int sys_stat(const char *path, struct stat *buf)
+{
+	uint64_t inum;
+
+	inum = name_i(path);
+	if (inum < 0)
+		return inum;		/* -ENOENT, -ENOTDIR, -ENAMETOOLONG */
+
+	fill_statbuf(inum, buf);
+	return 0;
 }
 
 int64_t sys_read(int fd, void *buf, uint64_t count)

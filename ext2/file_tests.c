@@ -25,6 +25,7 @@
 #define TEST_OPEN	1
 #define TEST_READ	1
 #define TEST_LSEEK	1
+#define TEST_STAT	1
 
 extern struct path_translation ext2_files_list[];
 extern const char *ext2_root_list[];
@@ -204,6 +205,55 @@ static void _test_lseek(void)
 	}
 }
 
+static void __validate_statbuf(int64_t inum, struct stat *statbuf)
+{
+	struct inode *inode;
+
+	assert(inum > 0);
+	inode = inode_get(inum);
+	assert((ino_t)inum == statbuf->st_ino);
+	assert(inode->mode == statbuf->st_mode);
+	assert(inode->links_count == statbuf->st_nlink);
+	assert(inode->uid == statbuf->st_uid);
+	assert(inode->gid_low == statbuf->st_gid);
+	assert(inode->size_low == statbuf->st_size);
+	assert(inode->atime == statbuf->st_atime);
+	assert(inode->ctime == statbuf->st_ctime);
+	assert(inode->mtime == statbuf->st_mtime);
+}
+
+static void _test_stat(void)
+{
+	struct path_translation *file;
+	struct stat *statbuf;
+	int ret, fd;
+	int64_t inum;
+
+	statbuf = kmalloc(sizeof(*statbuf));
+	for (uint i = 0; ext2_files_list[i].path != NULL; i++) {
+		file = &ext2_files_list[i];
+		prints("_FILE: stat()-ing path '%s': ", file->path);
+		if ((ret = sys_stat(file->path, statbuf)) < 0)
+			panic("stat('%s', buf=0x%lx) = '%s'", file->path,
+			      statbuf, errno_to_str(ret));
+		if ((inum = name_i(file->path)) < 0)
+			panic("name_i('%s') = '%s'", file->path,
+			      errno_to_str(inum));
+		__validate_statbuf(inum, statbuf);
+		prints("Success!\n");
+
+		fd = sys_open(file->path, O_RDONLY, 0);
+		prints("_FILE: Fstat()-ing path '%s': ", file->path);
+		if ((ret = sys_fstat(fd, statbuf)) < 0)
+			panic("stat('%s', buf=0x%lx) = '%s'", file->path,
+			      statbuf, errno_to_str(ret));
+		__validate_statbuf(statbuf->st_ino, statbuf);
+		/* close(fd) */
+		prints("Success!\n");
+	}
+	kfree(statbuf);
+}
+
 void file_run_tests(void)
 {
 #if TEST_CHDIR
@@ -220,6 +270,9 @@ void file_run_tests(void)
 #endif
 #if TEST_LSEEK
 	_test_lseek();
+#endif
+#if TEST_STAT
+	_test_stat();
 #endif
 }
 

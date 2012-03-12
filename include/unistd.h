@@ -8,7 +8,7 @@
  */
 
 /*
- * Seek base for lseek(@offset) & fcntl(); "shall have distinct values" --POSIX
+ * Seek base for lseek(@offset) & fcntl(); "shall have distinct values" --SUSv3
  * "In earlier UNIX implementations, the integers 0, 1, and 2 were used, rather
  * than the SEEK_* constants" --M. Kerrisk
  */

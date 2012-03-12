@@ -11,12 +11,12 @@
 
 /*
  * The following fields are used for open(,@oflags,).
- * NOTE!! "They shall be bitwise distinct" --POSIX
+ * NOTE!! "They shall be bitwise distinct" --SUSv3
  */
 
 /*
  * File access modes: "Applications shall specify exactly one
- * of the file access modes values in open()." --POSIX
+ * of the file access modes values in open()." --SUSv3
  *
  * "Early UNIX implementations used the numbers 0, 1, and 2
  * instead of the POSIX names shown.  Most modern UNIX implem-
