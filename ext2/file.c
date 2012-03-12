@@ -41,6 +41,12 @@
  * been embedded in each entry of the file descriptor table, but
  * a separate structure  is used to  allow sharing of the offset
  * pointer between several user FDs, mainly for fork() and dup().
+ *
+ * FIXME: Use an atomic variable for the reference count instead
+ * of using a spinlock. That lock is already used for protecting
+ * the file offset pointer, an unrelated shared resource!  There
+ * there is no SMP protection in making close() wait for another
+ * thread's read() or write() operation.
  */
 struct file {
 	uint64_t inum;		/* Inode# of the open()-ed file */
@@ -119,6 +125,25 @@ int sys_open(const char *path, int flags, __unused mode_t mode)
 	file = kmalloc(sizeof(*file));
 	file_init(file, inum, flags);
 	return unrolled_insert(&current->fdtable, file);
+}
+
+int sys_close(int fd)
+{
+	struct file *file;
+
+	file = unrolled_lookup(&current->fdtable, fd);
+	if (file == NULL)
+		return -EBADF;
+
+	/* Take care of a concurrent close() */
+	spin_lock(&file->lock);
+	assert(file->refcount > 0);
+	if (--file->refcount == 0)
+		kfree(file);
+	spin_unlock(&file->lock);
+
+	unrolled_remove_key(&current->fdtable, fd);
+	return 0;
 }
 
 int sys_fstat(int fd, struct stat *buf)

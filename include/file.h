@@ -12,6 +12,7 @@ int64_t sys_read(int fd, void *buf, uint64_t count);
 int64_t sys_lseek(int fd, uint64_t offset, uint whence);
 int sys_fstat(int fd, struct stat *buf);
 int sys_stat(const char *path, struct stat *buf);
+int sys_close(int fd);
 
 #if FILE_TESTS
 

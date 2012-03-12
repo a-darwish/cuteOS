@@ -26,6 +26,7 @@
 #define TEST_READ	1
 #define TEST_LSEEK	1
 #define TEST_STAT	1
+#define TEST_CLOSE	1
 
 extern struct path_translation ext2_files_list[];
 extern const char *ext2_root_list[];
@@ -127,6 +128,25 @@ static void __unused _test_open(void)
 	}
 }
 
+static void __unused _test_close(void)
+{
+	struct path_translation *file;
+	int fd;
+
+	for (uint i = 0; ext2_files_list[i].path != NULL; i++) {
+		file = &ext2_files_list[i];
+		prints("_FILE: Close()-ing path '%s': ", file->path);
+		file->fd = sys_open(file->path, O_RDONLY, 0);
+		sys_close(file->fd);
+		fd = sys_open(file->path, O_RDONLY, 0);
+		if (file->fd != fd)
+			panic("open()=%d, close(%d), open()=%d [should be "
+			      "%d]", file->fd, file->fd, fd, file->fd);
+		else
+			prints("..success! fd = %d\n", file->fd);
+	}
+}
+
 static void __unused _test_read(int read_chunk)
 {
 	struct path_translation *file;
@@ -137,7 +157,7 @@ static void __unused _test_read(int read_chunk)
 	for (uint i = 0; ext2_files_list[i].path != NULL; i++) {
 		file = &ext2_files_list[i];
 		prints("\n_FILE: Read()-ing path '%s': ", file->path);
-		/* close(file->fd) */
+		sys_close(file->fd);
 		file->fd = sys_open(file->path, O_RDONLY, 0);
 		assert(file->fd >= 0);
 		while ((len = sys_read(file->fd, buf, read_chunk)) > 0) {
@@ -170,7 +190,7 @@ for (uint64_t i = 0; i < inode_get(file->inum)->size_low; i++) {	\
 	prints("offset = %lu, Success!\n", file->offset);		\
 }
 
-static void _test_lseek(void)
+static void __unused _test_lseek(void)
 {
 	struct test_file *file;
 	struct path_translation *p;
@@ -222,7 +242,7 @@ static void __validate_statbuf(int64_t inum, struct stat *statbuf)
 	assert(inode->mtime == statbuf->st_mtime);
 }
 
-static void _test_stat(void)
+static void __unused _test_stat(void)
 {
 	struct path_translation *file;
 	struct stat *statbuf;
@@ -248,7 +268,7 @@ static void _test_stat(void)
 			panic("stat('%s', buf=0x%lx) = '%s'", file->path,
 			      statbuf, errno_to_str(ret));
 		__validate_statbuf(statbuf->st_ino, statbuf);
-		/* close(fd) */
+		sys_close(fd);
 		prints("Success!\n");
 	}
 	kfree(statbuf);
@@ -273,6 +293,9 @@ void file_run_tests(void)
 #endif
 #if TEST_STAT
 	_test_stat();
+#endif
+#if TEST_CLOSE
+	_test_close();
 #endif
 }
 
