@@ -207,7 +207,7 @@ void ext2_run_tests(void)
 	union super_block __unused *sb;
 	struct inode __unused *inode;
 	struct dir_entry __unused *dentry;
-	uint64_t __unused len, inum, block, nblocks;
+	uint64_t __unused len, inum, block, nblocks, nfree;
 	char *buf;
 
 	assert(pr != NULL);
@@ -304,7 +304,7 @@ void ext2_run_tests(void)
 #endif
 
 #if TEST_INODE_ALLOC
-	uint64_t nfree = isb.sb->free_inodes_count;
+	nfree = isb.sb->free_inodes_count;
 	for (uint i = 0; i < nfree; i++) {
 		inum = inode_alloc();
 		if (inum == 0)
@@ -326,7 +326,7 @@ void ext2_run_tests(void)
 #endif
 
 #if TEST_BLOCK_ALLOC
-	uint64_t nfree = isb.sb->free_blocks_count;
+	nfree = isb.sb->free_blocks_count;
 	for (uint i = 0; i < nfree; i++) {
 		block = block_alloc();
 		if (block == 0)

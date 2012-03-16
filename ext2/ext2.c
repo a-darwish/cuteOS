@@ -36,6 +36,30 @@ struct {
 	spinlock_t		block_allocation_lock;
 } isb;
 
+/*
+ * Get the On-Disk image of inode @inum
+ */
+struct inode *inode_get(uint64_t inum)
+{
+	union super_block *sb;
+	struct group_descriptor *bgd;
+	struct inode *inode;
+	uint64_t group, groupi, inodetbl_offset, inode_offset;
+
+	sb = isb.sb;
+	assert(inum != 0);
+	group  = (inum - 1) / sb->inodes_per_group;
+	groupi = (inum - 1) % sb->inodes_per_group;
+	if (group >= isb.blockgroups_count || inum > sb->inodes_count)
+		panic("EXT2: Inode %d out of volume range", inum);
+
+	bgd = &isb.bgd[group];
+	inodetbl_offset = bgd->inode_table * isb.block_size;
+	inode_offset = inodetbl_offset + groupi * sb->inode_size;
+	inode = (void *)&isb.buf[inode_offset];
+	return inode;
+}
+
 static void __block_read_write(uint64_t block, char *buf, uint blk_offset,
 			       uint len, enum block_op operation)
 {
@@ -229,30 +253,6 @@ uint64_t file_read(struct inode *inode, char *buf, uint64_t offset, uint64_t len
 }
 
 /*
- * Get the On-Disk image of inode @inum
- */
-struct inode *inode_get(uint64_t inum)
-{
-	union super_block *sb;
-	struct group_descriptor *bgd;
-	struct inode *inode;
-	uint64_t group, groupi, inodetbl_offset, inode_offset;
-
-	sb = isb.sb;
-	assert(inum != 0);
-	group  = (inum - 1) / sb->inodes_per_group;
-	groupi = (inum - 1) % sb->inodes_per_group;
-	if (group >= isb.blockgroups_count || inum > sb->inodes_count)
-		panic("EXT2: Inode %d out of volume range", inum);
-
-	bgd = &isb.bgd[group];
-	inodetbl_offset = bgd->inode_table * isb.block_size;
-	inode_offset = inodetbl_offset + groupi * sb->inode_size;
-	inode = (void *)&isb.buf[inode_offset];
-	return inode;
-}
-
-/*
  * Return minimum possible length of a directory entry given
  * the length of filename it holds. Minimum record length is
  * 8 bytes; each entry offset must be 4-byte aligned.
@@ -425,7 +425,7 @@ void ext2_init(void)
 	struct group_descriptor *bgd;
 	struct inode *rooti;
 	int bits_per_byte;
-	uint64_t first, last, ramdisk_len;
+	uint64_t first, last, ramdisk_len, bgd_start;
 	uint64_t inodetbl_size, inodetbl_blocks, inodetbl_last_block;
 
 	/* Ramdisk sanity checks */
@@ -444,9 +444,10 @@ void ext2_init(void)
 	/* In-Memory Super Block init */
 	isb.buf = ramdisk_get_buf();
 	isb.sb  = (void *)&isb.buf[EXT2_SUPERBLOCK_OFFSET];
-	isb.bgd = (void *)&isb.buf[EXT2_GROUP_DESC_OFFSET];
 	isb.block_size = 1024U << isb.sb->log_block_size;
 	isb.frag_size  = 1024U << isb.sb->log_fragment_size;
+	bgd_start = ceil_div(EXT2_SUPERBLOCK_OFFSET+sizeof(*sb),isb.block_size);
+	isb.bgd = (void *)&isb.buf[bgd_start * isb.block_size];
 
 	sb = isb.sb;
 	bgd = isb.bgd;
