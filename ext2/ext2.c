@@ -33,6 +33,7 @@ struct {
 	uint64_t		blockgroups_count;
 	uint64_t		last_blockgroup;
 	spinlock_t		inode_allocation_lock;
+	spinlock_t		block_allocation_lock;
 } isb;
 
 static void __block_read_write(uint64_t block, char *buf, uint blk_offset,
@@ -128,6 +129,56 @@ out:
 	spin_unlock(&isb.inode_allocation_lock);
 	kfree(buf);
 	return inum;
+}
+
+/*
+ * Block Alloc - Allocate a free data block from disk
+ * Return val   : Block number, or 0 if no free blocks exist
+ */
+STATIC __unused uint64_t block_alloc(void)
+{
+	union super_block *sb;
+	struct group_descriptor *bgd;
+	uint64_t block, first_blk, last_blk;
+	int first_zero_bit;
+	char *buf;
+
+	sb = isb.sb;
+	bgd = isb.bgd;
+	buf = kmalloc(isb.block_size);
+	spin_lock(&isb.block_allocation_lock);
+
+	for (uint i = 0; i < isb.blockgroups_count; i++, bgd++) {
+		block_read(bgd->block_bitmap, buf, 0, isb.block_size);
+		first_zero_bit = bitmap_first_zero_bit(buf, isb.block_size);
+		if (first_zero_bit == -1)
+			continue;
+
+		first_blk = i * sb->blocks_per_group + sb->first_data_block;
+		last_blk = (i != isb.last_blockgroup) ?
+			first_blk + sb->blocks_per_group - 1 :
+			sb->blocks_count - 1;
+		block = first_blk + first_zero_bit;
+		if (block < first_blk || block > last_blk)
+			panic("EXT2: Returned block #%lu as free, although "
+			      "it's outside valid [%lu,%lu] blck boundaries",
+			      block, first_blk, last_blk);
+
+		assert(isb.sb->free_blocks_count > 0);
+		assert(bgd->free_blocks_count > 0);
+		isb.sb->free_blocks_count--;
+		bgd->free_blocks_count--;
+
+		bitmap_set_bit(buf, first_zero_bit, isb.block_size);
+		block_write(bgd->block_bitmap, buf, 0, isb.block_size);
+		goto out;
+	}
+	assert(isb.sb->free_blocks_count == 0);
+	block = 0;
+out:
+	spin_unlock(&isb.block_allocation_lock);
+	kfree(buf);
+	return block;
 }
 
 /*
@@ -388,6 +439,7 @@ void ext2_init(void)
 
 	ext2_debug_init(prints);
 	spin_init(&isb.inode_allocation_lock);
+	spin_init(&isb.block_allocation_lock);
 
 	/* In-Memory Super Block init */
 	isb.buf = ramdisk_get_buf();

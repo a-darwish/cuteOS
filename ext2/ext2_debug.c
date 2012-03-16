@@ -173,6 +173,7 @@ void dentry_dump(struct dir_entry *dentry)
 #define TEST_DIR_ENTRIES	0
 #define TEST_PATH_CONVERSION	1
 #define TEST_INODE_ALLOC	0
+#define TEST_BLOCK_ALLOC	0
 #define EXT2_DUMP_METHOD	buf_char_dump
 
 extern struct {
@@ -206,8 +207,8 @@ void ext2_run_tests(void)
 	union super_block __unused *sb;
 	struct inode __unused *inode;
 	struct dir_entry __unused *dentry;
+	uint64_t __unused len, inum, block, nblocks;
 	char *buf;
-	uint64_t __unused len, inum;
 
 	assert(pr != NULL);
 	buf = kmalloc(BUF_LEN);
@@ -310,7 +311,7 @@ void ext2_run_tests(void)
 			panic("Reported free inodes count = %lu, but our "
 			      "%u-th allocation returned NULL!", nfree, i);
 
-		(*pr)("Returned inode = %ld\n", inum);
+		(*pr)("Returned inode = %lu\n", inum);
 		inode = inode_get(inum);
 		inode_dump(inode, inum, ".");
 
@@ -322,6 +323,45 @@ void ext2_run_tests(void)
 	if (inum != 0)				// Boundary case
 		panic("We've allocated all %lu inodes, how can a new "
 		      "allocation returns inode #%lu?", nfree, inum);
+#endif
+
+#if TEST_BLOCK_ALLOC
+	uint64_t nfree = isb.sb->free_blocks_count;
+	for (uint i = 0; i < nfree; i++) {
+		block = block_alloc();
+		if (block == 0)
+			panic("Reported free blocks count = %lu, but our "
+			      "%u-th allocation returned NULL!", nfree, i);
+
+		(*pr)("Returned block = %lu as free\n", block);
+
+		(*pr)("Verifying it's not really allocated: ");
+		for (uint ino = 1; ino <= isb.sb->inodes_count; ino++) {
+			inode = inode_get(ino);
+			if (ino < sb->first_inode &&
+			    ino > EXT2_UNDELETE_DIR_INODE)
+				continue;
+			if (inode->links_count == 0 || inode->dtime != 0)
+				continue;
+			nblocks = ceil_div(inode->size_low, isb.block_size);
+			nblocks = min(nblocks, (uint64_t)EXT2_INO_NR_BLOCKS);
+			for (uint ino_blk = 0; ino_blk < nblocks; ino_blk++) {
+				if (inode->blocks[ino_blk] == 0)
+					continue;
+				if (inode->blocks[ino_blk] != block)
+					continue;
+				(*pr)("\nInode %lu contains that block!\n", ino);
+				inode_dump(inode, ino, "N/A");
+				panic("Returned block %lu as free, but inode "
+				      "%lu contain that block!", block, ino);
+			}
+		}
+		(*pr)("Success!\n\n", block);
+	}
+	block = block_alloc();
+	if (block != 0)				// Boundary case
+		panic("We've allocated all %lu blocks, how can a new "
+		      "allocation returns block #%lu?", nfree, block);
 #endif
 
 	(*pr)("_EXT2_TESTS: Sucess!");

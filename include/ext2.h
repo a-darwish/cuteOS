@@ -350,6 +350,7 @@ struct path_translation {
 void block_read(uint64_t block, char *buf, uint blk_offset, uint len);
 void block_write(uint64_t block, char *buf, uint blk_offset, uint len);
 uint64_t inode_alloc(void);
+uint64_t block_alloc(void);
 bool dir_entry_valid(uint64_t, struct dir_entry *, uint64_t off, uint64_t len);
 struct dir_entry *find_dir_entry(uint64_t inum, const char *name,uint name_len);
 void ext2_run_tests(void);
