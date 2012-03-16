@@ -172,6 +172,7 @@ void dentry_dump(struct dir_entry *dentry)
 #define TEST_FILE_READS		0
 #define TEST_DIR_ENTRIES	0
 #define TEST_PATH_CONVERSION	1
+#define TEST_INODE_ALLOC	0
 #define EXT2_DUMP_METHOD	buf_char_dump
 
 extern struct {
@@ -301,6 +302,29 @@ void ext2_run_tests(void)
 	(*pr)("Path: '%s', Inode = %lu\n", path, name_i(path));
 #endif
 
+#if TEST_INODE_ALLOC
+	uint64_t nfree = isb.sb->free_inodes_count;
+	for (uint i = 0; i < nfree; i++) {
+		inum = inode_alloc();
+		if (inum == 0)
+			panic("Reported free inodes count = %lu, but our "
+			      "%u-th allocation returned NULL!", nfree, i);
+
+		(*pr)("Returned inode = %ld\n", inum);
+		inode = inode_get(inum);
+		inode_dump(inode, inum, ".");
+
+		if (inode->links_count > 0 && inode->dtime != 0)
+			panic("Allocated used inode #%lu, its links count "
+			      "= %d!", inum, inode->links_count);
+	}
+	inum = inode_alloc();
+	if (inum != 0)				// Boundary case
+		panic("We've allocated all %lu inodes, how can a new "
+		      "allocation returns inode #%lu?", nfree, inum);
+#endif
+
+	(*pr)("_EXT2_TESTS: Sucess!");
 	kfree(buf);
 }
 

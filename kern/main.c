@@ -9,6 +9,7 @@
 #include <kernel.h>
 #include <list.h>
 #include <unrolled_list.h>
+#include <bitmap.h>
 #include <string.h>
 #include <sections.h>
 #include <segment.h>
@@ -73,6 +74,7 @@ static void run_test_cases(void)
 {
 	list_run_tests();
 	unrolled_run_tests();
+	bitmap_run_tests();
 	string_run_tests();
 	printk_run_tests();
 	vm_run_tests();

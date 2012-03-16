@@ -27,6 +27,7 @@ enum {
 	EXT2_LABEL_LEN		= 16,		/* A NULL suffix __may__ exist */
 	EXT2_FILENAME_LEN	= 255,		/* Max filenme length, no NULL */
 	EXT2_LAST_MNT_LEN	= 64,		/* Path when FS was Last mnted */
+	EXT2_MAX_BLOCK_LEN	= 4096,		/* Max supported FS block size */
 
 	EXT2_DIR_ENTRY_MIN_LEN	= 8,		/* 4 ino, 2 rec_len, 2 namelen */
 	EXT2_DIR_ENTRY_ALIGN	= 4,		/* alignmnt for entries, bytes */
@@ -312,11 +313,15 @@ struct dir_entry {
 } __packed;
 
 void ext2_init(void);
-void block_read(uint64_t block, char *buf, uint blk_offset, uint len);
 uint64_t file_read(struct inode *, char *buf, uint64_t offset, uint64_t len);
 int64_t name_i(const char *path);
 void buf_hex_dump(void *given_buf, uint len);
 void buf_char_dump(void *given_buf, uint len);
+
+enum block_op {
+	BLOCK_READ,
+	BLOCK_WRTE,
+};
 
 #if EXT2_TESTS || FILE_TESTS
 /*
@@ -342,6 +347,9 @@ struct path_translation {
 #if EXT2_TESTS
 
 #define STATIC	extern
+void block_read(uint64_t block, char *buf, uint blk_offset, uint len);
+void block_write(uint64_t block, char *buf, uint blk_offset, uint len);
+uint64_t inode_alloc(void);
 bool dir_entry_valid(uint64_t, struct dir_entry *, uint64_t off, uint64_t len);
 struct dir_entry *find_dir_entry(uint64_t inum, const char *name,uint name_len);
 void ext2_run_tests(void);

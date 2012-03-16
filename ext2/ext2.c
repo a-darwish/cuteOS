@@ -19,6 +19,7 @@
 #include <ext2.h>
 #include <string.h>
 #include <kmalloc.h>
+#include <bitmap.h>
 
 /*
  * In-memory Super Block
@@ -31,16 +32,11 @@ struct {
 	uint64_t		frag_size;	/* 1, 2, or 4K */
 	uint64_t		blockgroups_count;
 	uint64_t		last_blockgroup;
+	spinlock_t		inode_allocation_lock;
 } isb;
 
-/*
- * Block Read - Read given block into buffer
- * @block	: Block to read from
- * @buf         : Buffer to put the read data into
- * @blk_offset  : Offset within the block  to start reading from
- * @len         : Nr of bytes to read, starting from @blk_offset
- */
-void block_read(uint64_t block, char *buf, uint blk_offset, uint len)
+static void __block_read_write(uint64_t block, char *buf, uint blk_offset,
+			       uint len, enum block_op operation)
 {
 	uint64_t final_offset, blocks_count;
 
@@ -53,7 +49,85 @@ void block_read(uint64_t block, char *buf, uint blk_offset, uint len)
 		      "block boundaries!", block, blk_offset, len);
 
 	final_offset = (block * isb.block_size) + blk_offset;
-	memcpy(buf, &isb.buf[final_offset], len);
+	switch (operation) {
+	case BLOCK_READ: memcpy(buf, &isb.buf[final_offset], len); break;
+	case BLOCK_WRTE: memcpy(&isb.buf[final_offset], buf, len); break;
+	};
+}
+
+/*
+ * Block Read - Read given disk block into buffer
+ * @block       : Disk block to read from
+ * @buf         : Buffer to put the read data into
+ * @blk_offset  : Offset within the block  to start reading from
+ * @len         : Nr of bytes to read, starting from @blk_offset
+ */
+STATIC void block_read(uint64_t block, char *buf, uint blk_offset, uint len)
+{
+	__block_read_write(block, buf, blk_offset, len, BLOCK_READ);
+}
+
+/*
+ * Block Write - Write given buffer into disk block
+ * @block       : Disk block to write to
+ * @buf         : Buffer of data to be written
+ * @blk_offset  : Offset within the block to start writing to
+ * @len         : Nr of bytes to write, starting from @blk_offset
+ */
+STATIC void block_write(uint64_t block, char *buf, uint blk_offset, uint len)
+{
+	__block_read_write(block, buf, blk_offset, len, BLOCK_WRTE);
+}
+
+/*
+ * Inode Alloc - Allocate a free inode from disk
+ * Return val   : inode number, or 0 if no free inodes exist
+ *
+ * NOTE! There are obviously more SMP-friendly ways for doing this
+ * than just grabbing a global lock reserved for inodes allocation.
+ * An ‘optimistic locking’ scheme would access the inode bitmap
+ * locklessly, but set the inode's ‘used/free’ bit using an atomic
+ * test_bit_and_set method.  If another thread got that inode bef-
+ * ore us, we continue searching the bitmap for yet another inode!
+ */
+STATIC __unused uint64_t inode_alloc(void)
+{
+	struct group_descriptor *bgd;
+	char *buf;
+	int first_zero_bit;
+	uint64_t inum;
+
+	bgd = isb.bgd;
+	buf = kmalloc(isb.block_size);
+	spin_lock(&isb.inode_allocation_lock);
+
+	for (uint i = 0; i < isb.blockgroups_count; i++, bgd++) {
+		block_read(bgd->inode_bitmap, buf, 0, isb.block_size);
+		first_zero_bit = bitmap_first_zero_bit(buf, isb.block_size);
+		if (first_zero_bit == -1)
+			continue;
+
+		inum = i * isb.sb->inodes_per_group + first_zero_bit + 1;
+		if (inum < isb.sb->first_inode)
+			panic("EXT2: Reserved ino #%lu marked as free", inum);
+		if (inum > isb.sb->inodes_count)
+			panic("EXT2: Returned ino #%lu exceeds count", inum);
+
+		assert(isb.sb->free_inodes_count > 0);
+		assert(bgd->free_inodes_count > 0);
+		isb.sb->free_inodes_count--;
+		bgd->free_inodes_count--;
+
+		bitmap_set_bit(buf, first_zero_bit, isb.block_size);
+		block_write(bgd->inode_bitmap, buf, 0, isb.block_size);
+		goto out;
+	}
+	assert(isb.sb->free_inodes_count == 0);
+	inum = 0;
+out:
+	spin_unlock(&isb.inode_allocation_lock);
+	kfree(buf);
+	return inum;
 }
 
 /*
@@ -313,6 +387,7 @@ void ext2_init(void)
 	}
 
 	ext2_debug_init(prints);
+	spin_init(&isb.inode_allocation_lock);
 
 	/* In-Memory Super Block init */
 	isb.buf = ramdisk_get_buf();
@@ -340,6 +415,8 @@ void ext2_init(void)
 		panic("Ext2: Inode size > file system block size!");
 	if (isb.block_size != isb.frag_size)
 		panic("Ext2: Fragment size is not equal to block size!");
+	if (isb.block_size > EXT2_MAX_BLOCK_LEN)
+		panic("Ext2: Huge block size of %ld bytes!", isb.block_size);
 	if (sb->blocks_per_group > isb.block_size * bits_per_byte)
 		panic("Ext2: Block Groups block bitmap must fit in 1 block!");
 	if (sb->inodes_per_group > isb.block_size * bits_per_byte)
