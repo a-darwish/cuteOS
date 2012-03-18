@@ -231,7 +231,7 @@ struct group_descriptor {
  * @dtime             : Time when this inode was deleted (if so); UNIX
  * @gid_low           : POSIX group ID having access to this file (low 16bits)
  * @links_count       : How many times this inode is linked to by dir entries
- * @blocks_count_low  : Total number of 512-byte blocks reserved to contain the
+ * @i512_blocks       : Total number of 512-byte blocks reserved to contain the
  *                      data of this inode, regardless of whether these blocks
  *                      are used or not.
  * @flags             : How should the driver behave when dealing with file's
@@ -255,7 +255,7 @@ struct inode {
 	uint32_t	dtime;
 	uint16_t        gid_low;
 	uint16_t	links_count;
-	uint32_t	blocks_count_low;
+	uint32_t	i512_blocks;
 	uint32_t	flags;
 	uint32_t	os_dependent;
 	uint32_t	blocks[EXT2_INO_NR_BLOCKS];
@@ -314,6 +314,7 @@ struct dir_entry {
 
 void ext2_init(void);
 uint64_t file_read(struct inode *, char *buf, uint64_t offset, uint64_t len);
+int64_t file_write(struct inode *, char *buf, uint64_t offset, uint64_t len);
 int64_t name_i(const char *path);
 void buf_hex_dump(void *given_buf, uint len);
 void buf_char_dump(void *given_buf, uint len);

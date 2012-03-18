@@ -13,6 +13,8 @@
 #include <ext2.h>
 #include <kmalloc.h>
 #include <string.h>
+#include <errno.h>
+#include <ramdisk.h>
 
 /*
  * Desired printf()-like method to use for dumping FS state.
@@ -133,7 +135,7 @@ void inode_dump(struct inode *inode, uint64_t inum, const char *path)
 	(*pr)(".. Time when this inode was deleted = 0x%x\n", inode->dtime);
 	(*pr)(".. Links count = %d links\n", inode->links_count);
 	(*pr)(".. File size = %d bytes\n", inode->size_low);
-	(*pr)(".. 512-byte Blocks count = %u blocks\n", inode->blocks_count_low);
+	(*pr)(".. 512-byte Blocks count = %u blocks\n", inode->i512_blocks);
 	(*pr)(".. Block number for ACL file = #%u\n", inode->file_acl);
 	(*pr)(".. First 12 Data Blocks: ");
 	for (int i = 0; i < 12; i++)
@@ -174,6 +176,7 @@ void dentry_dump(struct dir_entry *dentry)
 #define TEST_PATH_CONVERSION	1
 #define TEST_INODE_ALLOC	0
 #define TEST_BLOCK_ALLOC	0
+#define TEST_FILE_WRITES	0
 #define EXT2_DUMP_METHOD	buf_char_dump
 
 extern struct {
@@ -207,12 +210,18 @@ void ext2_run_tests(void)
 	union super_block __unused *sb;
 	struct inode __unused *inode;
 	struct dir_entry __unused *dentry;
-	uint64_t __unused len, inum, block, nblocks, nfree;
-	char *buf;
+	uint64_t __unused len, block, nblocks, nfree, mode;
+	int64_t __unused ilen, inum;
+	char *buf, *buf2;
 
 	assert(pr != NULL);
 	buf = kmalloc(BUF_LEN);
+	buf2 = kmalloc(BUF_LEN);
 	sb = isb.sb;
+
+	/* Extract the modified ext2 volume out of the virtual machine: */
+	(*pr)("Ramdisk start at: 0x%lx, with len = %ld\n", isb.buf,
+	      ramdisk_get_len());
 
 #if TEST_INODES
 	/* All volume inodes! */
@@ -364,8 +373,87 @@ void ext2_run_tests(void)
 		      "allocation returns block #%lu?", nfree, block);
 #endif
 
+#if TEST_FILE_WRITES
+	int64_t last_file = -1;
+	for (uint j = 0; ext2_files_list[j].path != NULL; j++) {
+		file = &ext2_files_list[j];
+		inum = name_i(file->path);
+		assert(inum > 0);
+		(*pr)("Writing to file '%s': ", file->path);
+		if (last_file != -1) {
+			(*pr)("Ignoring file!\n");
+			continue;
+		}
+		inode = inode_get(inum);
+		mode = inode->mode & EXT2_IFILE_FORMAT;
+		if (mode == EXT2_IFDIR || mode == EXT2_IFLINK) {
+			(*pr)("Dir or a symlnk!\n");
+			continue;
+		}
+		inode->mode &= ~EXT2_IFILE_FORMAT;
+		inode->mode |= EXT2_IFREG;
+		memset32(buf, inum, BUF_LEN);
+		for (uint offset = 0; offset < BUF_LEN*2; offset += BUF_LEN) {
+			ilen = file_write(inode, buf, offset, BUF_LEN);
+			assert(ilen != 0);
+			if (ilen == -ENOSPC) {
+				(*pr)("Filled the entire disk!\n");
+				(*pr)("Ignoring file!");
+				last_file = j;
+				goto out1;
+			}
+			if (ilen < 0) {
+				(*pr)("%s\n", errno_to_str(ilen));
+				continue;
+			}
+			assert(ilen == BUF_LEN);
+			assert(inode->size_low >= offset+ilen);
+			memset32(buf, inum+1, BUF_LEN);
+		}
+		assert(inode->size_low >= BUF_LEN*2);
+		(*pr)("Done!\n", inum);
+	}
+out1:
+	(*pr)("**** NOW TESTING THE WRITTEN DATA!\n");
+
+	for (uint j = 0; ext2_files_list[j].path != NULL; j++) {
+		file = &ext2_files_list[j];
+		inum = name_i(file->path);
+		assert(inum > 0);
+		inode = inode_get(inum);
+		(*pr)("Verifying file '%s': ", file->path);
+		if (last_file != -1 && j >= last_file) {
+			(*pr)("Ignoring file!\n");
+			continue;
+		}
+		mode = inode->mode & EXT2_IFILE_FORMAT;
+		if (mode == EXT2_IFDIR || mode == EXT2_IFLINK) {
+			(*pr)("Dir or a symlink!\n");
+			continue;
+		}
+		memset32(buf2, inum, BUF_LEN);
+		for (uint offset = 0; offset < BUF_LEN*2; offset += BUF_LEN) {
+			len = file_read(inode, buf, offset, BUF_LEN);
+			if (len < BUF_LEN)
+				panic("We've written %d bytes to inode %lu, but "
+				      "returned only %d bytes on read", BUF_LEN,
+				      inum, len);
+			if (memcmp(buf, buf2, BUF_LEN) != 0) {
+				(*pr)("Data written differs from what's read!\n");
+				(*pr)("We've written the following into file:\n");
+				buf_hex_dump(buf2, BUF_LEN);
+				(*pr)("But found the following when reading:\n");
+				buf_hex_dump(buf, BUF_LEN);
+				panic("Data corruption detected!");
+			}
+			memset32(buf2, inum+1, BUF_LEN);
+		}
+		(*pr)("Validated!\n");
+	}
+#endif
 	(*pr)("_EXT2_TESTS: Sucess!");
 	kfree(buf);
+	kfree(buf2);
 }
 
 #endif /* EXT2_TESTS */

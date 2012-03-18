@@ -82,6 +82,17 @@ static inline const char *errno_to_str(int err) {
 		return "ENAMETOOLONG: The length of a pathname exceeds "
 		       "{PATH_MAX}, or a pathname component is longer than "
 		       "{NAME_MAX}";
+	case -EBADF:
+		return "EBADF:  A file descriptor argument is out of range, "
+		       "refers to no open file, or a read (write) request is "
+		       "made to a file that is only open for writing (reading)";
+	case -EFBIG:
+		return "EFBIG: The size of a file would exceed the maximum "
+		       "file size of an implementation";
+	case -ENOSPC:
+		return "ENOSPC: During the write( ) function on a regular "
+		       "file or when extending a directory, there is no free "
+		       "space left on the device";
 	default:
 		return "Un-stringified error";
 	}

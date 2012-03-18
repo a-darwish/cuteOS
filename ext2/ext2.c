@@ -159,7 +159,7 @@ out:
  * Block Alloc - Allocate a free data block from disk
  * Return val   : Block number, or 0 if no free blocks exist
  */
-STATIC __unused uint64_t block_alloc(void)
+STATIC uint64_t block_alloc(void)
 {
 	union super_block *sb;
 	struct group_descriptor *bgd;
@@ -247,6 +247,63 @@ uint64_t file_read(struct inode *inode, char *buf, uint64_t offset, uint64_t len
 		assert(offset <= inode->size_low);
 		if (offset == inode->size_low)
 			assert(len == 0);
+	}
+
+	return ret_len;
+}
+
+/*
+ * File Write - Write given buffer into file
+ * @inode       : File's inode, which will map us to the data blocks
+ * @buf         : Buffer of the data to be written
+ * @offset      : File's offset
+ * @len         : Nr of bytes to write
+ * Return value : Nr of bytes actually written, or an errno
+ *
+ * FIXME! How to properly update inode's i_blocks? I dont' get it!
+ */
+int64_t file_write(struct inode *inode, char *buf, uint64_t offset, uint64_t len)
+{
+	uint64_t mode, supported_area, blk_offset, last_offset;
+	uint64_t write_len, ret_len, block, new;
+
+	mode = inode->mode & EXT2_IFILE_FORMAT;
+	if (mode != EXT2_IFREG && mode != EXT2_IFDIR)
+		return -EBADF;
+
+	supported_area = isb.block_size * EXT2_INO_NR_DIRECT_BLKS;
+	if (offset >= supported_area || offset >= UINT32_MAX)
+		return -EFBIG;
+	if (offset + len > supported_area)
+		len = supported_area  - offset;
+	if (offset + len > UINT32_MAX)
+		len = UINT32_MAX  - offset;
+
+	ret_len = len;
+	last_offset = offset + ret_len;
+	while (len != 0) {
+		block = offset / isb.block_size;
+		blk_offset = offset % isb.block_size;
+		write_len = isb.block_size - blk_offset;
+		write_len = min(write_len, len);
+
+		assert(block < EXT2_INO_NR_DIRECT_BLKS);
+		if (inode->blocks[block] == 0) {
+			if ((new = block_alloc()) == 0)
+				return -ENOSPC;
+			inode->blocks[block] = new;
+		}
+		block_write(inode->blocks[block], buf, blk_offset, write_len);
+
+		assert(len >= write_len);
+		len -= write_len;
+		buf += write_len;
+		offset += write_len;
+		assert(offset <= last_offset);
+		if (offset == last_offset)
+			assert(len == 0);
+
+		inode->size_low = max(inode->size_low, (uint32_t)offset);
 	}
 
 	return ret_len;
@@ -523,7 +580,7 @@ void ext2_init(void)
 	rooti = inode_get(EXT2_ROOT_INODE);
 	if (!is_dir(EXT2_ROOT_INODE))
 		panic("EXT2: Root inode ('/') is not a directory!");
-	if (rooti->blocks_count_low == 0 || rooti->size_low == 0)
+	if (rooti->i512_blocks == 0 || rooti->size_low == 0)
 		panic("EXT2: Root inode ('/') size = 0 bytes!");
 	if (name_i("/.") != EXT2_ROOT_INODE)
 		panic("EXT2: Corrupt root directory '.'  entry!");
