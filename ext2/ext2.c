@@ -106,7 +106,8 @@ STATIC void block_write(uint64_t block, char *buf, uint blk_offset, uint len)
 
 /*
  * Inode Alloc - Allocate a free inode from disk
- * Return val   : inode number, or 0 if no free inodes exist
+ * @type        : Type of file this inode is allocated for
+ * Return val   : Inode number, or 0 if no free inodes exist
  *
  * NOTE! There are obviously more SMP-friendly ways for doing this
  * than just grabbing a global lock reserved for inodes allocation.
@@ -115,8 +116,9 @@ STATIC void block_write(uint64_t block, char *buf, uint blk_offset, uint len)
  * test_bit_and_set method.  If another thread got that inode bef-
  * ore us, we continue searching the bitmap for yet another inode!
  */
-STATIC __unused uint64_t inode_alloc(void)
+STATIC uint64_t inode_alloc(enum file_type type)
 {
+	struct inode *inode;
 	struct group_descriptor *bgd;
 	char *buf;
 	int first_zero_bit;
@@ -142,9 +144,21 @@ STATIC __unused uint64_t inode_alloc(void)
 		assert(bgd->free_inodes_count > 0);
 		isb.sb->free_inodes_count--;
 		bgd->free_inodes_count--;
+		if (type == EXT2_FT_DIR)
+			bgd->used_dirs_count++;
 
 		bitmap_set_bit(buf, first_zero_bit, isb.block_size);
 		block_write(bgd->inode_bitmap, buf, 0, isb.block_size);
+
+		inode = inode_get(inum);
+		memset(inode, 0, sizeof(*inode));
+		inode->mode |= dir_entry_type_to_inode_type(type);
+		inode->mode |= EXT2_IRUSR | EXT2_IWUSR;
+		inode->mode |= EXT2_IRGRP | EXT2_IWGRP;
+		inode->mode |= EXT2_IROTH;
+		if (type == EXT2_FT_DIR)
+			inode->mode |= EXT2_IXUSR | EXT2_IXGRP | EXT2_IXOTH;
+		inode->atime = inode->ctime = inode->mtime = 0xf00f;
 		goto out;
 	}
 	assert(isb.sb->free_inodes_count == 0);
@@ -153,6 +167,43 @@ out:
 	spin_unlock(&isb.inode_allocation_lock);
 	kfree(buf);
 	return inum;
+}
+
+/*
+ * Inode Dealloc - Mark given inode as free on-disk
+ * @inum        : Inode number to deallocate
+ *
+ * All the necessary counters are updated in the process
+ */
+STATIC void inode_dealloc(uint64_t inum)
+{
+	struct group_descriptor *bgd;
+	uint64_t group, groupi;
+	char *buf;
+
+	assert(inum != 0);
+	assert(inum >= isb.sb->first_inode);
+
+	group  = (inum - 1) / isb.sb->inodes_per_group;
+	groupi = (inum - 1) % isb.sb->inodes_per_group;
+	bgd = &isb.bgd[group];
+	buf = kmalloc(isb.block_size);
+
+	spin_lock(&isb.inode_allocation_lock);
+
+	isb.sb->free_inodes_count++;
+	bgd->free_inodes_count++;
+	if (is_dir(inum))
+		bgd->used_dirs_count--;
+
+	block_read(bgd->inode_bitmap, buf, 0, isb.block_size);
+	assert(bitmap_bit_is_set(buf, groupi, isb.block_size));
+	bitmap_clear_bit(buf, groupi, isb.block_size);
+	block_write(bgd->inode_bitmap, buf, 0, isb.block_size);
+
+	spin_unlock(&isb.inode_allocation_lock);
+
+	kfree(buf);
 }
 
 /*
@@ -304,6 +355,7 @@ int64_t file_write(struct inode *inode, char *buf, uint64_t offset, uint64_t len
 			assert(len == 0);
 
 		inode->size_low = max(inode->size_low, (uint32_t)offset);
+		inode->i512_blocks = ceil_div(inode->size_low, 512);
 	}
 
 	return ret_len;
@@ -423,6 +475,188 @@ notfound:
 	dentry->inode_num = 0;
 found:
 	return dentry;
+}
+
+/*
+ * Create a new file entry in given parent directory. Check file_new()
+ * for parameters documentation.  @entry_inum is the allocated inode
+ * number for the new file.
+ *
+ * NOTE! This increments the entry's destination inode links count
+ */
+static int64_t __file_new(uint64_t parent_inum, uint64_t entry_inum,
+			  const char *name, enum file_type type)
+{
+	struct dir_entry *dentry, *lastentry, *newentry;
+	struct inode *dir, *inode;
+	uint64_t offset, blk_offset, newentry_len, len;
+	int64_t ret, filename_len;
+	char *zeroes;
+
+	assert(parent_inum != 0);
+	assert(entry_inum != 0);
+	assert(is_dir(parent_inum));
+	assert(name != NULL);
+	assert(type == EXT2_FT_REG_FILE || type == EXT2_FT_DIR);
+
+	filename_len = strnlen(name, EXT2_FILENAME_LEN - 1);
+	if (name[filename_len] != '\0')
+		return -ENAMETOOLONG;
+	if (filename_len == 0)
+		return -ENOENT;
+
+	dentry = find_dir_entry(parent_inum, name, filename_len);
+	if (dentry->inode_num != 0) {
+		ret = -EEXIST;
+		goto free_dentry1;
+	}
+
+	/*
+	 * Find the parent dir's last entry: our new entry will get
+	 * appended after it.  The parent directory might still be
+	 * empty, with no entries at all!
+	 */
+
+	dir = inode_get(parent_inum);
+	lastentry = kmalloc(sizeof(*lastentry));
+	memset(lastentry, 0, sizeof(*lastentry));
+	for (offset = 0;  ; offset += lastentry->record_len) {
+		len = file_read(dir,(char*)lastentry,offset,sizeof(*lastentry));
+		if (len == 0)
+			break;
+		if (!dir_entry_valid(parent_inum, lastentry, offset, len)) {
+			ret = -EIO;
+			goto free_dentry2;
+		}
+	}
+
+	/*
+	 * If a last entry was found, we need to either:
+	 * - overwite it if it's already undefined (has a 0 inode)
+	 * - or trim it to the minimum possible size since the last
+	 *   entry is usually extended to block end; such extension
+	 *   is needed to avoid making FS dir entries iterator read
+	 *   corrupt data (dir sizes are always in terms of blocks)
+	 */
+
+	if (offset == 0)
+		goto no_lastentry;
+
+	if (lastentry->inode_num == 0) {
+		offset -= lastentry->record_len;
+	} else {
+		offset -= lastentry->record_len;
+		lastentry->record_len=dir_entry_min_len(lastentry->filename_len);
+		file_write(dir,(char *)lastentry,offset,lastentry->record_len);
+		offset += lastentry->record_len;
+	}
+
+no_lastentry:
+
+	/*
+	 * If our new dir entry spans multiple blocks, we'll extend the
+	 * last dir entry size and put our new one in a shiny new block!
+	 */
+
+	newentry_len = dir_entry_min_len(filename_len);
+	blk_offset = offset % isb.block_size;
+	if (newentry_len + blk_offset > isb.block_size) {
+		assert(offset > lastentry->record_len);
+		offset -= lastentry->record_len;
+		blk_offset = offset % isb.block_size;
+		lastentry->record_len = isb.block_size - blk_offset;
+		assert(lastentry->record_len >=
+		       dir_entry_min_len(lastentry->filename_len));
+		file_write(dir, (char *)lastentry, offset, lastentry->record_len);
+		offset += lastentry->record_len;
+		assert(offset % isb.block_size == 0);
+	}
+
+	blk_offset = offset % isb.block_size;
+	assert(newentry_len + blk_offset <= isb.block_size);
+
+	/*
+	 * Now we have a guarantee: the new dir entry is not spanning
+	 * multiple blocks; write it on disk!
+	 *
+	 * Our new entry will be the last dir entry, thus its size
+	 * need to get extended to block end. This prevents any later
+	 * dir entries traversal from parsing uninitialized data.
+	 */
+
+	zeroes = kmalloc(isb.block_size);
+	memset(zeroes, 0, isb.block_size);
+	newentry = kmalloc(sizeof(*newentry));
+	newentry->inode_num = entry_inum;
+	newentry->record_len = isb.block_size - blk_offset;
+	newentry->filename_len = filename_len;
+	newentry->file_type = type;
+	assert(filename_len < EXT2_FILENAME_LEN);
+	memcpy(newentry->filename, name, filename_len);
+	newentry->filename[filename_len] = '\0';	/*for 'fsck'*/
+	ret = file_write(dir, (char *)newentry, offset, newentry_len);
+	if (ret < 0)
+		goto free_dentry3;
+	assert(newentry->record_len >= newentry_len);	/*dst*/
+	assert(newentry->record_len - newentry_len <= isb.block_size);	/*src*/
+	ret = file_write(dir, zeroes, offset  + newentry_len,
+			 newentry->record_len - newentry_len);
+	if (ret < 0)
+		goto free_dentry3;
+	assert(dir_entry_valid(parent_inum, newentry, offset, newentry_len));
+
+	/*
+	 * Update entry's inode statistics
+	 */
+
+	inode = inode_get(entry_inum);
+	spin_lock(&isb.inode_allocation_lock);
+	inode->links_count++;
+	spin_unlock(&isb.inode_allocation_lock);
+
+	ret = entry_inum;
+free_dentry3:
+	kfree(zeroes);
+	kfree(newentry);
+free_dentry2:
+	kfree(lastentry);
+free_dentry1:
+	kfree(dentry);
+	return ret;
+}
+
+/*
+ * Create and initialize a new file in given directory
+ * @parent_inum : Parent directory where the file will be located
+ * @name        : File's name
+ * @type        : File's type, in Ext2 dir entry type format
+ * Return value : New file's inode number, or an errno
+ */
+int64_t file_new(uint64_t parent_inum, const char *name, enum file_type type)
+{
+	int64_t inum, ret;
+
+	inum = inode_alloc(type);
+	if (inum == 0)
+		return -ENOSPC;
+
+	ret = __file_new(parent_inum, inum, name, type);
+	if (ret < 0)
+		goto dealloc_inode;
+
+	if (type == EXT2_FT_DIR) {
+		ret = __file_new(inum, inum, ".", EXT2_FT_DIR);
+		if (ret < 0)
+			goto dealloc_inode;
+		ret = __file_new(inum, parent_inum, "..", EXT2_FT_DIR);
+		if (ret < 0)
+			goto dealloc_inode;
+	}
+
+	return inum;
+dealloc_inode:
+	inode_dealloc(inum);
+	return ret;
 }
 
 /*

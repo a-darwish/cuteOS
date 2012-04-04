@@ -6,6 +6,9 @@
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
+ *
+ * NOTE! The venerable e2fsprogs 'fsck' tool is one hell of a utility
+ * for checking FS drivers write-support validity.  Use it often.
  */
 
 #include <kernel.h>
@@ -15,6 +18,7 @@
 #include <string.h>
 #include <errno.h>
 #include <ramdisk.h>
+#include <unrolled_list.h>
 
 /*
  * Desired printf()-like method to use for dumping FS state.
@@ -164,19 +168,60 @@ void dentry_dump(struct dir_entry *dentry)
 }
 
 /*
+ * Given UNIX @path, put its leaf node in @child, and the dir
+ * path leading to that leaf in @parent (Mini-stateful parser)
+ */
+enum state { NONE, SLASH, FILENAME, EOL };
+static __unused void path_get_parent(const char *path, char *parent, char *child)
+{
+	enum state state, prev_state;
+	int sub_idx;
+
+	sub_idx = 0;
+	state = NONE;
+	for (int i = 0; i <= strlen(path); i++) {
+		prev_state = state;
+		if (path[i] == '/') {
+			state = SLASH;
+			assert(prev_state != SLASH);
+			if (prev_state == NONE) {
+				sub_idx = i + 1;
+				continue;
+			}
+		} else if (path[i] == '\0') {
+			state = EOL;
+			if (prev_state == SLASH)
+				continue;
+		} else {
+			state = FILENAME;
+			if (i - sub_idx > EXT2_FILENAME_LEN)
+				panic("File name in path '%s' too long", path);
+		}
+		if (path[i] == '/' || path[i] == '\0') {
+			memcpy(child, &path[sub_idx], i - sub_idx);
+			memcpy(parent, path, sub_idx);
+			child[i - sub_idx] = '\0';
+			parent[sub_idx] = '\0';
+			sub_idx = i + 1;
+		}
+	}
+}
+
+/*
  * File System test cases
  */
 
 #if EXT2_TESTS
 
-#define	TEST_INODES		0
-#define TEST_BLOCK_READS	0
-#define TEST_FILE_READS		0
-#define TEST_DIR_ENTRIES	0
-#define TEST_PATH_CONVERSION	1
-#define TEST_INODE_ALLOC	0
-#define TEST_BLOCK_ALLOC	0
-#define TEST_FILE_WRITES	0
+#define TEST_INODES			0
+#define TEST_BLOCK_READS		0
+#define TEST_FILE_READS			0
+#define TEST_DIR_ENTRIES		0
+#define TEST_PATH_CONVERSION		0
+#define TEST_INODE_ALLOC_DEALLOC	0
+#define TEST_BLOCK_ALLOC		0
+#define TEST_FILE_WRITES		0
+#define TEST_FILE_CREATION		1
 #define EXT2_DUMP_METHOD	buf_char_dump
 
 extern struct {
@@ -205,11 +250,46 @@ extern struct path_translation ext2_files_list[];
  */
 extern const char *ext2_root_list[];
 
+/*
+ * List all files located under given directory
+ */
+static void __unused list_files(uint64_t dir_inum)
+{
+	struct inode *dir;
+	struct dir_entry *dentry;
+	uint64_t offset, len;
+	char *name;
+
+	dir = inode_get(dir_inum);
+	dentry = kmalloc(sizeof(*dentry));
+	name = kmalloc(EXT2_FILENAME_LEN + 1);
+
+	for (offset = 0;  ; offset += dentry->record_len) {
+		len = file_read(dir, (char *)dentry, offset, sizeof(*dentry));
+		if (len == 0)
+			break;
+		if (dentry->inode_num == 0)
+			continue;
+
+		if (!dir_entry_valid(dir_inum, dentry, offset, len)) {
+			(*pr)("Directory inode = %lu\n", dir_inum);
+			panic("Invalid directory entry, check log!");
+		}
+		memcpy(name, dentry->filename, dentry->filename_len);
+		name[dentry->filename_len] = '\0';
+		(*pr)("File: '%s', inode = %lu\n", name, dentry->inode_num);
+	}
+
+	kfree(name);
+	kfree(dentry);
+}
+
 void ext2_run_tests(void)
 {
 	union super_block __unused *sb;
 	struct inode __unused *inode;
 	struct dir_entry __unused *dentry;
+	struct path_translation *file;
 	uint64_t __unused len, block, nblocks, nfree, mode;
 	int64_t __unused ilen, inum;
 	char *buf, *buf2;
@@ -291,7 +371,6 @@ void ext2_run_tests(void)
 	}
 
 	/* Custom files list, should be manually checked */
-	struct path_translation *file;
 	for (uint i = 0; ext2_files_list[i].path != NULL; i++) {
 		file = &ext2_files_list[i];
 		file->absolute_inum = name_i(file->path);
@@ -312,26 +391,52 @@ void ext2_run_tests(void)
 	(*pr)("Path: '%s', Inode = %lu\n", path, name_i(path));
 #endif
 
-#if TEST_INODE_ALLOC
+#if TEST_INODE_ALLOC_DEALLOC
+	struct unrolled_head head;
+
 	nfree = isb.sb->free_inodes_count;
+again: 	unrolled_init(&head, 64);
 	for (uint i = 0; i < nfree; i++) {
-		inum = inode_alloc();
+		inum = inode_alloc(EXT2_FT_REG_FILE);
 		if (inum == 0)
 			panic("Reported free inodes count = %lu, but our "
 			      "%u-th allocation returned NULL!", nfree, i);
 
 		(*pr)("Returned inode = %lu\n", inum);
 		inode = inode_get(inum);
-		inode_dump(inode, inum, ".");
+		/* inode_dump(inode, inum, "."); */
+		unrolled_insert(&head, (void *)inum);
 
 		if (inode->links_count > 0 && inode->dtime != 0)
 			panic("Allocated used inode #%lu, its links count "
 			      "= %d!", inum, inode->links_count);
 	}
-	inum = inode_alloc();
+	inum = inode_alloc(EXT2_FT_REG_FILE);
 	if (inum != 0)				// Boundary case
 		panic("We've allocated all %lu inodes, how can a new "
 		      "allocation returns inode #%lu?", nfree, inum);
+
+	/* Deallocate half of the allocated inodes */
+	for (uint i = 0; i < nfree / 2; i++) {
+		inum = (int64_t) unrolled_lookup(&head, i);
+		assert(inum != 0);
+
+		(*pr)("Deallocating inode %ld\n", inum);
+		inode_dealloc(inum);
+	}
+	if (isb.sb->free_inodes_count != nfree / 2)
+		panic("We've allocated all inodes, then deallocated %u "
+		      "of them. Nonetheless, reported num of free inos "
+		      "= %u instead of %u", nfree/2, isb.sb->free_inodes_count,
+		      nfree / 2);
+
+	nfree /= 2;
+	unrolled_free(&head);
+
+	if (nfree != 0) {
+		(*pr)("Trying to allocate %u inodes again:\n", nfree);
+		goto again;
+	}
 #endif
 
 #if TEST_BLOCK_ALLOC
@@ -451,7 +556,114 @@ out1:
 		(*pr)("Validated!\n");
 	}
 #endif
-	(*pr)("_EXT2_TESTS: Sucess!");
+
+#if TEST_FILE_CREATION
+	char *parent, *child;
+	int64_t parent_inum;
+
+	/* Assure -EEXIST on all existing Ext2 volume files */
+	parent = kmalloc(4096);
+	child = kmalloc(EXT2_FILENAME_LEN + 1);
+	for (uint j = 0; ext2_files_list[j].path != NULL; j++) {
+		file = &ext2_files_list[j];
+		prints("Testing Path '%s':\n", file->path);
+		path_get_parent(file->path, parent, child);
+		prints("Parent: '%s'\n", parent);
+		prints("Child: '%s'\n", child);
+
+		parent_inum = name_i(parent);
+		inum = file_new(parent_inum, child, EXT2_FT_REG_FILE);
+		if (inum != -EEXIST) {
+			panic("File with path '%s' already exists, but "
+			      "file_new allocated a new ino %u for it!",
+			      file->path, inum);
+		}
+		(*pr)("Success: file creation returned -EEXIST\n");
+	}
+	kfree(parent);
+	kfree(child);
+
+	/* Now just create a random set of regular files */
+	char name[3] = "00";
+	for (char p = 'a'; p <= 'z'; p++)
+		for (char ch = '0'; ch <= '~'; ch++) {
+			name[0] = p;
+			name[1] = ch;
+			(*pr)("Creating new file '%s': ", name);
+			inum = file_new(EXT2_ROOT_INODE, name, EXT2_FT_REG_FILE);
+			if (inum < 0) {
+				(*pr)("Returned %ld", inum);
+				panic("File creation error; check log");
+			}
+			(*pr)("Success!\n");
+		}
+
+	/* Assure -EEXIST on recreation of files created above */
+	for (char p = 'a'; p <= 'z'; p++)
+		for (char ch = '0'; ch <= '~'; ch++) {
+			name[0] = p;
+			name[1] = ch;
+			inum = file_new(EXT2_ROOT_INODE, name, EXT2_FT_DIR);
+			if (inum != -EEXIST)
+				panic("File '%s' already exists, but file_new "
+				      "allocated a new ino %lu for it", name, inum);
+		}
+
+	/* Test directories creation */
+	char pname[4], ch;
+	pname[0] = '/', pname[1] = 'A', pname[3] = '\0', ch = '0';
+	for (int i = 0; i < 40; i++, ch++) {
+		pname[2] = ch;
+		(*pr)("Starting from root directory '/':\n");
+		inum = EXT2_ROOT_INODE;
+
+		/* For each dir, create a 50-level deep dir heiararchy!! */
+		for (int i = 0; i < 50; i++) {
+			(*pr)("Creating new sub-dir '%s': ", pname + 1);
+			inum = file_new(inum, pname + 1, EXT2_FT_DIR);
+			if (inum < 0) {
+				(*pr)("Returned %ld", inum);
+				panic("File creation error; check log");
+			}
+			(*pr)("Success!\n");
+		}
+		(*pr)("\n");
+	}
+
+	(*pr)("Listing contents of folder /:\n");
+	list_files(EXT2_ROOT_INODE);
+
+	/* Test the contents of created directories contents */
+	ch = '0';
+	for (int i = 0; i < 40; i++, ch++) {
+		pname[2] = ch;
+		(*pr)("Listing contents of folder %s:\n", pname);
+		list_files(name_i(pname));
+		(*pr)("\n");
+	}
+
+	/* Boundary Case: what about files creation with long names? */
+	char longname[EXT2_FILENAME_LEN + 1];
+	memset(longname, 'a', EXT2_FILENAME_LEN);
+	longname[EXT2_FILENAME_LEN] = '\0';
+	inum = file_new(EXT2_ROOT_INODE, longname, EXT2_FT_REG_FILE);
+	(*pr)("Creating file '%s', returned %ld\n", longname, inum);
+	if (inum > 0)
+		panic("Tried to create long file name of len %d, but it was "
+		      "accepted and inode %lu returned;  ENAMETOOLONG should"
+		      "'ve been returned!", EXT2_FILENAME_LEN, inum);
+	longname[EXT2_FILENAME_LEN - 1] = '\0';
+	inum = file_new(EXT2_ROOT_INODE, longname, EXT2_FT_REG_FILE);
+	(*pr)("Creating file '%s', returned %ld\n", longname, inum);
+	if (inum < 0)
+		panic("Tried to create max possible len (%d) file name, but "
+		      "error %ld was returned!", EXT2_FILENAME_LEN-1, inum);
+#endif
+
+	(*pr)("%s: Sucess!", __func__);
+	if (pr != printk)
+		printk("%s: Sucess!", __func__);
+
 	kfree(buf);
 	kfree(buf2);
 }

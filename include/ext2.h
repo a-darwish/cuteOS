@@ -98,7 +98,7 @@ enum {
 /*
  * Directory entries 1-byte File-Type field
  */
-enum {
+enum file_type {
 	EXT2_FT_UNKNOWN		= 0,
 	EXT2_FT_REG_FILE	= 1,
 	EXT2_FT_DIR		= 2,
@@ -109,6 +109,23 @@ enum {
 	EXT2_FT_SYMLINK		= 7,
 	EXT2_FT_MAX
 };
+
+/*
+ * Static-time substitution by constant propagation
+ */
+static inline uint dir_entry_type_to_inode_type(enum file_type type)
+{
+	switch(type) {
+	case EXT2_FT_REG_FILE:	return EXT2_IFREG;
+	case EXT2_FT_DIR:	return EXT2_IFDIR;
+	case EXT2_FT_CHRDEV:	return EXT2_IFCHAR;
+	case EXT2_FT_BLKDEV:	return EXT2_IFBLOCK;
+	case EXT2_FT_FIFO:	return EXT2_IFIFO;
+	case EXT2_FT_SOCK:	return EXT2_IFSOCK;
+	case EXT2_FT_SYMLINK:	return EXT2_IFLINK;
+	default:		assert(false);
+	}
+}
 
 /*
  * On-disk Superblock Format
@@ -315,6 +332,7 @@ struct dir_entry {
 void ext2_init(void);
 uint64_t file_read(struct inode *, char *buf, uint64_t offset, uint64_t len);
 int64_t file_write(struct inode *, char *buf, uint64_t offset, uint64_t len);
+int64_t file_new(uint64_t parent_inum, const char *name, enum file_type type);
 int64_t name_i(const char *path);
 void buf_hex_dump(void *given_buf, uint len);
 void buf_char_dump(void *given_buf, uint len);
@@ -350,7 +368,8 @@ struct path_translation {
 #define STATIC	extern
 void block_read(uint64_t block, char *buf, uint blk_offset, uint len);
 void block_write(uint64_t block, char *buf, uint blk_offset, uint len);
-uint64_t inode_alloc(void);
+uint64_t inode_alloc(enum file_type type);
+void inode_dealloc(uint64_t inum);
 uint64_t block_alloc(void);
 bool dir_entry_valid(uint64_t, struct dir_entry *, uint64_t off, uint64_t len);
 struct dir_entry *find_dir_entry(uint64_t inum, const char *name,uint name_len);
