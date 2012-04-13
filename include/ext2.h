@@ -34,6 +34,9 @@ enum {
 
 	EXT2_INO_NR_BLOCKS	= 15,		/* Data blocks mapped by inode */
 	EXT2_INO_NR_DIRECT_BLKS	= 12,		/* Nr of inode 'direct' blocks */
+	EXT2_INO_INDIRECT	= 12,		/* Inode's indirect block */
+	EXT2_INO_DOUBLE_INDIRECT= 13,		/* Inode's double indirect */
+	EXT2_INO_TRIPLE_INDIRECT= 14,		/* Inode's triple indirect */
 };
 
 /*
@@ -368,6 +371,7 @@ struct path_translation {
 #define STATIC	extern
 void block_read(uint64_t block, char *buf, uint blk_offset, uint len);
 void block_write(uint64_t block, char *buf, uint blk_offset, uint len);
+void block_dealloc(uint block);
 uint64_t inode_alloc(enum file_type type);
 void inode_dealloc(uint64_t inum);
 uint64_t block_alloc(void);

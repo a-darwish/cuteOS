@@ -183,6 +183,7 @@ STATIC void inode_dealloc(uint64_t inum)
 
 	assert(inum != 0);
 	assert(inum >= isb.sb->first_inode);
+	assert(inum <= isb.sb->inodes_count);
 
 	group  = (inum - 1) / isb.sb->inodes_per_group;
 	groupi = (inum - 1) % isb.sb->inodes_per_group;
@@ -202,7 +203,6 @@ STATIC void inode_dealloc(uint64_t inum)
 	block_write(bgd->inode_bitmap, buf, 0, isb.block_size);
 
 	spin_unlock(&isb.inode_allocation_lock);
-
 	kfree(buf);
 }
 
@@ -254,6 +254,43 @@ out:
 	spin_unlock(&isb.block_allocation_lock);
 	kfree(buf);
 	return block;
+}
+
+/*
+ * Block Dealloc - Mark given block as free on-disk
+ * @block       : Block number to deallocate
+ *
+ * All the necessary counters are updated in the process
+ */
+STATIC void __unused block_dealloc(uint block)
+{
+	union super_block *sb;
+	struct group_descriptor *bgd;
+	uint64_t group, groupi;
+	char *buf;
+
+	sb = isb.sb;
+	assert(block >= sb->first_data_block);
+	assert(block < sb->blocks_count);
+
+	group  = (block - sb->first_data_block) / sb->blocks_per_group;
+	groupi = (block - sb->first_data_block) % sb->blocks_per_group;
+	bgd = &isb.bgd[group];
+	buf = kmalloc(isb.block_size);
+
+	spin_lock(&isb.block_allocation_lock);
+
+	sb->free_blocks_count++;
+	bgd->free_blocks_count++;
+	assert(sb->free_blocks_count <= sb->blocks_count);
+
+	block_read(bgd->block_bitmap, buf, 0, isb.block_size);
+	assert(bitmap_bit_is_set(buf, groupi, isb.block_size));
+	bitmap_clear_bit(buf, groupi, isb.block_size);
+	block_write(bgd->block_bitmap, buf, 0, isb.block_size);
+
+	spin_unlock(&isb.block_allocation_lock);
+	kfree(buf);
 }
 
 /*

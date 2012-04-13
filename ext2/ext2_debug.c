@@ -141,8 +141,8 @@ void inode_dump(struct inode *inode, uint64_t inum, const char *path)
 	(*pr)(".. File size = %d bytes\n", inode->size_low);
 	(*pr)(".. 512-byte Blocks count = %u blocks\n", inode->i512_blocks);
 	(*pr)(".. Block number for ACL file = #%u\n", inode->file_acl);
-	(*pr)(".. First 12 Data Blocks: ");
-	for (int i = 0; i < 12; i++)
+	(*pr)(".. Data Blocks:\n");
+	for (int i = 0; i < EXT2_INO_NR_BLOCKS; i++)
 		(*pr)("%u ", inode->blocks[i]);
 	(*pr)("\n\n");
 }
@@ -219,9 +219,9 @@ static __unused void path_get_parent(const char *path, char *parent, char *child
 #define TEST_DIR_ENTRIES		0
 #define TEST_PATH_CONVERSION		0
 #define TEST_INODE_ALLOC_DEALLOC	0
-#define TEST_BLOCK_ALLOC		0
+#define TEST_BLOCK_ALLOC_DEALLOC	1
 #define TEST_FILE_WRITES		0
-#define TEST_FILE_CREATION		1
+#define TEST_FILE_CREATION		0
 #define EXT2_DUMP_METHOD	buf_char_dump
 
 extern struct {
@@ -289,9 +289,10 @@ void ext2_run_tests(void)
 	union super_block __unused *sb;
 	struct inode __unused *inode;
 	struct dir_entry __unused *dentry;
-	struct path_translation *file;
+	struct path_translation __unused *file;
+	struct unrolled_head __unused head;
 	uint64_t __unused len, block, nblocks, nfree, mode;
-	int64_t __unused ilen, inum;
+	int64_t __unused ilen, inum, count;
 	char *buf, *buf2;
 
 	assert(pr != NULL);
@@ -392,8 +393,6 @@ void ext2_run_tests(void)
 #endif
 
 #if TEST_INODE_ALLOC_DEALLOC
-	struct unrolled_head head;
-
 	nfree = isb.sb->free_inodes_count;
 again: 	unrolled_init(&head, 64);
 	for (uint i = 0; i < nfree; i++) {
@@ -439,8 +438,10 @@ again: 	unrolled_init(&head, 64);
 	}
 #endif
 
-#if TEST_BLOCK_ALLOC
+#if TEST_BLOCK_ALLOC_DEALLOC
 	nfree = isb.sb->free_blocks_count;
+	count = 5;
+again:	unrolled_init(&head, 64);
 	for (uint i = 0; i < nfree; i++) {
 		block = block_alloc();
 		if (block == 0)
@@ -448,6 +449,7 @@ again: 	unrolled_init(&head, 64);
 			      "%u-th allocation returned NULL!", nfree, i);
 
 		(*pr)("Returned block = %lu as free\n", block);
+		unrolled_insert(&head, (void *)block);
 
 		(*pr)("Verifying it's not really allocated: ");
 		for (uint ino = 1; ino <= isb.sb->inodes_count; ino++) {
@@ -476,6 +478,26 @@ again: 	unrolled_init(&head, 64);
 	if (block != 0)				// Boundary case
 		panic("We've allocated all %lu blocks, how can a new "
 		      "allocation returns block #%lu?", nfree, block);
+
+	/* Deallocate all of the allocated blocks */
+	for (uint i = 0; i < nfree; i++) {
+		block = (uint64_t)unrolled_lookup(&head, i);
+		assert(block != 0);
+
+		(*pr)("Deallocating block %ld\n", block);
+		block_dealloc(block);
+	}
+	if (isb.sb->free_blocks_count != nfree)
+		panic("We've allocated all blocks, then deallocated all of "
+		      "them. Nonetheless, reported num of free blocks = %u "
+		      "instead of %u", isb.sb->free_blocks_count, nfree);
+	unrolled_free(&head);
+	count--;
+
+	if (count != 0) {
+		(*pr)("Trying to allocate %u blocks again:\n", nfree);
+		goto again;
+	}
 #endif
 
 #if TEST_FILE_WRITES
