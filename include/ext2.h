@@ -35,8 +35,8 @@ enum {
 	EXT2_INO_NR_BLOCKS	= 15,		/* Data blocks mapped by inode */
 	EXT2_INO_NR_DIRECT_BLKS	= 12,		/* Nr of inode 'direct' blocks */
 	EXT2_INO_INDIRECT	= 12,		/* Inode's indirect block */
-	EXT2_INO_DOUBLE_INDIRECT= 13,		/* Inode's double indirect */
-	EXT2_INO_TRIPLE_INDIRECT= 14,		/* Inode's triple indirect */
+	EXT2_INO_DOUBLEIN	= 13,		/* Inode's double indirect */
+	EXT2_INO_TRIPLEIN	= 14,		/* Inode's triple indirect */
 };
 
 /*
@@ -313,6 +313,17 @@ static inline bool is_fifo(uint64_t inum)
 }
 
 /*
+ * Inode data blocks level of indirection
+ */
+enum indirection_level {
+	ZERO_INDIR	= 0,		/* A plain block */
+	SINGLE_INDIR	= 1,		/* An indirect data block */
+	DOUBLE_INDIR	= 2,		/* A double-indirect data block */
+	TRIPLE_INDIR	= 3,		/* A triple-indirect data block */
+	INDIRECTION_LEVEL_MAX,
+};
+
+/*
  * Directory Entry Format.
  *
  * A directory is a file holding variable-sized records;
@@ -336,6 +347,7 @@ void ext2_init(void);
 uint64_t file_read(struct inode *, char *buf, uint64_t offset, uint64_t len);
 int64_t file_write(struct inode *, char *buf, uint64_t offset, uint64_t len);
 int64_t file_new(uint64_t parent_inum, const char *name, enum file_type type);
+void file_truncate(uint64_t inum);
 int64_t name_i(const char *path);
 void buf_hex_dump(void *given_buf, uint len);
 void buf_char_dump(void *given_buf, uint len);

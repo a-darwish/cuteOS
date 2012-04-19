@@ -262,7 +262,7 @@ out:
  *
  * All the necessary counters are updated in the process
  */
-STATIC void __unused block_dealloc(uint block)
+STATIC void block_dealloc(uint block)
 {
 	union super_block *sb;
 	struct group_descriptor *bgd;
@@ -694,6 +694,80 @@ int64_t file_new(uint64_t parent_inum, const char *name, enum file_type type)
 dealloc_inode:
 	inode_dealloc(inum);
 	return ret;
+}
+
+/*
+ * Deallocate given indirect, double, or triple indirect data block, and
+ * each of its mapped blocks. An indirect block entry maps a plain block,
+ * a double indirect block entry maps an indirect block, and a triple
+ * indirect block entry maps a double indirect block, thus the recursion.
+ *
+ * NOTE! This is a recursive depth-first block-tree traversal
+ *
+ * @block       : indirect, double, or triple indir block to deallocate
+ * @level       : "Single", "Double", or "Triple" level of indirection
+ */
+static void indirect_block_dealloc(uint64_t block, enum indirection_level level)
+{
+	char *buf;
+	uint32_t *entry;
+	int entries_count;
+
+	if (block == 0)
+		return;
+
+	assert(level >= 0);
+	assert(level < INDIRECTION_LEVEL_MAX);
+	if (level == 0) {
+		block_dealloc(block);
+		return;
+	}
+
+	buf = kmalloc(isb.block_size);
+	entries_count = isb.block_size / sizeof(*entry);
+	block_read(block, buf, 0, isb.block_size);
+
+	for (entry = (uint32_t *)buf; entries_count--; entry++) {
+		if (*entry != 0)
+			indirect_block_dealloc(*entry, level - 1);
+	}
+	assert((char *)entry == buf + isb.block_size);
+
+	block_dealloc(block);
+	kfree(buf);
+}
+
+/*
+ * File Truncate - Truncate given file to zero (0) bytes
+ * @inum	: File's inode, which will map us to the data blocks
+ */
+void file_truncate(uint64_t inum)
+{
+	struct inode *inode;
+
+	assert(inum != 0);
+	assert(inum >= isb.sb->first_inode);
+	assert(inum <= isb.sb->inodes_count);
+	assert(is_regular_file(inum));
+	inode = inode_get(inum);
+
+	inode->size_low = 0;
+	inode->i512_blocks = 0;
+	for (int i = 0; i < EXT2_INO_NR_DIRECT_BLKS; i++) {
+		if (inode->blocks[i] == 0)
+			continue;
+		block_dealloc(inode->blocks[i]);
+		inode->blocks[i] = 0;
+	}
+
+	indirect_block_dealloc(inode->blocks[EXT2_INO_INDIRECT], SINGLE_INDIR);
+	inode->blocks[EXT2_INO_INDIRECT] = 0;
+
+	indirect_block_dealloc(inode->blocks[EXT2_INO_DOUBLEIN], DOUBLE_INDIR);
+	inode->blocks[EXT2_INO_DOUBLEIN] = 0;
+
+	indirect_block_dealloc(inode->blocks[EXT2_INO_TRIPLEIN], TRIPLE_INDIR);
+	inode->blocks[EXT2_INO_TRIPLEIN] = 0;
 }
 
 /*

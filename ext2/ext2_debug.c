@@ -219,9 +219,10 @@ static __unused void path_get_parent(const char *path, char *parent, char *child
 #define TEST_DIR_ENTRIES		0
 #define TEST_PATH_CONVERSION		0
 #define TEST_INODE_ALLOC_DEALLOC	0
-#define TEST_BLOCK_ALLOC_DEALLOC	1
+#define TEST_BLOCK_ALLOC_DEALLOC	0
 #define TEST_FILE_WRITES		0
 #define TEST_FILE_CREATION		0
+#define TEST_FILE_TRUNCATE		1
 #define EXT2_DUMP_METHOD	buf_char_dump
 
 extern struct {
@@ -680,6 +681,27 @@ out1:
 	if (inum < 0)
 		panic("Tried to create max possible len (%d) file name, but "
 		      "error %ld was returned!", EXT2_FILENAME_LEN-1, inum);
+#endif
+
+#if TEST_FILE_TRUNCATE
+	for (uint i = 0; ext2_files_list[i].path != NULL; i++) {
+		file = &ext2_files_list[i];
+		inum = name_i(file->path);
+		(*pr)("Truncating file '%s': ", file->path);
+		if (is_dir(inum)) {
+			(*pr)("Directory!\n");
+			continue;
+		}
+
+		inode = inode_get(inum);
+		inode_dump(inode, inum, file->path);
+		file_truncate(inum);
+		assert(inode->size_low == 0);
+		assert(inode->i512_blocks == 0);
+		for (int i = 0; i < EXT2_INO_NR_BLOCKS; i++)
+			assert(inode->blocks[i] == 0);
+		(*pr)("\nSuccess!\n");
+	}
 #endif
 
 	(*pr)("%s: Sucess!", __func__);
