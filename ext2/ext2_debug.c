@@ -222,7 +222,7 @@ static __unused void path_get_parent(const char *path, char *parent, char *child
 #define TEST_BLOCK_ALLOC_DEALLOC	0
 #define TEST_FILE_WRITES		0
 #define TEST_FILE_CREATION		0
-#define TEST_FILE_TRUNCATE		1
+#define TEST_FILE_TRUNCATE		0
 #define EXT2_DUMP_METHOD	buf_char_dump
 
 extern struct {
@@ -329,7 +329,7 @@ void ext2_run_tests(void)
 	for (uint i = 1; i <= sb->inodes_count; i++) {
 		(*pr)("Trying inode #%u: ", i);
 		inode = inode_get(i);
-		if ((inode->mode & EXT2_IFILE_FORMAT) == EXT2_IFDIR) {
+		if (S_ISDIR(inode->mode)) {
 			(*pr)("Directory!\n");
 			continue;
 		}
@@ -442,7 +442,7 @@ again: 	unrolled_init(&head, 64);
 #if TEST_BLOCK_ALLOC_DEALLOC
 	nfree = isb.sb->free_blocks_count;
 	count = 5;
-again:	unrolled_init(&head, 64);
+bagain:	unrolled_init(&head, 64);
 	for (uint i = 0; i < nfree; i++) {
 		block = block_alloc();
 		if (block == 0)
@@ -497,7 +497,7 @@ again:	unrolled_init(&head, 64);
 
 	if (count != 0) {
 		(*pr)("Trying to allocate %u blocks again:\n", nfree);
-		goto again;
+		goto bagain;
 	}
 #endif
 
@@ -513,13 +513,12 @@ again:	unrolled_init(&head, 64);
 			continue;
 		}
 		inode = inode_get(inum);
-		mode = inode->mode & EXT2_IFILE_FORMAT;
-		if (mode == EXT2_IFDIR || mode == EXT2_IFLINK) {
+		if (S_ISDIR(inode->mode) || S_ISLNK(inode->mode)) {
 			(*pr)("Dir or a symlnk!\n");
 			continue;
 		}
-		inode->mode &= ~EXT2_IFILE_FORMAT;
-		inode->mode |= EXT2_IFREG;
+		inode->mode &= ~S_IFMT;
+		inode->mode |= S_IFREG;
 		memset32(buf, inum, BUF_LEN);
 		for (uint offset = 0; offset < BUF_LEN*2; offset += BUF_LEN) {
 			ilen = file_write(inode, buf, offset, BUF_LEN);
@@ -554,8 +553,7 @@ out1:
 			(*pr)("Ignoring file!\n");
 			continue;
 		}
-		mode = inode->mode & EXT2_IFILE_FORMAT;
-		if (mode == EXT2_IFDIR || mode == EXT2_IFLINK) {
+		if (S_ISDIR(inode->mode) || S_ISLNK(inode->mode)) {
 			(*pr)("Dir or a symlink!\n");
 			continue;
 		}

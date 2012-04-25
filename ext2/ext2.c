@@ -153,11 +153,11 @@ STATIC uint64_t inode_alloc(enum file_type type)
 		inode = inode_get(inum);
 		memset(inode, 0, sizeof(*inode));
 		inode->mode |= dir_entry_type_to_inode_type(type);
-		inode->mode |= EXT2_IRUSR | EXT2_IWUSR;
-		inode->mode |= EXT2_IRGRP | EXT2_IWGRP;
-		inode->mode |= EXT2_IROTH;
+		inode->mode |= S_IRUSR | S_IWUSR;
+		inode->mode |= S_IRGRP | S_IWGRP;
+		inode->mode |= S_IROTH;
 		if (type == EXT2_FT_DIR)
-			inode->mode |= EXT2_IXUSR | EXT2_IXGRP | EXT2_IXOTH;
+			inode->mode |= S_IXUSR | S_IXGRP | S_IXOTH;
 		inode->atime = inode->ctime = inode->mtime = 0xf00f;
 		goto out;
 	}
@@ -300,14 +300,16 @@ STATIC void block_dealloc(uint block)
  * @offset	: File's offset
  * @len		: Nr of bytes to read, starting from file @offset
  * Return value	: Nr of bytes read, or zero (out of boundary @offset)
+ *
+ * NOTE! If this code was later modified so that errors are returned,
+ * remember to check such errors in all of the callers.
  */
 uint64_t file_read(struct inode *inode, char *buf, uint64_t offset, uint64_t len)
 {
 	uint64_t supported_area, block, blk_offset;
-	uint64_t read_len, ret_len, mode;
+	uint64_t read_len, ret_len;
 
-	mode = inode->mode & EXT2_IFILE_FORMAT;
-	if (mode != EXT2_IFREG && mode != EXT2_IFDIR)
+	if (!S_ISREG(inode->mode) && !S_ISDIR(inode->mode))
 		return 0;
 
 	supported_area = isb.block_size * EXT2_INO_NR_DIRECT_BLKS;
@@ -347,16 +349,13 @@ uint64_t file_read(struct inode *inode, char *buf, uint64_t offset, uint64_t len
  * @offset      : File's offset
  * @len         : Nr of bytes to write
  * Return value : Nr of bytes actually written, or an errno
- *
- * FIXME! How to properly update inode's i_blocks? I dont' get it!
  */
 int64_t file_write(struct inode *inode, char *buf, uint64_t offset, uint64_t len)
 {
-	uint64_t mode, supported_area, blk_offset, last_offset;
+	uint64_t supported_area, blk_offset, last_offset;
 	uint64_t write_len, ret_len, block, new;
 
-	mode = inode->mode & EXT2_IFILE_FORMAT;
-	if (mode != EXT2_IFREG && mode != EXT2_IFDIR)
+	if (!S_ISREG(inode->mode) && !S_ISDIR(inode->mode))
 		return -EBADF;
 
 	supported_area = isb.block_size * EXT2_INO_NR_DIRECT_BLKS;
@@ -392,7 +391,7 @@ int64_t file_write(struct inode *inode, char *buf, uint64_t offset, uint64_t len
 			assert(len == 0);
 
 		inode->size_low = max(inode->size_low, (uint32_t)offset);
-		inode->i512_blocks = ceil_div(inode->size_low, 512);
+		inode->i512_blocks = ((block + 1) * isb.block_size) / 512;
 	}
 
 	return ret_len;

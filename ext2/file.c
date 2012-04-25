@@ -85,13 +85,16 @@ static void fill_statbuf(uint64_t inum, struct stat *buf)
 	buf->st_ctime = inode->ctime;
 }
 
+/*
+ * -ENOENT, -ENOTDIR, -ENAMETOOLONG
+ */
 int sys_chdir(const char *path)
 {
 	int64_t inum;
 
 	inum = name_i(path);
 	if (inum < 0)
-		return inum;		/* -ENOENT, -ENOTDIR, -ENAMETOOLONG */
+		return inum;
 	if (!is_dir(inum))
 		return -ENOTDIR;
 
@@ -100,31 +103,44 @@ int sys_chdir(const char *path)
 	return 0;
 }
 
+/*
+ * -EINVAL, -ENOENT, -ENOTDIR, -ENAMETOOLONG, -EISDIR
+ */
 int sys_open(const char *path, int flags, __unused mode_t mode)
 {
-	int64_t inum;
+	int64_t inum, fd, ret;
 	struct file *file;
 
 	if ((flags & O_ACCMODE) == 0)
 		return -EINVAL;
-
-	if (flags & O_WRONLY || flags & O_CREAT ||
-	    flags & O_EXCL   || flags & O_TRUNC ||
-	    flags & O_APPEND)
-		return -EINVAL;		/* No write support, yet! */
+	if (flags & O_CREAT || flags & O_EXCL)
+		return -EINVAL;
 
 	inum = name_i(path);
 	if (inum < 0)
-		return inum;		/* -ENOENT, -ENOTDIR, -ENAMETOOLONG */
+		return inum;
 
-	/* All UNIX kernels keep the write permission
-	 * to directories exclusively for themselves! */
-	if (is_dir(inum) && flags & O_WRONLY)
-		return -EISDIR;
+	if (flags & O_WRONLY) {
+		/* All UNIX kernels keep the write permission
+		 * of directories exclusively for themselves: */
+		if (is_dir(inum))
+			return -EISDIR;
+
+		/* Truncate file iff write mode was requested
+		 * and the file is not a directory: */
+		if (flags & O_TRUNC)
+			file_truncate(inum);
+	}
 
 	file = kmalloc(sizeof(*file));
 	file_init(file, inum, flags);
-	return unrolled_insert(&current->fdtable, file);
+	fd = unrolled_insert(&current->fdtable, file);
+
+	if (flags & O_APPEND) {
+		ret = sys_lseek(fd, 0, SEEK_END);
+		assert(ret > 0);
+	}
+	return fd;
 }
 
 int sys_close(int fd)
@@ -158,18 +174,24 @@ int sys_fstat(int fd, struct stat *buf)
 	return 0;
 }
 
+/*
+ * -ENOENT, -ENOTDIR, -ENAMETOOLONG
+ */
 int sys_stat(const char *path, struct stat *buf)
 {
 	uint64_t inum;
 
 	inum = name_i(path);
 	if (inum < 0)
-		return inum;		/* -ENOENT, -ENOTDIR, -ENAMETOOLONG */
+		return inum;
 
 	fill_statbuf(inum, buf);
 	return 0;
 }
 
+/*
+ * -EBADF, -EISDIR
+ */
 int64_t sys_read(int fd, void *buf, uint64_t count)
 {
 	struct file *file;
@@ -179,7 +201,7 @@ int64_t sys_read(int fd, void *buf, uint64_t count)
 	file = unrolled_lookup(&current->fdtable, fd);
 	if (file == NULL)
 		return -EBADF;
-	if ((file->flags & O_WRONLY) && !(file->flags & O_RDONLY))
+	if ((file->flags & O_RDONLY) == 0)
 		return -EBADF;
 
 	assert(file->inum > 0);
@@ -196,6 +218,39 @@ int64_t sys_read(int fd, void *buf, uint64_t count)
 	spin_unlock(&file->lock);
 
 	return read_len;
+}
+
+/*
+ * -EBADF, -EISDIR, -EFBIG, -ENOSPC
+ */
+int64_t sys_write(int fd, void *buf, uint64_t count)
+{
+	struct file *file;
+	struct inode *inode;
+	int64_t write_len;
+
+	file = unrolled_lookup(&current->fdtable, fd);
+	if (file == NULL)
+		return -EBADF;
+	if ((file->flags & O_WRONLY) == 0)
+		return -EBADF;
+
+	assert(file->inum > 0);
+	if (is_dir(file->inum))
+		return -EISDIR;
+	if (!is_regular_file(file->inum))
+		return -EBADF;
+	inode = inode_get(file->inum);
+
+	spin_lock(&file->lock);
+	write_len = file_write(inode, buf, file->offset, count);
+	if (write_len < 0)
+		goto out;
+	assert(file->offset + write_len <= inode->size_low);
+	file->offset += write_len;
+
+out:	spin_unlock(&file->lock);
+	return write_len;
 }
 
 /*

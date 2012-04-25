@@ -14,6 +14,7 @@
 #include <kernel.h>
 #include <stdint.h>
 #include <tests.h>
+#include <stat.h>
 
 enum {
 	EXT2_SUPERBLOCK_SIZE	= 1024,
@@ -68,37 +69,6 @@ enum {
 };
 
 /*
- * Inode 16-bit 'mode' field
- */
-enum {
-	// 1- File Format
-	EXT2_IFILE_FORMAT	= 0xF000,	/* Mask to extract format bits */
-	EXT2_IFSOCK		= 0xC000,	/* Socket */
-	EXT2_IFLINK		= 0xA000,	/* Symbolic Link */
-	EXT2_IFREG		= 0x8000,	/* Regular File */
-	EXT2_IFBLOCK		= 0x6000,	/* Block Device */
-	EXT2_IFDIR		= 0x4000,	/* Directory */
-	EXT2_IFCHAR		= 0x2000,	/* Character Device */
-	EXT2_IFIFO		= 0x1000,	/* FIFO File */
-
-	// 2- Process execution user/group override
-	EXT2_ISUID		= 0x0800,	/* Set Process UID bit */
-	EXT2_IGUID		= 0x0400,	/* Set Group UID bit */
-	EXT2_ISVTX		= 0x0200,	/* Sticky bit */
-
-	// 3- Access rights bit mask
-	EXT2_IRUSR		= 0x0100,	/* R for owner */
-	EXT2_IWUSR		= 0x0080,	/* W for owner */
-	EXT2_IXUSR		= 0x0040,	/* X for owner */
-	EXT2_IRGRP		= 0x0020,	/* R for group */
-	EXT2_IWGRP		= 0x0010,	/* W for group */
-	EXT2_IXGRP		= 0x0008,	/* X for group */
-	EXT2_IROTH		= 0x0004,	/* R for other */
-	EXT2_IWOTH		= 0x0002,	/* W for other */
-	EXT2_IXOTH		= 0x0001,	/* X for other */
-};
-
-/*
  * Directory entries 1-byte File-Type field
  */
 enum file_type {
@@ -119,13 +89,13 @@ enum file_type {
 static inline uint dir_entry_type_to_inode_type(enum file_type type)
 {
 	switch(type) {
-	case EXT2_FT_REG_FILE:	return EXT2_IFREG;
-	case EXT2_FT_DIR:	return EXT2_IFDIR;
-	case EXT2_FT_CHRDEV:	return EXT2_IFCHAR;
-	case EXT2_FT_BLKDEV:	return EXT2_IFBLOCK;
-	case EXT2_FT_FIFO:	return EXT2_IFIFO;
-	case EXT2_FT_SOCK:	return EXT2_IFSOCK;
-	case EXT2_FT_SYMLINK:	return EXT2_IFLINK;
+	case EXT2_FT_REG_FILE:	return S_IFREG;
+	case EXT2_FT_DIR:	return S_IFDIR;
+	case EXT2_FT_CHRDEV:	return S_IFCHR;
+	case EXT2_FT_BLKDEV:	return S_IFBLK;
+	case EXT2_FT_FIFO:	return S_IFIFO;
+	case EXT2_FT_SOCK:	return S_IFSOCK;
+	case EXT2_FT_SYMLINK:	return S_IFLNK;
 	default:		assert(false);
 	}
 }
@@ -294,22 +264,27 @@ struct inode *inode_get(uint64_t inum);
 
 static inline bool is_dir(uint64_t inum)
 {
-	return (inode_get(inum)->mode & EXT2_IFILE_FORMAT) == EXT2_IFDIR;
+	return S_ISDIR(inode_get(inum)->mode);
 }
 
 static inline bool is_regular_file(uint64_t inum)
 {
-	return (inode_get(inum)->mode & EXT2_IFILE_FORMAT) == EXT2_IFREG;
+	return S_ISREG(inode_get(inum)->mode);
 }
 
 static inline bool is_socket(uint64_t inum)
 {
-	return (inode_get(inum)->mode & EXT2_IFILE_FORMAT) == EXT2_IFSOCK;
+	return S_ISSOCK(inode_get(inum)->mode);
 }
 
 static inline bool is_fifo(uint64_t inum)
 {
-	return (inode_get(inum)->mode & EXT2_IFILE_FORMAT) == EXT2_IFIFO;
+	return S_ISFIFO(inode_get(inum)->mode);
+}
+
+static inline bool is_symlink(uint64_t inum)
+{
+	return S_ISLNK(inode_get(inum)->mode);
 }
 
 /*

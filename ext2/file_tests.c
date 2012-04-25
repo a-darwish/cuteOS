@@ -18,15 +18,17 @@
 #include <kmalloc.h>
 #include <unrolled_list.h>
 #include <percpu.h>
+#include <ramdisk.h>
 
 #if	FILE_TESTS
 
-#define TEST_CHDIR	1
-#define TEST_OPEN	1
-#define TEST_READ	1
-#define TEST_LSEEK	1
-#define TEST_STAT	1
-#define TEST_CLOSE	1
+#define TEST_CHDIR	0
+#define TEST_OPEN	0
+#define TEST_READ	0
+#define TEST_WRITE	1
+#define TEST_LSEEK	0
+#define TEST_STAT	0
+#define TEST_CLOSE	0
 
 extern struct path_translation ext2_files_list[];
 extern const char *ext2_root_list[];
@@ -175,6 +177,147 @@ static void __unused _test_read(int read_chunk)
 	kfree(buf);
 }
 
+/*
+ * A simple write-testing mechanism is used:  the first 4K bytes of all
+ * files are written with a series of little-endian 4-byte integers =
+ * inode number;  the second 4K must have integers of (inode + 1);  the
+ * third 4K must have integers of (inode + 2).
+ *
+ * After all files are written, the entire directory tree is traversed
+ * for regular files.  For each reg file found, test its contents using
+ * the above inode# method.
+ */
+static void __unused _test_write(void)
+{
+	struct stat *statbuf;
+	struct path_translation *file;
+	struct inode *inode;
+	void (*pr)(const char *fmt, ...);
+	int64_t inum, last_file = -1, fd, ilen, ret;
+	const int BUF_LEN = 4096;
+	char *buf, *buf2;
+
+	pr = prints;
+	buf = kmalloc(BUF_LEN);
+	buf2 = kmalloc(BUF_LEN);
+	statbuf = kmalloc(sizeof(*statbuf));
+
+	for (uint j = 0; ext2_files_list[j].path != NULL; j++) {
+		file = &ext2_files_list[j];
+		(*pr)("Writing to file '%s': ", file->path);
+		if ((ret = sys_stat(file->path, statbuf)) < 0) {
+			(*pr)("Stat() error: '%s'\n", errno_to_str(ret));
+			continue;
+		}
+		if (S_ISDIR(statbuf->st_mode)) {
+			(*pr)("Directory!\n");
+			continue;
+		}
+		if (S_ISLNK(statbuf->st_mode)) {
+			(*pr)("Symbolic link!\n");
+			continue;
+		}
+		fd = sys_open(file->path, O_WRONLY | O_TRUNC, 0);
+		if (fd < 0) {
+			(*pr)("Open() error: '%s'\n", errno_to_str(fd));
+			continue;
+		}
+		if (last_file != -1) {
+			(*pr)("Ignoring file!\n");
+			continue;
+		}
+
+		/* Forcibly transform the file to a 'regular file' type */
+		inum = name_i(file->path);
+		inode = inode_get(inum);
+		inode->mode &= ~S_IFMT;
+		inode->mode |= S_IFREG;
+		assert(S_ISREG(inode->mode));
+
+		for (int k = 0, offset = 0; k < 3; k++, offset += BUF_LEN) {
+			memset32(buf, inum + k, BUF_LEN);
+			ilen = sys_write(fd, buf, BUF_LEN);
+			assert(ilen != 0);
+			if (ilen == -ENOSPC) {
+				(*pr)("Filled the entire disk!\n");
+				(*pr)("Ignoring file!");
+				last_file = j;
+				goto out1;
+			}
+			if (ilen < 0) {
+				(*pr)("Write() err: '%s\\n", errno_to_str(ilen));
+				continue;
+			}
+			assert(ilen == BUF_LEN);
+			assert(inode->size_low == offset + ilen);
+		}
+		assert(inode->size_low == BUF_LEN*3);
+		(*pr)("Done!\n", inum);
+	}
+out1:
+	(*pr)("**** NOW TESTING THE WRITTEN DATA!\n");
+
+	for (uint j = 0; ext2_files_list[j].path != NULL; j++) {
+		file = &ext2_files_list[j];
+		(*pr)("Verifying file '%s': ", file->path);
+		if (last_file != -1 && j >= last_file) {
+
+			/* TODO: Delete the unmodified file not to confuse
+			 * the userspace testing tool with unrwitten files */
+			(*pr)("Ignoring file!\n");
+			continue;
+		}
+		if ((ret = sys_stat(file->path, statbuf)) < 0) {
+			(*pr)("Stat() error: '%s'\n", errno_to_str(ret));
+			continue;
+		}
+		if (S_ISDIR(statbuf->st_mode)) {
+			(*pr)("Directory!\n");
+			continue;
+		}
+		if (S_ISLNK(statbuf->st_mode)) {
+			(*pr)("Symbolic link!\n");
+			continue;
+		}
+		fd = sys_open(file->path, O_RDWR, 0);
+		if (fd < 0) {
+			(*pr)("Open() error: '%s'\n", errno_to_str(fd));
+			continue;
+		}
+
+		inum = name_i(file->path);
+		for (int i = 0; i < 3; i++) {
+			memset32(buf2, inum + i, BUF_LEN);
+			ilen = sys_read(fd, buf, BUF_LEN);
+			if (ilen < 0) {
+				(*pr)("Read() err: '%s\\n", errno_to_str(ilen));
+				continue;
+			}
+			if (ilen < BUF_LEN)
+				panic("We've written %d bytes to file %s, but "
+				      "returned only %d bytes on read", BUF_LEN,
+				      file->path, ilen);
+			if (memcmp(buf, buf2, BUF_LEN) != 0) {
+				(*pr)("Data written differs from what's read!\n");
+				(*pr)("We've written the following into file:\n");
+				buf_hex_dump(buf2, BUF_LEN);
+				(*pr)("But found the following when reading:\n");
+				buf_hex_dump(buf, BUF_LEN);
+				panic("Data corruption detected!");
+			}
+		}
+		(*pr)("Validated!\n");
+		inode_dump(inode_get(inum), inum, file->path);
+	}
+
+	kfree(statbuf);
+	kfree(buf2);
+	kfree(buf);
+
+	/* TODO: Create a new file, and fill it with bytes of ramdisk
+	 * length.  Assure that -ENOSPC is returned */
+}
+
 /* Break some Software Engineering rules to minimize code duplication: */
 #define _test_lseek_state(SEEK_WHENCE, EXPECTED_VALUE)			\
 sys_lseek(p->fd, 0, SEEK_SET);						\
@@ -276,6 +419,9 @@ static void __unused _test_stat(void)
 
 void file_run_tests(void)
 {
+	/* Extract the modified ext2 volume out of the virtual machine: */
+	prints("Ramdisk start at: 0x%lx, with len = %ld\n",
+	       ramdisk_get_buf(), ramdisk_get_len());
 #if TEST_CHDIR
 	_test_chdir();
 #endif
@@ -288,6 +434,9 @@ void file_run_tests(void)
 		_test_read(chunk);
 	}
 #endif
+#if TEST_WRITE
+	_test_write();
+#endif
 #if TEST_LSEEK
 	_test_lseek();
 #endif
@@ -297,6 +446,7 @@ void file_run_tests(void)
 #if TEST_CLOSE
 	_test_close();
 #endif
+	printk("%s: Sucess!", __func__);
 }
 
 #endif	/* FILE_TESTS */

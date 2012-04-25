@@ -5,7 +5,8 @@
  *
  * A simple write-testing mechanism is used:  the first 4K bytes of all
  * files must have a series of little-endian 4-byte integers = inode
- * number; the second 4K must have integers of (inode + 1).
+ * number; the second 4K must have integers of (inode + 1); the third
+ * 4K must have integers of (inode + 2).
  *
  * Thus, traverse the entire directory tree for regular files. For each
  * regular file found, test its contents using the above inode# method.
@@ -97,7 +98,7 @@ dirTree(const char *pathname, const struct stat *sbuf, int type, struct FTW *ftw
 		return 0;
 	printf("Testing file '%s' with ino %lu: ", pathname, sbuf->st_ino);
 
-	len = 4096 * 2;
+	len = 4096 * 3;
 	if ((buf = malloc(len)) == NULL) {
 		perror("malloc");
 		return -1;
@@ -108,6 +109,7 @@ dirTree(const char *pathname, const struct stat *sbuf, int type, struct FTW *ftw
 	}
 	memset32(buf, sbuf->st_ino, 4096);		/* Check top comment */
 	memset32(buf + 4096, sbuf->st_ino + 1, 4096);	/* Check top comment */
+	memset32(buf + 8192, sbuf->st_ino + 2, 4096);	/* Check top comment */
 
 	if ((fd = open(pathname, O_RDONLY)) < 0) {
 		perror("open");
