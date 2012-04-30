@@ -178,6 +178,7 @@ out:
 STATIC void inode_dealloc(uint64_t inum)
 {
 	struct group_descriptor *bgd;
+	struct inode *inode;
 	uint64_t group, groupi;
 	char *buf;
 
@@ -188,6 +189,7 @@ STATIC void inode_dealloc(uint64_t inum)
 	group  = (inum - 1) / isb.sb->inodes_per_group;
 	groupi = (inum - 1) % isb.sb->inodes_per_group;
 	bgd = &isb.bgd[group];
+	inode = inode_get(inum);
 	buf = kmalloc(isb.block_size);
 
 	spin_lock(&isb.inode_allocation_lock);
@@ -201,6 +203,7 @@ STATIC void inode_dealloc(uint64_t inum)
 	assert(bitmap_bit_is_set(buf, groupi, isb.block_size));
 	bitmap_clear_bit(buf, groupi, isb.block_size);
 	block_write(bgd->inode_bitmap, buf, 0, isb.block_size);
+	memset(inode, 0, sizeof(*inode));
 
 	spin_unlock(&isb.inode_allocation_lock);
 	kfree(buf);
@@ -565,6 +568,7 @@ static int64_t __file_new(uint64_t parent_inum, uint64_t entry_inum,
 			goto free_dentry2;
 		}
 	}
+	dir->flags &= !EXT2_INO_DIR_INDEX_FL;
 
 	/*
 	 * If a last entry was found, we need to either:

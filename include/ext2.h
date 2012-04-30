@@ -69,6 +69,15 @@ enum {
 };
 
 /*
+ * Inode flags - only the ones we recognize
+ */
+enum {
+	EXT2_INO_IMMUTABLE_FL	= 0x00000010,	/* Immutable file */
+	EXT2_INO_DIR_INDEX_FL	= 0x00001000,	/* Hash-indexed directory */
+	EXT2_INO_EXTENT_FL	= 0x00080000,	/* File data in extents */
+};
+
+/*
  * Directory entries 1-byte File-Type field
  */
 enum file_type {
