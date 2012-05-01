@@ -104,43 +104,118 @@ int sys_chdir(const char *path)
 }
 
 /*
- * -EINVAL, -ENOENT, -ENOTDIR, -ENAMETOOLONG, -EISDIR
+ * Get start position of leaf node in given Unix path string.
+ * A return value of zero indicates unavailability of a leaf
+ * node (e.g. '/', '//', '///', ...) or a relative path.
+ *
+ * path         : Hierarchial, UNIX format, file path
+ * leaf_type    : Return val, type of leaf node (reg file or dir)
+ */
+FSTATIC uint path_get_leaf(const char *path, mode_t *leaf_type)
+{
+	enum parsing_state state, prev_state;
+	int leaf_start;
+
+	leaf_start = 0;
+	*leaf_type = 0;
+	state = START;
+	for (int i = 0; i <= strlen(path); i++) {
+		prev_state = state;
+		switch(path[i]) {
+		case '/':
+			state = SLASH; break;
+		case '\0':
+			state = EOL;
+			switch (prev_state) {
+			case SLASH:    *leaf_type = S_IFDIR; break;
+			case FILENAME: *leaf_type = S_IFREG; break;
+			default: assert(false);
+			} break;
+		default:
+			state = FILENAME;
+			switch(prev_state) {
+			case START: case SLASH: leaf_start = i; break;
+			case FILENAME: break;
+			default: assert(false);
+			} break;
+		}
+	}
+	assert((*leaf_type & S_IFMT) != 0);
+	return leaf_start;
+}
+
+/*
+ * Create given file which is identified by a Unix @path. Return
+ * created file inode number, or -EEXIST, -ENAMETOOLONG, -EISDIR.
+ */
+static int64_t __sys_creat(const char *path, __unused mode_t mode)
+{
+	const char *leaf_str; char *parent;
+	int64_t parent_inum; uint max_len, leaf_idx;
+	mode_t leaf_type;
+
+	max_len = PAGE_SIZE;
+	leaf_idx = path_get_leaf(path, &leaf_type);
+	if (S_ISDIR(leaf_type))
+		return -EISDIR;
+	if (path[0] == '/')
+		assert(leaf_idx != 0);
+	if (leaf_idx == 0)
+		parent_inum = current->working_dir;
+	else if (leaf_idx >= max_len)
+		return -ENAMETOOLONG;
+	else {
+		parent = kmalloc(leaf_idx + 1);
+		memcpy(parent, path, leaf_idx);
+		parent[leaf_idx] = '\0';
+		parent_inum = name_i(parent);
+		kfree(parent);
+		if (parent_inum < 0)
+			return parent_inum;
+	}
+	leaf_str = &path[leaf_idx];
+	return file_new(parent_inum, leaf_str, EXT2_FT_REG_FILE);
+}
+
+/*
+ * -EINVAL, -EEXIST, -ENOENT, -ENOTDIR, -ENAMETOOLONG, -EISDIR
  */
 int sys_open(const char *path, int flags, __unused mode_t mode)
 {
-	int64_t inum, fd, ret;
+	int64_t inum, fd;
 	struct file *file;
 
 	if ((flags & O_ACCMODE) == 0)
 		return -EINVAL;
-	if (flags & O_CREAT || flags & O_EXCL)
+	if ((flags & O_TRUNC) &&
+	    (flags & O_APPEND || (flags & O_WRONLY) == 0))
 		return -EINVAL;
 
 	inum = name_i(path);
+	if (flags & O_CREAT) {
+		if (inum > 0 && (flags & O_EXCL))
+			return -EEXIST;
+		if (inum == -ENOENT)
+			inum = __sys_creat(path, mode);
+	}
 	if (inum < 0)
 		return inum;
-
-	if (flags & O_WRONLY) {
-		/* All UNIX kernels keep the write permission
-		 * of directories exclusively for themselves: */
-		if (is_dir(inum))
-			return -EISDIR;
-
-		/* Truncate file iff write mode was requested
-		 * and the file is not a directory: */
-		if (flags & O_TRUNC)
-			file_truncate(inum);
-	}
+	if (is_dir(inum))
+		return -EISDIR;
 
 	file = kmalloc(sizeof(*file));
 	file_init(file, inum, flags);
 	fd = unrolled_insert(&current->fdtable, file);
-
-	if (flags & O_APPEND) {
-		ret = sys_lseek(fd, 0, SEEK_END);
-		assert(ret > 0);
-	}
+	if (flags & O_TRUNC)
+		file_truncate(inum);
+	if (flags & O_APPEND)
+		assert(sys_lseek(fd, 0, SEEK_END) > 0);
 	return fd;
+}
+
+int sys_creat(const char *path, __unused mode_t mode)
+{
+	return sys_open(path, O_CREAT | O_WRONLY | O_TRUNC, mode);
 }
 
 int sys_close(int fd)

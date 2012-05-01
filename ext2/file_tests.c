@@ -25,10 +25,11 @@
 #define TEST_CHDIR	0
 #define TEST_OPEN	0
 #define TEST_READ	0
-#define TEST_WRITE	1
+#define TEST_WRITE	0
 #define TEST_LSEEK	0
 #define TEST_STAT	0
 #define TEST_CLOSE	0
+#define TEST_CREATION	1
 
 extern struct path_translation ext2_files_list[];
 extern const char *ext2_root_list[];
@@ -122,7 +123,7 @@ static void __unused _test_open(void)
 	for (uint i = 0; ext2_files_list[i].path != NULL; i++) {
 		file = &ext2_files_list[i];
 		prints("_FILE: Open()-ing path '%s': ", file->path);
-		file->fd = sys_open(file->path, O_RDONLY, 0);
+		file->fd = sys_open(file->path, O_RDONLY | O_CREAT, 0);
 		if (file->fd < 0)
 			panic("..error: '%s'\n", errno_to_str(file->fd));
 		else
@@ -138,9 +139,9 @@ static void __unused _test_close(void)
 	for (uint i = 0; ext2_files_list[i].path != NULL; i++) {
 		file = &ext2_files_list[i];
 		prints("_FILE: Close()-ing path '%s': ", file->path);
-		file->fd = sys_open(file->path, O_RDONLY, 0);
+		file->fd = sys_open(file->path, O_RDONLY | O_CREAT, 0);
 		sys_close(file->fd);
-		fd = sys_open(file->path, O_RDONLY, 0);
+		fd = sys_open(file->path, O_RDONLY | O_CREAT, 0);
 		if (file->fd != fd)
 			panic("open()=%d, close(%d), open()=%d [should be "
 			      "%d]", file->fd, file->fd, fd, file->fd);
@@ -160,7 +161,7 @@ static void __unused _test_read(int read_chunk)
 		file = &ext2_files_list[i];
 		prints("\n_FILE: Read()-ing path '%s': ", file->path);
 		sys_close(file->fd);
-		file->fd = sys_open(file->path, O_RDONLY, 0);
+		file->fd = sys_open(file->path, O_RDONLY | O_CREAT, 0);
 		assert(file->fd >= 0);
 		while ((len = sys_read(file->fd, buf, read_chunk)) > 0) {
 			prints("\n@@@@ returned %d bytes @@@@; Data:\n", len);
@@ -217,7 +218,7 @@ static void __unused _test_write(void)
 			(*pr)("Symbolic link!\n");
 			continue;
 		}
-		fd = sys_open(file->path, O_WRONLY | O_TRUNC, 0);
+		fd = sys_open(file->path, O_WRONLY | O_TRUNC | O_CREAT, 0);
 		if (fd < 0) {
 			(*pr)("Open() error: '%s'\n", errno_to_str(fd));
 			continue;
@@ -279,7 +280,7 @@ out1:
 			(*pr)("Symbolic link!\n");
 			continue;
 		}
-		fd = sys_open(file->path, O_RDWR, 0);
+		fd = sys_open(file->path, O_RDWR | O_CREAT, 0);
 		if (fd < 0) {
 			(*pr)("Open() error: '%s'\n", errno_to_str(fd));
 			continue;
@@ -356,7 +357,7 @@ static void __unused _test_lseek(void)
 	for (uint i = 0; ext2_files_list[i].path != NULL; i++) {
 		p = &ext2_files_list[i];
 		prints("\n_FILE: Lseek()-ing path '%s': ", p->path);
-		p->fd = sys_open(p->path, O_RDONLY, 0);
+		p->fd = sys_open(p->path, O_RDONLY | O_CREAT, 0);
 		assert(p->fd >= 0);
 		file = unrolled_lookup(&current->fdtable, p->fd);
 		assert(file != NULL);
@@ -405,7 +406,7 @@ static void __unused _test_stat(void)
 		__validate_statbuf(inum, statbuf);
 		prints("Success!\n");
 
-		fd = sys_open(file->path, O_RDONLY, 0);
+		fd = sys_open(file->path, O_RDONLY | O_CREAT, 0);
 		prints("_FILE: Fstat()-ing path '%s': ", file->path);
 		if ((ret = sys_fstat(fd, statbuf)) < 0)
 			panic("stat('%s', buf=0x%lx) = '%s'", file->path,
@@ -415,6 +416,115 @@ static void __unused _test_stat(void)
 		prints("Success!\n");
 	}
 	kfree(statbuf);
+}
+
+static void __unused file_test_path_parsing(void)
+{
+	struct path_translation *file;
+	int leaf_idx;
+	mode_t file_type;
+	char tmp, *path;
+
+	path = kmalloc(PAGE_SIZE);
+	for (uint i = 0; ext2_files_list[i].path != NULL; i++) {
+		file = &ext2_files_list[i];
+		strncpy(path, file->path, PAGE_SIZE - 1);
+		path[PAGE_SIZE - 1] = '\0';
+
+		leaf_idx = path_get_leaf(path, &file_type);
+		prints("_FILE: Checking path '%s':\n", path);
+		if (leaf_idx == 0) {
+			prints("NO Leaf node exist!\n");
+			prints("Parent = '/'\n");
+		} else {
+			prints("Leaf node name = '%s'\n", &path[leaf_idx]);
+			tmp = path[leaf_idx];
+			path[leaf_idx] = '\0';
+			prints("Parent of that node: '%s'\n", path);
+			path[leaf_idx] = tmp;
+		}
+	}
+	kfree(path);
+}
+
+static void __unused file_test_creation(void)
+{
+	struct path_translation *file;
+	int fd;
+#if 1
+	/* Assure -EEXIST on all existing Ext2 volume files */
+	for (uint j = 0; ext2_files_list[j].path != NULL; j++) {
+		file = &ext2_files_list[j];
+		prints("Testing Path '%s':\n", file->path);
+		fd = sys_open(file->path, O_CREAT | O_EXCL | O_RDWR, 0);
+		if (fd >= 0) {
+			panic("File with path '%s' already exists, but "
+			      "open(EXCL) allocated a new fd %d for it!",
+			      file->path, fd);
+		}
+		prints("Success: file creation returned %s\n",
+		       errno_to_str(fd));
+	}
+
+	/* Now just create a random set of regular files */
+	char name[3] = "00";
+	for (char p = 'a'; p <= 'z'; p++)
+		for (char ch = '0'; ch <= '~'; ch++) {
+			name[0] = p;
+			name[1] = ch;
+			prints("Creating new file '%s': ", name);
+			fd = sys_open(name, O_CREAT | O_EXCL | O_RDWR, 0);
+			if (fd < 0) {
+				prints("Returned %s", errno_to_str(fd));
+				panic("File creation error; check log");
+			}
+			prints("Success!\n");
+		}
+
+	/* Assure -EEXIST on recreation of files created above */
+	for (char p = 'a'; p <= 'z'; p++)
+		for (char ch = '0'; ch <= '~'; ch++) {
+			name[0] = p;
+			name[1] = ch;
+			fd = sys_open(name, O_CREAT | O_EXCL | O_RDWR, 0);
+			if (fd != -EEXIST)
+				panic("File '%s' already exists, but file_new "
+				      "allocated a new fd %lu for it", name, fd);
+		}
+
+	/* Boundary Case: what about files creation with long names? */
+	char longname[EXT2_FILENAME_LEN + 1];
+	memset(longname, 'a', EXT2_FILENAME_LEN);
+	longname[EXT2_FILENAME_LEN] = '\0';
+	fd = sys_open(longname, O_CREAT | O_RDWR | O_EXCL, 0);
+	prints("Creating file '%s': ", longname);
+	if (fd > 0)
+		panic("Tried to create long file name of len %d, but it was "
+		      "accepted and inode %lu returned;  ENAMETOOLONG should"
+		      "'ve been returned!", EXT2_FILENAME_LEN, fd);
+	prints("returned %s\n", errno_to_str(fd));
+	longname[EXT2_FILENAME_LEN - 1] = '\0';
+	fd = sys_open(longname, O_CREAT | O_RDWR | O_EXCL, 0);
+	prints("Creating file '%s': ", longname);
+	if (fd < 0)
+		panic("Tried to create max possible len (%d) file name, but "
+		      "error %s was returned!", EXT2_FILENAME_LEN-1,
+		      errno_to_str(fd));
+	prints("returned %d\n", fd);
+#else
+	/* Enable this code if and only if the files list have all of
+	 * their parent directories already created */
+	for (uint j = 0; ext2_files_list[j].path != NULL; j++) {
+		file = &ext2_files_list[j];
+		prints("Creating file '%s':\n", file->path);
+		fd = sys_open(file->path, O_CREAT|O_EXCL|O_RDWR|O_TRUNC, 0);
+		if (fd < 0)
+			prints("FAILURE! Error %s\n", errno_to_str(fd));
+		else
+			prints("SUCCESS! returned fd = %d\n", fd);
+		sys_close(fd);
+	}
+#endif
 }
 
 void file_run_tests(void)
@@ -446,6 +556,11 @@ void file_run_tests(void)
 #if TEST_CLOSE
 	_test_close();
 #endif
+#if TEST_CREATION
+	file_test_path_parsing();
+	file_test_creation();
+#endif
+	prints("%s: Sucess!", __func__);
 	printk("%s: Sucess!", __func__);
 }
 
