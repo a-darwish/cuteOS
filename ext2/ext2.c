@@ -393,8 +393,11 @@ int64_t file_write(struct inode *inode, char *buf, uint64_t offset, uint64_t len
 		if (offset == last_offset)
 			assert(len == 0);
 
-		inode->size_low = max(inode->size_low, (uint32_t)offset);
-		inode->i512_blocks = ((block + 1) * isb.block_size) / 512;
+		if (offset > inode->size_low) {
+			inode->size_low = offset;
+			block = ceil_div(offset, isb.block_size);
+			inode->i512_blocks = (block * isb.block_size) / 512;
+		}
 	}
 
 	return ret_len;
