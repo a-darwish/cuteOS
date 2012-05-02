@@ -474,16 +474,17 @@ STATIC bool dir_entry_valid(uint64_t inum, struct dir_entry *dentry,
 
 /*
  * Search given directory for an entry with file @name.  Return such
- * entry if found, or return an entry with zero inode number in case
- * of search failure.
+ * entry if found, or return an errno.
  *
  * @inum        : Inode for the directory to be searched
  * @name        : Wanted file name, which may not be NULL-terminated
  * @name_len    : File name len, to avoid requiring the NULL postfix
- * Return value : Caller must free() the entry's mem area after use!
+ * @dentry	: Return val, the found directory entry (if any)
+ * @offset	: Return val, offset of found dentry wrt to dir file
+ * Return val	: Inode number of file, or an errorno
  */
-STATIC struct dir_entry *find_dir_entry(uint64_t inum, const char *name,
-					uint name_len)
+STATIC int64_t find_dir_entry(uint64_t inum, const char *name, uint name_len,
+			      struct dir_entry **entry, int64_t *roffset)
 {
 	struct inode *dir;
 	struct dir_entry *dentry;
@@ -492,31 +493,67 @@ STATIC struct dir_entry *find_dir_entry(uint64_t inum, const char *name,
 	assert(is_dir(inum));
 	dir = inode_get(inum);
 	dentry_len = sizeof(struct dir_entry);
-	dentry = kmalloc(dentry_len);
+	dentry = *entry = kmalloc(dentry_len);
 
 	if (name_len == 0 || name_len > EXT2_FILENAME_LEN)
-		goto notfound;
+		return -ENOENT;
 
 	assert(name != NULL);
 	for (offset = 0;  ; offset += dentry->record_len) {
 		len = file_read(dir, (char *)dentry, offset, dentry_len);
 		if (len == 0)			/* EOF */
-			goto notfound;
+			return -ENOENT;
 		if (!dir_entry_valid(inum, dentry, offset, len))
-			goto notfound;
+			return -EIO;
 		if (dentry->inode_num == 0)	/* Unused entry */
 			continue;
 		if (dentry->filename_len != name_len)
 			continue;
 		if (memcmp(dentry->filename, name, name_len))
 			continue;
-		goto found;
+		*roffset = offset;
+		return dentry->inode_num;
 	}
+	assert(false);
+}
 
-notfound:
+/*
+ * Delete given file.
+ *
+ * @parent_inum : Parent directory where the file will be located
+ * @name        : File's name
+ */
+int file_delete(uint64_t parent_inum, const char *name)
+{
+	struct inode *dir, *file;
+	struct dir_entry *dentry;
+	int64_t dentry_inum, ret, offset;
+
+	assert(parent_inum != 0);
+	assert(is_dir(parent_inum));
+	assert(name != NULL);
+
+	dir = inode_get(parent_inum);
+	ret = find_dir_entry(parent_inum, name, strlen(name), &dentry, &offset);
+	if (ret < 0) {
+		goto out;
+	}
+	dentry_inum = ret;
 	dentry->inode_num = 0;
-found:
-	return dentry;
+	ret = file_write(dir, (char *)dentry, offset, dentry->record_len);
+	if (ret < 0)
+		goto out;
+
+	file = inode_get(dentry_inum);
+	file->links_count--;
+	if (file->links_count == 0) {
+		file_truncate(dentry_inum);
+		inode_dealloc(dentry_inum);
+	}
+	ret = 0;
+
+out:	kfree(dentry);
+	return ret;
 }
 
 /*
@@ -532,7 +569,7 @@ static int64_t __file_new(uint64_t parent_inum, uint64_t entry_inum,
 	struct dir_entry *dentry, *lastentry, *newentry;
 	struct inode *dir, *inode;
 	uint64_t offset, blk_offset, newentry_len, len;
-	int64_t ret, filename_len;
+	int64_t ret, filename_len, null;
 	char *zeroes;
 
 	assert(parent_inum != 0);
@@ -547,11 +584,11 @@ static int64_t __file_new(uint64_t parent_inum, uint64_t entry_inum,
 	if (filename_len == 0)
 		return -ENOENT;
 
-	dentry = find_dir_entry(parent_inum, name, filename_len);
-	if (dentry->inode_num != 0) {
+	ret = find_dir_entry(parent_inum, name, filename_len, &dentry, &null);
+	if (ret > 0)
 		ret = -EEXIST;
+	if (ret < 0 && ret != -ENOENT)
 		goto free_dentry1;
-	}
 
 	/*
 	 * Find the parent dir's last entry: our new entry will get
@@ -785,12 +822,12 @@ int64_t name_i(const char *path)
 {
 	const char *p1, *p2;
 	struct dir_entry *dentry;
-	uint64_t inum, prev_inum;
+	int64_t inum, prev_inum, null;
 
 	assert(path != NULL);
 	switch (*path) {
 	case '\0':
-		inum = 0; break;
+		return -ENOENT;
 	case '/':
 		inum = EXT2_ROOT_INODE; break;
 	default:
@@ -799,7 +836,7 @@ int64_t name_i(const char *path)
 	}
 
 	p1 = p2 = path;
-	while (*p2 != '\0' && inum != 0) {
+	while (*p2 != '\0' && inum > 0) {
 		prev_inum = inum;
 		if (*p2 == '/') {
 			if (!is_dir(prev_inum))
@@ -816,12 +853,12 @@ int64_t name_i(const char *path)
 			return -ENAMETOOLONG;
 
 		assert(is_dir(prev_inum));
-		dentry = find_dir_entry(prev_inum, p1, p2 - p1);
-		inum = dentry->inode_num;
+		inum = find_dir_entry(prev_inum, p1, p2 - p1, &dentry, &null);
 		kfree(dentry);
 	}
 
-	return inum ? (int64_t)inum : -ENOENT;
+	assert(inum != 0);
+	return inum;
 }
 
 /*

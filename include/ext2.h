@@ -331,6 +331,7 @@ void ext2_init(void);
 uint64_t file_read(struct inode *, char *buf, uint64_t offset, uint64_t len);
 int64_t file_write(struct inode *, char *buf, uint64_t offset, uint64_t len);
 int64_t file_new(uint64_t parent_inum, const char *name, enum file_type type);
+int file_delete(uint64_t parent_inum, const char *name);
 void file_truncate(uint64_t inum);
 int64_t name_i(const char *path);
 void buf_hex_dump(void *given_buf, uint len);
@@ -372,7 +373,8 @@ uint64_t inode_alloc(enum file_type type);
 void inode_dealloc(uint64_t inum);
 uint64_t block_alloc(void);
 bool dir_entry_valid(uint64_t, struct dir_entry *, uint64_t off, uint64_t len);
-struct dir_entry *find_dir_entry(uint64_t inum, const char *name,uint name_len);
+int64_t find_dir_entry(uint64_t inum, const char *name,uint name_len,
+		       struct dir_entry **dentry, int64_t *offset);
 void ext2_run_tests(void);
 
 #else

@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <ramdisk.h>
 #include <unrolled_list.h>
+#include <percpu.h>
 
 /*
  * Desired printf()-like method to use for dumping FS state.
@@ -223,6 +224,7 @@ static __unused void path_get_parent(const char *path, char *parent, char *child
 #define TEST_FILE_WRITES		0
 #define TEST_FILE_CREATION		0
 #define TEST_FILE_TRUNCATE		0
+#define TEST_FILE_DELETION		1
 #define EXT2_DUMP_METHOD	buf_char_dump
 
 extern struct {
@@ -293,8 +295,8 @@ void ext2_run_tests(void)
 	struct path_translation __unused *file;
 	struct unrolled_head __unused head;
 	uint64_t __unused len, block, nblocks, nfree, mode;
-	int64_t __unused ilen, inum, count;
-	char *buf, *buf2;
+	int64_t __unused ilen, inum, count, parent_inum;
+	char __unused *buf, *buf2, *parent, *child;
 
 	assert(pr != NULL);
 	buf = kmalloc(BUF_LEN);
@@ -579,9 +581,6 @@ out1:
 #endif
 
 #if TEST_FILE_CREATION
-	char *parent, *child;
-	int64_t parent_inum;
-
 	/* Assure -EEXIST on all existing Ext2 volume files */
 	parent = kmalloc(4096);
 	child = kmalloc(EXT2_FILENAME_LEN + 1);
@@ -591,8 +590,8 @@ out1:
 		path_get_parent(file->path, parent, child);
 		prints("Parent: '%s'\n", parent);
 		prints("Child: '%s'\n", child);
-
-		parent_inum = name_i(parent);
+		parent_inum = (*parent == '\0') ?
+			(int64_t)current->working_dir : name_i(parent);
 		inum = file_new(parent_inum, child, EXT2_FT_REG_FILE);
 		if (inum != -EEXIST) {
 			panic("File with path '%s' already exists, but "
@@ -613,7 +612,7 @@ out1:
 			(*pr)("Creating new file '%s': ", name);
 			inum = file_new(EXT2_ROOT_INODE, name, EXT2_FT_REG_FILE);
 			if (inum < 0) {
-				(*pr)("Returned %ld", inum);
+				(*pr)("Returned %s", errno_to_str(inum));
 				panic("File creation error; check log");
 			}
 			(*pr)("Success!\n");
@@ -700,6 +699,36 @@ out1:
 			assert(inode->blocks[i] == 0);
 		(*pr)("\nSuccess!\n");
 	}
+#endif
+
+#if TEST_FILE_DELETION
+	parent = kmalloc(4096);
+	child = kmalloc(EXT2_FILENAME_LEN + 1);
+	for (uint i = 0; ext2_files_list[i].path != NULL; i++) {
+		file = &ext2_files_list[i];
+		(*pr)("Deleting file '%s'\n", file->path);
+		inum = name_i(file->path);
+		if (is_dir(inum) || is_symlink(inum)) {
+			(*pr)("Directory or symlink!\n");
+			continue;
+		}
+		path_get_parent(file->path, parent, child);
+		prints("Parent: '%s'\n", parent);
+		prints("Child: '%s'\n", child);
+		parent_inum = (*parent == '\0') ?
+			(int64_t)current->working_dir : name_i(parent);
+		if (parent_inum < 0) {
+			(*pr)("FAILURE: Parent pathname resolution returned "
+			      "%s\n", errno_to_str(parent_inum));
+			continue;
+		}
+		int ret = file_delete(parent_inum, child);
+		if (ret < 0)
+			(*pr)("FAILURE: Returned %s\n", errno_to_str(ret));
+		else
+			(*pr)("Success!\n");
+	}
+	kfree(child), kfree(parent);
 #endif
 
 	(*pr)("%s: Sucess!", __func__);
