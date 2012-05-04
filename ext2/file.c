@@ -390,3 +390,21 @@ int sys_unlink(const char *path)
 
 	return file_delete(parent_inum, child);
 }
+
+int sys_link(const char *oldpath, const char *newpath)
+{
+	int64_t inum, parent_inum;
+	const char *child;
+	struct inode *inode;
+
+	parent_inum = path_parent_child(newpath, &child, OK_DIR);
+	if (parent_inum < 0)
+		return parent_inum;
+	inum = name_i(oldpath);
+	if (inum < 0)
+		return inum;
+	inode = inode_get(inum);
+
+	return ext2_new_dir_entry(parent_inum, inum, child,
+				  inode_mode_to_dir_entry_type(inode->mode));
+}

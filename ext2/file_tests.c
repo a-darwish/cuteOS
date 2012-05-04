@@ -30,7 +30,8 @@
 #define TEST_STAT	0
 #define TEST_CLOSE	0
 #define TEST_CREATION	0
-#define TEST_DELETION	1
+#define TEST_DELETION	0
+#define TEST_HARD_LINKS 1
 
 extern struct path_translation ext2_files_list[];
 extern const char *ext2_root_list[];
@@ -574,6 +575,59 @@ static void __unused file_test_deletion(void)
 	kfree(statbuf);
 }
 
+static void file_test_hard_links(void)
+{
+	const char *path, *dst;
+	char *name;
+	int ret, fd;
+	bool test_dirs_only = true;
+
+	/* Hard links to directories */
+	name = kmalloc(2); name[1] = '\0'; name[0] = '@';
+	prints("Creating hard link to root directory:\n");
+	for (uint i = 0;
+	     ext2_root_list[i] != NULL && name[0] != 0x7F;
+	     i++, name[0]++) {
+		path = ext2_root_list[i];
+		prints("Creating hard link from '%s' to '%s': ", path, name);
+		ret = sys_link(path, name);
+		if (ret < 0)
+			prints("FAILURE: %s\n", errno_to_str(ret));
+		else
+			prints("Success!\n");
+	}
+	kfree(name);
+	if (test_dirs_only)
+		return;
+
+	/* Hard links to a regular file */
+	dst = "destination";
+	prints("Creating hard link to regular file:\n");
+	fd = sys_open(dst, O_WRONLY|O_CREAT|O_EXCL, 0);
+	if (fd < 0) {
+		prints("FAILURE: cannot creat reg file '%s': %s\n", dst,
+		       errno_to_str(fd));
+		return;
+	}
+	name = kmalloc(2);
+	for (name[0] = '@', name[1] = '\0'; name[0] != 0x7f; name[0]++) {
+		ret = sys_unlink(name);
+		prints("Deleting older link '%s': ", name);
+		if (ret < 0) {
+			prints("Error %s\n", errno_to_str(ret));
+			return;
+		}
+		prints("Success!\n");
+		prints("Creating hard link from '%s' to '%s': ", dst, name);
+		ret = sys_link(dst, name);
+		if (ret < 0)
+			prints("FAILURE: %s\n", errno_to_str(ret));
+		else
+			prints("Success!\n");
+	}
+	kfree(name);
+}
+
 void file_run_tests(void)
 {
 	/* Extract the modified ext2 volume out of the virtual machine: */
@@ -610,6 +664,10 @@ void file_run_tests(void)
 #if TEST_DELETION
 	file_test_deletion();
 #endif
+#if TEST_HARD_LINKS
+	file_test_hard_links();
+#endif
+
 	prints("%s: Sucess!", __func__);
 	printk("%s: Sucess!", __func__);
 }

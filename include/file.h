@@ -16,6 +16,7 @@ int sys_fstat(int fd, struct stat *buf);
 int sys_stat(const char *path, struct stat *buf);
 int sys_close(int fd);
 int sys_unlink(const char *path);
+int sys_link(const char *oldpath, const char *newpath);
 
 /*
  * States for parsing a hierarchial Unix path

@@ -152,7 +152,7 @@ STATIC uint64_t inode_alloc(enum file_type type)
 
 		inode = inode_get(inum);
 		memset(inode, 0, sizeof(*inode));
-		inode->mode |= dir_entry_type_to_inode_type(type);
+		inode->mode |= dir_entry_type_to_inode_mode(type);
 		inode->mode |= S_IRUSR | S_IWUSR;
 		inode->mode |= S_IRGRP | S_IWGRP;
 		inode->mode |= S_IROTH;
@@ -419,6 +419,8 @@ static inline int dir_entry_min_len(int filename_len)
  * is relative to the directory-file start.  @inum is the inode
  * of directory file holding given @dentry.  @len is the number
  * of bytes we were able read before reaching EOF.
+ *
+ * FIXME: Assure entry's type == its destination inode mode.
  */
 STATIC bool dir_entry_valid(uint64_t inum, struct dir_entry *dentry,
 			    uint64_t offset, uint64_t read_len)
@@ -563,8 +565,8 @@ out:	kfree(dentry);
  *
  * NOTE! This increments the entry's destination inode links count
  */
-static int64_t __file_new(uint64_t parent_inum, uint64_t entry_inum,
-			  const char *name, enum file_type type)
+int64_t ext2_new_dir_entry(uint64_t parent_inum, uint64_t entry_inum,
+			   const char *name, enum file_type type)
 {
 	struct dir_entry *dentry, *lastentry, *newentry;
 	struct inode *dir, *inode;
@@ -694,7 +696,7 @@ no_lastentry:
 	inode->links_count++;
 	spin_unlock(&isb.inode_allocation_lock);
 
-	ret = entry_inum;
+	ret = 0;
 free_dentry3:
 	kfree(zeroes);
 	kfree(newentry);
@@ -720,15 +722,15 @@ int64_t file_new(uint64_t parent_inum, const char *name, enum file_type type)
 	if (inum == 0)
 		return -ENOSPC;
 
-	ret = __file_new(parent_inum, inum, name, type);
+	ret = ext2_new_dir_entry(parent_inum, inum, name, type);
 	if (ret < 0)
 		goto dealloc_inode;
 
 	if (type == EXT2_FT_DIR) {
-		ret = __file_new(inum, inum, ".", EXT2_FT_DIR);
+		ret = ext2_new_dir_entry(inum, inum, ".", EXT2_FT_DIR);
 		if (ret < 0)
 			goto dealloc_inode;
-		ret = __file_new(inum, parent_inum, "..", EXT2_FT_DIR);
+		ret = ext2_new_dir_entry(inum, parent_inum, "..", EXT2_FT_DIR);
 		if (ret < 0)
 			goto dealloc_inode;
 	}

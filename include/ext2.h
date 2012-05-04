@@ -95,7 +95,8 @@ enum file_type {
 /*
  * Static-time substitution by constant propagation
  */
-static inline uint dir_entry_type_to_inode_type(enum file_type type)
+
+static inline mode_t dir_entry_type_to_inode_mode(enum file_type type)
 {
 	switch(type) {
 	case EXT2_FT_REG_FILE:	return S_IFREG;
@@ -105,6 +106,20 @@ static inline uint dir_entry_type_to_inode_type(enum file_type type)
 	case EXT2_FT_FIFO:	return S_IFIFO;
 	case EXT2_FT_SOCK:	return S_IFSOCK;
 	case EXT2_FT_SYMLINK:	return S_IFLNK;
+	default:		assert(false);
+	}
+}
+
+static inline enum file_type inode_mode_to_dir_entry_type(mode_t mode)
+{
+	switch(mode & S_IFMT) {
+	case S_IFREG:		return EXT2_FT_REG_FILE;
+	case S_IFDIR:		return EXT2_FT_DIR;
+	case S_IFCHR:		return EXT2_FT_CHRDEV;
+	case S_IFBLK:		return EXT2_FT_BLKDEV;
+	case S_IFIFO:		return EXT2_FT_FIFO;
+	case S_IFSOCK:		return EXT2_FT_SOCK;
+	case S_IFLNK:		return EXT2_FT_SYMLINK;
 	default:		assert(false);
 	}
 }
@@ -330,6 +345,8 @@ struct dir_entry {
 void ext2_init(void);
 uint64_t file_read(struct inode *, char *buf, uint64_t offset, uint64_t len);
 int64_t file_write(struct inode *, char *buf, uint64_t offset, uint64_t len);
+int64_t ext2_new_dir_entry(uint64_t parent_inum, uint64_t entry_inum,
+			   const char *name, enum file_type type);
 int64_t file_new(uint64_t parent_inum, const char *name, enum file_type type);
 int file_delete(uint64_t parent_inum, const char *name);
 void file_truncate(uint64_t inum);
