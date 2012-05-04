@@ -15,6 +15,7 @@ int64_t sys_lseek(int fd, uint64_t offset, uint whence);
 int sys_fstat(int fd, struct stat *buf);
 int sys_stat(const char *path, struct stat *buf);
 int sys_close(int fd);
+int sys_unlink(const char *path);
 
 /*
  * States for parsing a hierarchial Unix path

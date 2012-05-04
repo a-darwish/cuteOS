@@ -29,7 +29,8 @@
 #define TEST_LSEEK	0
 #define TEST_STAT	0
 #define TEST_CLOSE	0
-#define TEST_CREATION	1
+#define TEST_CREATION	0
+#define TEST_DELETION	1
 
 extern struct path_translation ext2_files_list[];
 extern const char *ext2_root_list[];
@@ -527,6 +528,52 @@ static void __unused file_test_creation(void)
 #endif
 }
 
+static void __unused file_test_deletion(void)
+{
+	struct path_translation *file;
+	struct stat *statbuf;
+	char *name;
+	int ret;
+
+	name = kmalloc(2); name[1] = '\0';
+	for (char ch = 'A'; ch <= 'z'; ch++) {
+		name[0] = ch;
+		prints("Deleting non-existing file '%s': ", name);
+		ret = sys_unlink(name);
+		if (ret != -ENOENT)
+			prints("FAILURE: returned '%s'\n", errno_to_str(ret));
+		else
+			prints("SUCCESS: returned '-ENOENT'\n");
+	}
+	kfree(name);
+
+	statbuf = kmalloc(sizeof(*statbuf));
+	for (uint i = 0; ext2_files_list[i].path != NULL; i++) {
+		file = &ext2_files_list[i];
+		prints("Deleting file '%s': ", file->path);
+		ret = sys_stat(file->path, statbuf);
+		if (ret < 0) {
+			prints("Stat() FAILURE: '%s'\n", errno_to_str(ret));
+			continue;
+		}
+		if (S_ISDIR(statbuf->st_mode)) {
+			prints("Directory!\n");
+			continue;
+		}
+		if (S_ISLNK(statbuf->st_mode)) {
+			prints("Symbolic Link!\n");
+			continue;
+		}
+		ret = sys_unlink(file->path);
+		if (ret < 0) {
+			prints("Unlink() FAILURE: '%s'\n", errno_to_str(ret));
+			continue;
+		}
+		prints("Success!\n");
+	}
+	kfree(statbuf);
+}
+
 void file_run_tests(void)
 {
 	/* Extract the modified ext2 volume out of the virtual machine: */
@@ -559,6 +606,9 @@ void file_run_tests(void)
 #if TEST_CREATION
 	file_test_path_parsing();
 	file_test_creation();
+#endif
+#if TEST_DELETION
+	file_test_deletion();
 #endif
 	prints("%s: Sucess!", __func__);
 	printk("%s: Sucess!", __func__);

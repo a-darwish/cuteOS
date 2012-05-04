@@ -9,6 +9,9 @@
  *
  * We don't repeat what's written in the POSIX spec here: check the sta-
  * ndard to make sense of all the syscalls parameters and return values.
+ *
+ * FIXME: Handle FS calls (open, unlink, stat, etc) with a file name of
+ * the empty string "".
  */
 
 #include <kernel.h>
@@ -145,18 +148,21 @@ FSTATIC uint path_get_leaf(const char *path, mode_t *leaf_type)
 }
 
 /*
- * Create given file which is identified by a Unix @path. Return
- * created file inode number, or -EEXIST, -ENAMETOOLONG, -EISDIR.
+ * Represent given Unix path in the form of:
+ * - inode number of the leaf node's parent (return value)
+ * - a string of the leaf node file name (return param)
+ *
+ * @flags	: Accept the path being a directory?
  */
-static int64_t __sys_creat(const char *path, __unused mode_t mode)
+enum { NO_DIR = 0x1, OK_DIR = 0x2, };
+static int64_t path_parent_child(const char *path, const char **child, int flags)
 {
-	const char *leaf_str; char *parent;
 	int64_t parent_inum; uint max_len, leaf_idx;
 	mode_t leaf_type;
 
 	max_len = PAGE_SIZE;
 	leaf_idx = path_get_leaf(path, &leaf_type);
-	if (S_ISDIR(leaf_type))
+	if ((flags & NO_DIR) && S_ISDIR(leaf_type))
 		return -EISDIR;
 	if (path[0] == '/')
 		assert(leaf_idx != 0);
@@ -165,7 +171,7 @@ static int64_t __sys_creat(const char *path, __unused mode_t mode)
 	else if (leaf_idx >= max_len)
 		return -ENAMETOOLONG;
 	else {
-		parent = kmalloc(leaf_idx + 1);
+		char *parent = kmalloc(leaf_idx + 1);
 		memcpy(parent, path, leaf_idx);
 		parent[leaf_idx] = '\0';
 		parent_inum = name_i(parent);
@@ -173,8 +179,8 @@ static int64_t __sys_creat(const char *path, __unused mode_t mode)
 		if (parent_inum < 0)
 			return parent_inum;
 	}
-	leaf_str = &path[leaf_idx];
-	return file_new(parent_inum, leaf_str, EXT2_FT_REG_FILE);
+	*child = &path[leaf_idx];
+	return parent_inum;
 }
 
 /*
@@ -182,8 +188,9 @@ static int64_t __sys_creat(const char *path, __unused mode_t mode)
  */
 int sys_open(const char *path, int flags, __unused mode_t mode)
 {
-	int64_t inum, fd;
+	int64_t parent_inum, inum, fd;
 	struct file *file;
+	const char *child;
 
 	if ((flags & O_ACCMODE) == 0)
 		return -EINVAL;
@@ -195,8 +202,11 @@ int sys_open(const char *path, int flags, __unused mode_t mode)
 	if (flags & O_CREAT) {
 		if (inum > 0 && (flags & O_EXCL))
 			return -EEXIST;
-		if (inum == -ENOENT)
-			inum = __sys_creat(path, mode);
+		if (inum == -ENOENT) {
+			parent_inum = path_parent_child(path, &child, NO_DIR);
+			inum = (parent_inum < 0) ? parent_inum :
+				file_new(parent_inum, child, EXT2_FT_REG_FILE);
+		}
 	}
 	if (inum < 0)
 		return inum;
@@ -367,4 +377,16 @@ int64_t sys_lseek(int fd, uint64_t offset, uint whence)
 	file->offset = offset_base + offset;
 out:	spin_unlock(&file->lock);
 	return error ? error : (int64_t)file->offset;
+}
+
+int sys_unlink(const char *path)
+{
+	int64_t parent_inum;
+	const char *child;
+
+	parent_inum = path_parent_child(path, &child, NO_DIR);
+	if (parent_inum < 0)
+		return parent_inum;
+
+	return file_delete(parent_inum, child);
 }
