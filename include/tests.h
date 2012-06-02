@@ -13,6 +13,7 @@
 
 #define		LIST_TESTS		0	/* Linked stack/queue tests */
 #define		UNROLLED_TESTS		0	/* Unrolled linked list tests */
+#define		HASH_TESTS		0	/* Hash structure tests */
 #define		BITMAP_TESTS		0	/* Operations on a bitmap */
 #define		STRING_TESTS		0	/* Optimized string methods */
 #define		PRINTK_TESTS		0	/* printk(fmt, ...) */
