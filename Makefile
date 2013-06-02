@@ -191,6 +191,7 @@ LIB_OBJS =		\
   lib/bitmap.o		\
   lib/string.o		\
   lib/printf.o		\
+  lib/buffer_dumper.o	\
   lib/atomic.o		\
   lib/spinlock.o
 

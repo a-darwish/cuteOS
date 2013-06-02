@@ -4,17 +4,31 @@
 /*
  * The Second Extended File System
  *
- * Copyright (C) 2012 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2012-2013 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
+ *
+ * REFERENCES:
+ *
+ *	- “The Design of the UNIX Operating System”, Maurice J. Bach,
+ *	  Ch. 4: ‘Internal Representation of Files’, 1986
+ *	- “UNIX Implementation”, Ken Thompson, Bell Journal, 1978
+ *	- “The Second Extended File System - Internal Layout”, David
+ *	  Poirier et. al, 2001-2011
+ *	- Finally, my collection of _primary sources_ FS papers with
+ *	  their study notes at: http://www.webcitation.org/68IbFbOGr
  */
 
 #include <kernel.h>
 #include <stdint.h>
 #include <tests.h>
 #include <stat.h>
+#include <list.h>
+#include <string.h>
+#include <spinlock.h>
+#include <buffer_dumper.h>
 
 enum {
 	EXT2_SUPERBLOCK_SIZE	= 1024,
@@ -234,8 +248,26 @@ struct group_descriptor {
 } __packed;
 
 /*
- * On-Disk Inode structure
+ * In-core Inode Image:
  *
+ * Every used 'on-disk' inode is buffered on RAM as an 'in-core' inode.
+ * Such buffered images are tracked by a hash table inode repository.
+ * This is taken from the classical SVR2 implementation, but with some
+ * SMP tweaks.
+ *
+ * NOTE! Before accessing this inode structure, check our notes on
+ * buffered inode images and SMP locking at the top of ``ext2.c''.
+ *
+ * NOTE!-2 Remember addinig an initialization line for any new members
+ *
+ * @@ Below fields are entirely in RAM, no equivalent exist on disk:
+ * @inum              : Inode number (MUST be the first element)
+ * @node              : List node for the inodes hash table collision list
+ * @refcount          : Reference count (CHECK `ext2.c' notes before usage)
+ * @lock              : For protecting internal inode fields (`ext2.c')
+ * @dirty             : Does the buffered inode image now differ from disk?
+ *
+ * @@ Below fields are mirrored from the Ext2 On-Disk inode image:
  * @mode              : File type and access rights
  * @uid               : User ID associated with the file
  * @size_low          : Lower 32-bits of file size, in bytes
@@ -260,6 +292,14 @@ struct group_descriptor {
  * @blocks_count_high : Higher 32-bits of total number of 512-byte blocks
  */
 struct inode {
+	uint64_t	inum;
+	struct list_node node;
+	int		refcount;
+	spinlock_t	lock;
+	bool		dirty;
+	bool		delete_on_last_use;
+
+	// Start of On-disk inode fields:
 	uint16_t	mode;
 	uint16_t	uid;
 	uint32_t	size_low;
@@ -284,31 +324,44 @@ struct inode {
 	uint32_t        reserved;
 } __packed;
 
+static inline void inode_init(struct inode *inode, uint64_t inum)
+{
+	inode->inum = inum;
+	list_init(&inode->node);
+	inode->refcount = 1;
+	spin_init(&inode->lock);
+	inode->dirty = false;
+	inode->delete_on_last_use = false;
+}
+
+static inline void *dino_off(struct inode *inode)
+{
+	return (char *)inode + offsetof(struct inode, mode);
+}
+
+static inline uint64_t dino_len(void)
+{
+	return sizeof(struct inode) - offsetof(struct inode, mode);
+}
+
 struct inode *inode_get(uint64_t inum);
+void inode_put(struct inode *inode);
+
+#define ___test_inum(inum, INODE_MODE_TEST) ({				\
+	struct inode *dir;						\
+	uint16_t mode;							\
+	dir = inode_get(inum); mode = dir->mode; inode_put(dir);	\
+	INODE_MODE_TEST(mode);						\
+})
 
 static inline bool is_dir(uint64_t inum)
 {
-	return S_ISDIR(inode_get(inum)->mode);
-}
-
-static inline bool is_regular_file(uint64_t inum)
-{
-	return S_ISREG(inode_get(inum)->mode);
-}
-
-static inline bool is_socket(uint64_t inum)
-{
-	return S_ISSOCK(inode_get(inum)->mode);
-}
-
-static inline bool is_fifo(uint64_t inum)
-{
-	return S_ISFIFO(inode_get(inum)->mode);
+	return ___test_inum(inum, S_ISDIR);
 }
 
 static inline bool is_symlink(uint64_t inum)
 {
-	return S_ISLNK(inode_get(inum)->mode);
+	return ___test_inum(inum, S_ISLNK);
 }
 
 /*
@@ -345,21 +398,19 @@ struct dir_entry {
 void ext2_init(void);
 uint64_t file_read(struct inode *, char *buf, uint64_t offset, uint64_t len);
 int64_t file_write(struct inode *, char *buf, uint64_t offset, uint64_t len);
-int64_t ext2_new_dir_entry(uint64_t parent_inum, uint64_t entry_inum,
+int64_t ext2_new_dir_entry(struct inode *parent, struct inode *entry_ino,
 			   const char *name, enum file_type type);
-int64_t file_new(uint64_t parent_inum, const char *name, enum file_type type);
-int file_delete(uint64_t parent_inum, const char *name);
-void file_truncate(uint64_t inum);
+int64_t file_new(struct inode *, const char *name, enum file_type type);
+int file_delete(struct inode *parent, const char *name);
+void file_truncate(struct inode *inode);
 int64_t name_i(const char *path);
-void buf_hex_dump(void *given_buf, uint len);
-void buf_char_dump(void *given_buf, uint len);
 
 enum block_op {
 	BLOCK_READ,
 	BLOCK_WRTE,
 };
 
-#if EXT2_TESTS || FILE_TESTS
+#if EXT2_TESTS || EXT2_SMP_TESTS || FILE_TESTS
 /*
  * Pahtname translation - Used for testing ext2 code.
  *
@@ -380,35 +431,42 @@ struct path_translation {
  * Globally export some internal methods if the test-cases
  * driver was enabled.
  */
-#if EXT2_TESTS
+#if EXT2_TESTS || EXT2_SMP_TESTS
 
 #define STATIC	extern
 void block_read(uint64_t block, char *buf, uint blk_offset, uint len);
 void block_write(uint64_t block, char *buf, uint blk_offset, uint len);
 void block_dealloc(uint block);
-uint64_t inode_alloc(enum file_type type);
-void inode_dealloc(uint64_t inum);
+struct inode *inode_alloc(enum file_type type);
+STATIC void inode_mark_delete(struct inode *inode);
 uint64_t block_alloc(void);
-bool dir_entry_valid(uint64_t, struct dir_entry *, uint64_t off, uint64_t len);
-int64_t find_dir_entry(uint64_t inum, const char *name,uint name_len,
+bool dir_entry_valid(struct inode *, struct dir_entry *, uint64_t off, uint64_t len);
+int64_t find_dir_entry(struct inode *inode, const char *name,uint name_len,
 		       struct dir_entry **dentry, int64_t *offset);
-void ext2_run_tests(void);
-
 #else
-
 #define STATIC	static
-static void __unused ext2_run_tests(void) { }
+#endif	/* EXT2_TESTS || EXT2_SMP_TESTS */
 
+#if EXT2_TESTS
+void ext2_run_tests(void);
+#else
+static void __unused ext2_run_tests(void) { }
 #endif	/* EXT2_TESTS */
+
+#if EXT2_SMP_TESTS
+void ext2_run_smp_tests(void);
+#else
+static void __unused ext2_run_smp_tests(void) { }
+#endif	/* EXT2_SMP_TESTS */
 
 /*
  * Dump file system On-Disk structures;  useful for testing.
  */
-void ext2_debug_init(void (*printf)(const char *fmt, ...));
+void ext2_debug_init(struct buffer_dumper *dumper);
 void superblock_dump(union super_block *);
 void blockgroup_dump(int bg_idx, struct group_descriptor *,
 		     uint32_t firstb, uint32_t lastb, uint64_t inodetbl_blocks);
-void inode_dump(struct inode *, uint64_t inum, const char *path);
+void inode_dump(struct inode *, const char *path);
 void dentry_dump(struct dir_entry *dentry);
 
 #endif	/* _EXT2_H */

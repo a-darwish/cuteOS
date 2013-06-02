@@ -1,7 +1,7 @@
 /*
  * Multiple-Processor (MP) Initialization
  *
- * Copyright (C) 2009-2011 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2009-2013 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -212,6 +212,20 @@ fail:
 	for (cpu = &cpus[1]; cpu != &cpus[mptables_get_nr_cpus()]; cpu++)
 
 /*
+ * Before running any test-cases on secondary cores, wait till
+ * the bootstrap CPU informs us (poor secondary cores) that it
+ * has properly initialized all of our kernel's subsystems.
+ *
+ * Otherwise, we will execute uninitialized kernel code!!
+ */
+static bool start_running_testcases = false;
+static void run_secondary_core_testcases(void);
+void smpboot_trigger_secondary_cores_testcases(void)
+{
+	start_running_testcases = true;
+}
+
+/*
  * AP cores C code entry. We come here from the trampoline,
  * which has assigned us a unique stack, the per-CPU area
  * addr in %gs, and bootstrap's gdt, idt, and page tables.
@@ -233,7 +247,10 @@ void __no_return secondary_start(void)
 	printk("SMP: CPU apic_id=%d started\n", id.id);
 
 	local_irq_enable();
-	smpboot_run_tests();
+	while (start_running_testcases == false)
+		cpu_pause();
+
+	run_secondary_core_testcases();
 	halt();
 }
 
@@ -276,18 +293,25 @@ void smpboot_init(void)
 	assert(nr_alive_cpus == nr_cpus);
 }
 
-#if	SCHED_TESTS
 #include <vga.h>
+#include <ext2.h>
 
+#if	SCHED_TESTS
 static void __no_return test0(void)  { loop_print('G', VGA_LIGHT_GREEN); }
 static void __no_return test1(void)  { loop_print('H', VGA_LIGHT_GREEN); }
 static void __no_return test2(void)  { loop_print('I', VGA_LIGHT_GREEN); }
 static void __no_return test3(void)  { loop_print('J', VGA_LIGHT_MAGNETA); }
 static void __no_return test4(void)  { loop_print('K', VGA_LIGHT_MAGNETA); }
 static void __no_return test5(void)  { loop_print('L', VGA_LIGHT_MAGNETA); }
+#endif
 
-void smpboot_run_tests(void)
+/*
+ * This code runs on each secondary core after finishing its
+ * own internal initialization.
+ */
+static void run_secondary_core_testcases(void)
 {
+#if	SCHED_TESTS
 	for (int i = 0; i < 20; i++) {
 		kthread_create(test0);
 		kthread_create(test1);
@@ -296,6 +320,7 @@ void smpboot_run_tests(void)
 		kthread_create(test4);
 		kthread_create(test5);
 	}
-}
+#endif
 
-#endif /* SCHED_TESTS */
+	ext2_run_smp_tests();
+}

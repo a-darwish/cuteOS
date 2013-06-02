@@ -32,7 +32,7 @@ uint64_t kthread_alloc_pid(void)
  *
  * NOTE! given function must never exit!
  */
-void kthread_create(void (* __no_return func)(void))
+void kthread_create(void (* /* __no_return */ func)(void))
 {
 	struct proc *proc;
 	struct irq_ctx *irq_ctx;

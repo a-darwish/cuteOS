@@ -88,6 +88,7 @@ static void run_test_cases(void)
 	atomic_run_tests();
 	sched_run_tests();
 	ext2_run_tests();
+	ext2_run_smp_tests();
 	file_run_tests();
 }
 
@@ -162,10 +163,16 @@ void __no_return kernel_start(void)
 	local_irq_enable();
 
 	/*
-	 * Second part of kernel initialization (Scheduler is on!)
+	 * Second part of kernel initialization (Scheduler is now on!)
 	 */
 
 	ext2_init();
+
+	// Signal the secondary cores to run their own test-cases code.
+	// They've been waiting for us (thread 0) till all of kernel
+	// subsystems has been properly initialized.  Wait No More!
+	smpboot_trigger_secondary_cores_testcases();
+
 	run_test_cases();
 	halt();
 }

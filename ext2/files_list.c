@@ -11,7 +11,7 @@
 #include <tests.h>
 #include <ext2.h>
 
-#if	EXT2_TESTS || FILE_TESTS
+#if	EXT2_TESTS || EXT2_SMP_TESTS || FILE_TESTS
 
 struct path_translation ext2_files_list[] = {
 	{.path = NULL, },		/* DO NOT REMOVE - End of List mark */

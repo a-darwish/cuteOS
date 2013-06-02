@@ -117,4 +117,6 @@ static inline const char *errno_to_str(int err) {
 	}
 }
 
+#define errno(err)	errno_to_str(err)
+
 #endif /* _ERRNO_H */

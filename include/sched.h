@@ -102,16 +102,16 @@ void sched_init(void);
 void sched_enqueue(struct proc *);
 struct proc *sched_tick(void);	/* Avoid GCC warning */
 
-void kthread_create(void (* __no_return func)(void));
+void kthread_create(void (* func)(void));
 uint64_t kthread_alloc_pid(void);
+
+void smpboot_run_tests(void);
 
 #if	SCHED_TESTS
 void sched_run_tests(void);
-void smpboot_run_tests(void);
 void __no_return loop_print(char ch, int color);
 #else
 static void __unused sched_run_tests(void) { }
-static void __unused smpboot_run_tests(void) { }
 #endif
 
 #endif /* _SCHED_H */

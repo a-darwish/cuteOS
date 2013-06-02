@@ -1,3 +1,4 @@
+#if 0
 /*
  * Standard Unix system calls for the file system
  *
@@ -52,7 +53,7 @@
  * thread's read() or write() operation.
  */
 struct file {
-	uint64_t inum;		/* Inode# of the open()-ed file */
+	struct inode *inode;	/* Inode# of the open()-ed file */
 	int flags;		/* Flags passed  to open() call */
 	spinlock_t lock;	/* ONLY FOR offset and refcount */
 	uint64_t offset;	/* MAIN FIELD: File byte offset */
@@ -408,3 +409,4 @@ int sys_link(const char *oldpath, const char *newpath)
 	return ext2_new_dir_entry(parent_inum, inum, child,
 				  inode_mode_to_dir_entry_type(inode->mode));
 }
+#endif

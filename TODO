@@ -1,0 +1,11 @@
+
+* Let our ``kthread_create(void (*x)())'' interface, which creates a
+  new kernel thread running the method `x()', accept a function taking
+  a void parameter instead.
+
+  Why? Too often we need to pass certain values to new threads, but so
+  far we were not able to do so. This also makes us one step closer
+  to the Posix pthread_create() interface.
+
+  (The functionality is not so quick to do as it seems: we'll need to
+   modify the new thread's emulated IRQ stack frame to achieve it)

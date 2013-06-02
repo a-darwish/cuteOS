@@ -1,14 +1,98 @@
 /*
  * The Second Extended File System
  *
- * Copyright (C) 2012 Ahmed S. Darwish <darwish.07@gmail.com>
+ * Copyright (C) 2012-2013 Ahmed S. Darwish <darwish.07@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
  *
- * Check the 'ext2.h' header before attacking this file.
- * Inodes start from 1, while block and group indices start from 0!
+ * NOTES:
+ *
+ * - Check the 'ext2.h' header __before__ attacking this file.
+ * - Inodes start from 1, while block and group indices start from 0!
+ * - Set the inode's dirty flag after modifying any of its fields.
+ *
+ * SMP-Locking README (1):
+ * -----------------------
+ * Every used ‘on-disk’ inode is buffered on RAM as an ‘in-core’ inode.
+ * Such buffered images are tracked by a hash table inode repository.
+ * Each in-core inode has a reference count, guarding it from deletion
+ * while being in-use.  This design is taken from the classical SVR2
+ * implementation, but with some SMP tweaks.
+ *
+ * "An Object Cannot Synchronize its Own Visibility", thus the inode
+ * reference count is _ONLY_ protected by the inodes hash repository
+ * lock instead of the inode's _own_ lock. This avoids the following
+ * race condition, assuming that the reference count is protected by
+ * the inode's own lock:
+ *
+ * - Process A holds inode's lock, then get what it needs from inode
+ * - While holding the inode's lock, process A calls inode_put()
+ * - [A] thus decrements the inode's refcount,  finds it to be zero,
+ *   and kfree()s the inode buffered image!
+ * - While A was holding the lock,  a process B could have requested
+ *   the same inode image from the repository, acquiring the inode's
+ *   lock and waiting (spinning or sleeping) for it to be free.  It
+ *   will increment the refcount after acquiring such lock (!)
+ * - While B was waiting, process A has already freed the entire ino-
+ *   de image, along with its lock!
+ * - Process B is now referencing a _stale_ inode pointer and lock.
+ *
+ * Even if the refcount was of an atomic type, and thus incrementing
+ * it before acquiring the inode's lock, there's a small failure time-
+ * frame between acquiring the inode's reference, and increasing the
+ * refcount.  Between these two lines, again, another process might
+ * free() the entire inode image! That is:
+ *
+ *	inode = hash_find(&repository, 5); // Search for inode #5
+ *	atomic_inc(&inode->refcount);      // Stale inode reference!
+ *
+ * What if the lock had a mechanism to detect the number of threads
+ * waiting on its lock, and thus process A will not free() the inode
+ * image unless the refcount _and_ the number of threads waiting on
+ * the lock equals 0? This'll be similar to the case above, between
+ * the two lines, another process might free() the inode image:
+ *
+ *	inode = hash_find(&repository, 5); // Search for inode #5
+ *	acquire_lock(&inode->lock);        // Stale inode reference!
+ *
+ * Meanwhile, having the refcount and the inod image visibility (as
+ * a whole, but not its internal elements) be proteced  by the hash
+ * repository lock leads to the following:
+ *
+ * - Process A holds inode's lock, then get what it needs from inode
+ * - While holding the inode's lock, process A calls inode_put()
+ * - Before A minimize the reference count, hash lock is acquired.
+ *
+ * Two cases emerge: either proc B locks  the hash before A acquires
+ * the hash lock, thus increasing the refcount, and making A's inode_
+ * put() not to free() the buffered image.  Or proc B locks the hash
+ * after A acquires the hash lock,  making proc A free the ino image,
+ * but having B reallocate a new image for the inode since it is now
+ * entirely removed from the hash repository.
+ *
+ * SMP-Locking README (2):
+ * -----------------------
+ * To ensure consistency, we never delete an __on disk__ inode upon
+ * direct request. Several other threads might already be holding a
+ * reference to that same inode. Legit examples include:
+ *
+ * - Thread [A] has a current working dir = d3. Another thread [B]
+ *   deletes the directory d3's parent. Thread A's inode pointer to
+ *   d3 should function as usual, without causing any kernel memory
+ *   faults.
+ * - An editor having a text file open; the same file gets deleted
+ *   from another thread, .. and so on.
+ *
+ * To solve this case, an inode on-disk deletion is delegated to the
+ * last thread standing holding that inode. Note that while inode
+ * deletion is delegated, the deletion of its parent directory
+ * __dir entry__ is immediately executed. So from a user's point of
+ * view, the file will 'disappear' once a remove command was issued.
+ *
+ * Even if the FS was cleanly unmounted before we complete the inode
+ * removal, the sitiuation can be easily fixed by fsck utilities.
  */
 
 #include <kernel.h>
@@ -19,10 +103,14 @@
 #include <ext2.h>
 #include <string.h>
 #include <kmalloc.h>
+#include <hash.h>
 #include <bitmap.h>
 
 /*
- * In-memory Super Block
+ * In-memory Super Block - Global State for our FS code
+ *
+ * NOTE! The inodes repository hash lock could be fine-grained
+ * by having a lock on each hash collision linked-list instead.
  */
 struct {
 	union super_block	*sb;		/* On-disk Superblock */
@@ -34,16 +122,17 @@ struct {
 	uint64_t		last_blockgroup;
 	spinlock_t		inode_allocation_lock;
 	spinlock_t		block_allocation_lock;
+	struct hash		*inodes_hash;
+	spinlock_t		inodes_hash_lock;
 } isb;
 
 /*
- * Get the On-Disk image of inode @inum
+ * Return a pointer to the on-disk image of inode #inum.
  */
-struct inode *inode_get(uint64_t inum)
+static void *inode_diskimage(uint64_t inum)
 {
 	union super_block *sb;
 	struct group_descriptor *bgd;
-	struct inode *inode;
 	uint64_t group, groupi, inodetbl_offset, inode_offset;
 
 	sb = isb.sb;
@@ -56,8 +145,77 @@ struct inode *inode_get(uint64_t inum)
 	bgd = &isb.bgd[group];
 	inodetbl_offset = bgd->inode_table * isb.block_size;
 	inode_offset = inodetbl_offset + groupi * sb->inode_size;
-	inode = (void *)&isb.buf[inode_offset];
+	return (void *)&isb.buf[inode_offset];
+}
+
+/*
+ * Inode Get - Allocate a locked in-core copy of inode #inum.
+ * The allocated image must be freed with inode_put() after use!
+ *
+ * FIXME: Since a mutex/semaphore mechanism is not yet implemented,
+ * so far the returned copy is not actually 'locked'. For now, we
+ * can workaround this by implementing a recursive spinlock.
+ */
+struct inode *inode_get(uint64_t inum)
+{
+	struct inode *inode;
+
+	spin_lock(&isb.inodes_hash_lock);
+	inode = hash_find(isb.inodes_hash, inum);
+	if (inode == NULL) {
+		inode = kmalloc(sizeof(*inode));
+		inode_init(inode, inum);
+		memcpy(dino_off(inode), inode_diskimage(inum), dino_len());
+		hash_insert(isb.inodes_hash, inode);
+	} else {
+		assert(inode->refcount >= 1);
+		inode->refcount++;
+	}
+	spin_unlock(&isb.inodes_hash_lock);
+
 	return inode;
+}
+
+static void __inode_dealloc(struct inode *inode);
+
+/*
+ * Inode Put - Release (put) access to given in-core inode.
+ */
+void inode_put(struct inode *inode)
+{
+	/*
+	 * FIXME: This assert may fail since we did not implement a locking
+	 * mechanism over inodes yet. Our thread may call inode_put()
+	 * after another thread [B] changed the same inode copy behind our
+	 * back, but before that thread [B] marking the inode as dirty.
+	 *
+	 * if (memcmp(inode_diskimage(inode->inum), dino_off(inode), dino_len())) {
+	 *     assert(inode->dirty == true);
+	 * }
+	 */
+
+	if (inode->dirty == true)
+		memcpy(inode_diskimage(inode->inum), dino_off(inode), dino_len());
+
+	spin_lock(&isb.inodes_hash_lock);
+	assert(inode->refcount > 0);
+	--inode->refcount;
+	if (inode->refcount == 0) {
+		hash_remove(isb.inodes_hash, inode->inum);
+		/*
+		 * If the inode has been marked for __on disk__ deletion,
+		 * and now since its has been "removed from visibility"
+		 * (a ref count of zero, visibility inodes hash lock being
+		 * already held + the object now removed from global repo),
+		 * it can synchronize its own destruction and basically
+		 * deallocate itself from disk!
+		 */
+		if (inode->delete_on_last_use == true)
+			__inode_dealloc(inode);
+		kfree(inode);
+		inode = NULL;
+	}
+	spin_unlock(&isb.inodes_hash_lock);
 }
 
 static void __block_read_write(uint64_t block, char *buf, uint blk_offset,
@@ -105,9 +263,9 @@ STATIC void block_write(uint64_t block, char *buf, uint blk_offset, uint len)
 }
 
 /*
- * Inode Alloc - Allocate a free inode from disk
+ * Inode Alloc - Assign a free disk inode to newly created files
  * @type        : Type of file this inode is allocated for
- * Return val   : Inode number, or 0 if no free inodes exist
+ * Return val   : Locked in-core copy of allocated disk inode, or NULL
  *
  * NOTE! There are obviously more SMP-friendly ways for doing this
  * than just grabbing a global lock reserved for inodes allocation.
@@ -116,7 +274,7 @@ STATIC void block_write(uint64_t block, char *buf, uint blk_offset, uint len)
  * test_bit_and_set method.  If another thread got that inode bef-
  * ore us, we continue searching the bitmap for yet another inode!
  */
-STATIC uint64_t inode_alloc(enum file_type type)
+STATIC struct inode *inode_alloc(enum file_type type)
 {
 	struct inode *inode;
 	struct group_descriptor *bgd;
@@ -126,13 +284,15 @@ STATIC uint64_t inode_alloc(enum file_type type)
 
 	bgd = isb.bgd;
 	buf = kmalloc(isb.block_size);
-	spin_lock(&isb.inode_allocation_lock);
 
 	for (uint i = 0; i < isb.blockgroups_count; i++, bgd++) {
+		spin_lock(&isb.inode_allocation_lock);
 		block_read(bgd->inode_bitmap, buf, 0, isb.block_size);
 		first_zero_bit = bitmap_first_zero_bit(buf, isb.block_size);
-		if (first_zero_bit == -1)
+		if (first_zero_bit == -1) {
+			spin_unlock(&isb.inode_allocation_lock);
 			continue;
+		}
 
 		inum = i * isb.sb->inodes_per_group + first_zero_bit + 1;
 		if (inum < isb.sb->first_inode)
@@ -149,9 +309,10 @@ STATIC uint64_t inode_alloc(enum file_type type)
 
 		bitmap_set_bit(buf, first_zero_bit, isb.block_size);
 		block_write(bgd->inode_bitmap, buf, 0, isb.block_size);
+		spin_unlock(&isb.inode_allocation_lock);
 
 		inode = inode_get(inum);
-		memset(inode, 0, sizeof(*inode));
+		memset(dino_off(inode), 0, dino_len());
 		inode->mode |= dir_entry_type_to_inode_mode(type);
 		inode->mode |= S_IRUSR | S_IWUSR;
 		inode->mode |= S_IRGRP | S_IWGRP;
@@ -159,53 +320,57 @@ STATIC uint64_t inode_alloc(enum file_type type)
 		if (type == EXT2_FT_DIR)
 			inode->mode |= S_IXUSR | S_IXGRP | S_IXOTH;
 		inode->atime = inode->ctime = inode->mtime = 0xf00f;
+		inode->dirty = true;
 		goto out;
 	}
-	assert(isb.sb->free_inodes_count == 0);
-	inum = 0;
+	inode = NULL;
 out:
-	spin_unlock(&isb.inode_allocation_lock);
 	kfree(buf);
-	return inum;
+	return inode;
 }
 
 /*
- * Inode Dealloc - Mark given inode as free on-disk
- * @inum        : Inode number to deallocate
- *
- * All the necessary counters are updated in the process
+ * Inode delete - Mark given inode for deletion
  */
-STATIC void inode_dealloc(uint64_t inum)
+STATIC void inode_mark_delete(struct inode *inode)
+{
+	inode->delete_on_last_use = true;
+}
+
+/*
+ * Inode Dealloc - Delete given inode from disk
+ *
+ * NOTE! Don't call this directly, use inode_mark_delete()
+ */
+static void __inode_dealloc(struct inode *inode)
 {
 	struct group_descriptor *bgd;
-	struct inode *inode;
 	uint64_t group, groupi;
 	char *buf;
 
-	assert(inum != 0);
-	assert(inum >= isb.sb->first_inode);
-	assert(inum <= isb.sb->inodes_count);
+	assert(inode->inum != 0);
+	assert(inode->inum >= isb.sb->first_inode);
+	assert(inode->inum <= isb.sb->inodes_count);
+	assert(inode->links_count == 0);
+	assert(inode->refcount == 0);
 
-	group  = (inum - 1) / isb.sb->inodes_per_group;
-	groupi = (inum - 1) % isb.sb->inodes_per_group;
+	group  = (inode->inum - 1) / isb.sb->inodes_per_group;
+	groupi = (inode->inum - 1) % isb.sb->inodes_per_group;
 	bgd = &isb.bgd[group];
-	inode = inode_get(inum);
 	buf = kmalloc(isb.block_size);
 
 	spin_lock(&isb.inode_allocation_lock);
-
 	isb.sb->free_inodes_count++;
 	bgd->free_inodes_count++;
-	if (is_dir(inum))
+	if (S_ISDIR(inode->mode))
 		bgd->used_dirs_count--;
-
 	block_read(bgd->inode_bitmap, buf, 0, isb.block_size);
 	assert(bitmap_bit_is_set(buf, groupi, isb.block_size));
 	bitmap_clear_bit(buf, groupi, isb.block_size);
 	block_write(bgd->inode_bitmap, buf, 0, isb.block_size);
-	memset(inode, 0, sizeof(*inode));
-
 	spin_unlock(&isb.inode_allocation_lock);
+
+	memset(inode_diskimage(inode->inum), 0, dino_len());
 	kfree(buf);
 }
 
@@ -224,13 +389,15 @@ STATIC uint64_t block_alloc(void)
 	sb = isb.sb;
 	bgd = isb.bgd;
 	buf = kmalloc(isb.block_size);
-	spin_lock(&isb.block_allocation_lock);
 
 	for (uint i = 0; i < isb.blockgroups_count; i++, bgd++) {
+		spin_lock(&isb.block_allocation_lock);
 		block_read(bgd->block_bitmap, buf, 0, isb.block_size);
 		first_zero_bit = bitmap_first_zero_bit(buf, isb.block_size);
-		if (first_zero_bit == -1)
+		if (first_zero_bit == -1) {
+			spin_unlock(&isb.block_allocation_lock);
 			continue;
+		}
 
 		first_blk = i * sb->blocks_per_group + sb->first_data_block;
 		last_blk = (i != isb.last_blockgroup) ?
@@ -249,12 +416,11 @@ STATIC uint64_t block_alloc(void)
 
 		bitmap_set_bit(buf, first_zero_bit, isb.block_size);
 		block_write(bgd->block_bitmap, buf, 0, isb.block_size);
+		spin_unlock(&isb.block_allocation_lock);
 		goto out;
 	}
-	assert(isb.sb->free_blocks_count == 0);
 	block = 0;
 out:
-	spin_unlock(&isb.block_allocation_lock);
 	kfree(buf);
 	return block;
 }
@@ -282,17 +448,15 @@ STATIC void block_dealloc(uint block)
 	buf = kmalloc(isb.block_size);
 
 	spin_lock(&isb.block_allocation_lock);
-
 	sb->free_blocks_count++;
 	bgd->free_blocks_count++;
 	assert(sb->free_blocks_count <= sb->blocks_count);
-
 	block_read(bgd->block_bitmap, buf, 0, isb.block_size);
 	assert(bitmap_bit_is_set(buf, groupi, isb.block_size));
 	bitmap_clear_bit(buf, groupi, isb.block_size);
 	block_write(bgd->block_bitmap, buf, 0, isb.block_size);
-
 	spin_unlock(&isb.block_allocation_lock);
+
 	kfree(buf);
 }
 
@@ -382,6 +546,7 @@ int64_t file_write(struct inode *inode, char *buf, uint64_t offset, uint64_t len
 			if ((new = block_alloc()) == 0)
 				return -ENOSPC;
 			inode->blocks[block] = new;
+			inode->dirty = true;
 		}
 		block_write(inode->blocks[block], buf, blk_offset, write_len);
 
@@ -397,6 +562,7 @@ int64_t file_write(struct inode *inode, char *buf, uint64_t offset, uint64_t len
 			inode->size_low = offset;
 			block = ceil_div(offset, isb.block_size);
 			inode->i512_blocks = (block * isb.block_size) / 512;
+			inode->dirty = true;
 		}
 	}
 
@@ -416,15 +582,18 @@ static inline int dir_entry_min_len(int filename_len)
 
 /*
  * Check the validity of given directory entry. Entry's @offset
- * is relative to the directory-file start.  @inum is the inode
+ * is relative to the directory-file start.  @dir is the inode
  * of directory file holding given @dentry.  @len is the number
  * of bytes we were able read before reaching EOF.
  *
  * FIXME: Assure entry's type == its destination inode mode.
  */
-STATIC bool dir_entry_valid(uint64_t inum, struct dir_entry *dentry,
+STATIC bool dir_entry_valid(struct inode *dir, struct dir_entry *dentry,
 			    uint64_t offset, uint64_t read_len)
 {
+	uint64_t inum;
+
+	inum = dir->inum;
 	if (read_len < EXT2_DIR_ENTRY_MIN_LEN) {
 		printk("EXT2: Truncated dir entry (ino %lu, offset %lu); "
 		       "remaining file len = %lu < 8 bytes\n", inum, offset,
@@ -459,10 +628,10 @@ STATIC bool dir_entry_valid(uint64_t inum, struct dir_entry *dentry,
 		       dentry->record_len);
 		return false;
 	}
-	if (dentry->record_len + offset > inode_get(inum)->size_low) {
+	if (dentry->record_len + offset > dir->size_low) {
 		printk("EXT2: Dir entry (ino %lu, offset %lu) goes beyond "
 		       "the dir EOF (entry len = %lu, dir len = %lu)\n", inum,
-		       offset, dentry->record_len, inode_get(inum)->size_low);
+		       offset, dentry->record_len, dir->size_low);
 		return false;
 	}
 	if (dentry->inode_num > isb.sb->inodes_count) {
@@ -478,22 +647,20 @@ STATIC bool dir_entry_valid(uint64_t inum, struct dir_entry *dentry,
  * Search given directory for an entry with file @name.  Return such
  * entry if found, or return an errno.
  *
- * @inum        : Inode for the directory to be searched
+ * @dir         : Inode for the directory to be searched
  * @name        : Wanted file name, which may not be NULL-terminated
  * @name_len    : File name len, to avoid requiring the NULL postfix
  * @dentry	: Return val, the found directory entry (if any)
  * @offset	: Return val, offset of found dentry wrt to dir file
  * Return val	: Inode number of file, or an errorno
  */
-STATIC int64_t find_dir_entry(uint64_t inum, const char *name, uint name_len,
+STATIC int64_t find_dir_entry(struct inode *dir, const char *name, uint name_len,
 			      struct dir_entry **entry, int64_t *roffset)
 {
-	struct inode *dir;
 	struct dir_entry *dentry;
 	uint64_t dentry_len, offset, len;
 
-	assert(is_dir(inum));
-	dir = inode_get(inum);
+	assert(S_ISDIR(dir->mode));
 	dentry_len = sizeof(struct dir_entry);
 	dentry = *entry = kmalloc(dentry_len);
 
@@ -505,7 +672,7 @@ STATIC int64_t find_dir_entry(uint64_t inum, const char *name, uint name_len,
 		len = file_read(dir, (char *)dentry, offset, dentry_len);
 		if (len == 0)			/* EOF */
 			return -ENOENT;
-		if (!dir_entry_valid(inum, dentry, offset, len))
+		if (!dir_entry_valid(dir, dentry, offset, len))
 			return -EIO;
 		if (dentry->inode_num == 0)	/* Unused entry */
 			continue;
@@ -520,42 +687,68 @@ STATIC int64_t find_dir_entry(uint64_t inum, const char *name, uint name_len,
 }
 
 /*
- * Delete given file.
- *
- * @parent_inum : Parent directory where the file will be located
- * @name        : File's name
+ * Search given directory for an entry with file @name: mark it on
+ * disk as deleted.  Target inode links count will get decremented.
  */
-int file_delete(uint64_t parent_inum, const char *name)
+static int64_t remove_dir_entry(struct inode *dir, const char *name)
 {
-	struct inode *dir, *file;
+	struct inode *entry_ino;
 	struct dir_entry *dentry;
-	int64_t dentry_inum, ret, offset;
+	int64_t ret, offset, dentry_inum;
 
-	assert(parent_inum != 0);
-	assert(is_dir(parent_inum));
+	assert(S_ISDIR(dir->mode));
 	assert(name != NULL);
-
-	dir = inode_get(parent_inum);
-	ret = find_dir_entry(parent_inum, name, strlen(name), &dentry, &offset);
-	if (ret < 0) {
+	ret = find_dir_entry(dir, name, strlen(name), &dentry, &offset);
+	if (ret < 0)
 		goto out;
-	}
-	dentry_inum = ret;
+
+	dentry_inum = dentry->inode_num;
 	dentry->inode_num = 0;
 	ret = file_write(dir, (char *)dentry, offset, dentry->record_len);
 	if (ret < 0)
 		goto out;
 
-	file = inode_get(dentry_inum);
-	file->links_count--;
-	if (file->links_count == 0) {
-		file_truncate(dentry_inum);
-		inode_dealloc(dentry_inum);
-	}
-	ret = 0;
+	entry_ino = inode_get(dentry_inum);
+	assert(entry_ino->links_count > 0);
+	entry_ino->links_count--;
+	entry_ino->dirty = true;
+	inode_put(entry_ino);
+	ret = dentry_inum;
 
 out:	kfree(dentry);
 	return ret;
+}
+
+/*
+ * File Delete - Delete given file.
+ * @parent      : Parent directory where the file will be located
+ * @name        : File's name
+ *
+ * NOTE! If given file's inode was linked by several hard links, then
+ * instead of the default behaviour of deleting the file's inode and
+ * truncating its entire data, only the file's directory entry will
+ * get deleted.
+ */
+int file_delete(struct inode *parent, const char *name)
+{
+	struct inode *inode;
+	int64_t entry_inum;
+
+	assert(S_ISDIR(parent->mode));
+	assert(name != NULL);
+
+	entry_inum = remove_dir_entry(parent, name);
+	if (entry_inum < 0)
+		return entry_inum;
+
+	inode = inode_get(entry_inum);
+	assert(S_ISREG(inode->mode));
+	if (inode->links_count == 0) {
+		file_truncate(inode);
+		inode_mark_delete(inode);
+	}
+	inode_put(inode);
+	return 0;
 }
 
 /*
@@ -564,19 +757,19 @@ out:	kfree(dentry);
  * number for the new file.
  *
  * NOTE! This increments the entry's destination inode links count
+ * NOTE! @dir may be equal to @entry_ino if we are adding a '.' entry
+ * to a new folder.
  */
-int64_t ext2_new_dir_entry(uint64_t parent_inum, uint64_t entry_inum,
+int64_t ext2_new_dir_entry(struct inode *dir, struct inode *entry_ino,
 			   const char *name, enum file_type type)
 {
 	struct dir_entry *dentry, *lastentry, *newentry;
-	struct inode *dir, *inode;
 	uint64_t offset, blk_offset, newentry_len, len;
 	int64_t ret, filename_len, null;
 	char *zeroes;
 
-	assert(parent_inum != 0);
-	assert(entry_inum != 0);
-	assert(is_dir(parent_inum));
+	assert(S_ISDIR(dir->mode));
+	assert(entry_ino->inum != 0);
 	assert(name != NULL);
 	assert(type == EXT2_FT_REG_FILE || type == EXT2_FT_DIR);
 
@@ -586,7 +779,7 @@ int64_t ext2_new_dir_entry(uint64_t parent_inum, uint64_t entry_inum,
 	if (filename_len == 0)
 		return -ENOENT;
 
-	ret = find_dir_entry(parent_inum, name, filename_len, &dentry, &null);
+	ret = find_dir_entry(dir, name, filename_len, &dentry, &null);
 	if (ret > 0)
 		ret = -EEXIST;
 	if (ret < 0 && ret != -ENOENT)
@@ -598,19 +791,19 @@ int64_t ext2_new_dir_entry(uint64_t parent_inum, uint64_t entry_inum,
 	 * empty, with no entries at all!
 	 */
 
-	dir = inode_get(parent_inum);
 	lastentry = kmalloc(sizeof(*lastentry));
 	memset(lastentry, 0, sizeof(*lastentry));
 	for (offset = 0;  ; offset += lastentry->record_len) {
 		len = file_read(dir,(char*)lastentry,offset,sizeof(*lastentry));
 		if (len == 0)
 			break;
-		if (!dir_entry_valid(parent_inum, lastentry, offset, len)) {
+		if (!dir_entry_valid(dir, lastentry, offset, len)) {
 			ret = -EIO;
 			goto free_dentry2;
 		}
 	}
 	dir->flags &= !EXT2_INO_DIR_INDEX_FL;
+	dir->dirty = true;
 
 	/*
 	 * If a last entry was found, we need to either:
@@ -669,7 +862,7 @@ no_lastentry:
 	zeroes = kmalloc(isb.block_size);
 	memset(zeroes, 0, isb.block_size);
 	newentry = kmalloc(sizeof(*newentry));
-	newentry->inode_num = entry_inum;
+	newentry->inode_num = entry_ino->inum;
 	newentry->record_len = isb.block_size - blk_offset;
 	newentry->filename_len = filename_len;
 	newentry->file_type = type;
@@ -685,16 +878,14 @@ no_lastentry:
 			 newentry->record_len - newentry_len);
 	if (ret < 0)
 		goto free_dentry3;
-	assert(dir_entry_valid(parent_inum, newentry, offset, newentry_len));
+	assert(dir_entry_valid(dir, newentry, offset, newentry_len));
 
 	/*
 	 * Update entry's inode statistics
 	 */
 
-	inode = inode_get(entry_inum);
-	spin_lock(&isb.inode_allocation_lock);
-	inode->links_count++;
-	spin_unlock(&isb.inode_allocation_lock);
+	entry_ino->links_count++;
+	entry_ino->dirty = true;
 
 	ret = 0;
 free_dentry3:
@@ -708,36 +899,50 @@ free_dentry1:
 }
 
 /*
- * Create and initialize a new file in given directory
- * @parent_inum : Parent directory where the file will be located
+ * File New - Create and initialize a new file in given directory
+ * @dir		: Parent directory where the file will be located
  * @name        : File's name
  * @type        : File's type, in Ext2 dir entry type format
  * Return value : New file's inode number, or an errno
  */
-int64_t file_new(uint64_t parent_inum, const char *name, enum file_type type)
+int64_t file_new(struct inode *dir, const char *name, enum file_type type)
 {
-	int64_t inum, ret;
+	int64_t ret, ret2, inum;
+	struct inode *inode;
 
-	inum = inode_alloc(type);
-	if (inum == 0)
+	assert(S_ISDIR(dir->mode));
+	inode = inode_alloc(type);
+	if (inode == NULL)
 		return -ENOSPC;
 
-	ret = ext2_new_dir_entry(parent_inum, inum, name, type);
+	ret = ext2_new_dir_entry(dir, inode, name, type);
 	if (ret < 0)
 		goto dealloc_inode;
 
 	if (type == EXT2_FT_DIR) {
-		ret = ext2_new_dir_entry(inum, inum, ".", EXT2_FT_DIR);
+		ret = ext2_new_dir_entry(inode, inode, ".", EXT2_FT_DIR);
 		if (ret < 0)
-			goto dealloc_inode;
-		ret = ext2_new_dir_entry(inum, parent_inum, "..", EXT2_FT_DIR);
+			goto remove_newly_created_entry;
+		ret = ext2_new_dir_entry(inode, dir, "..", EXT2_FT_DIR);
 		if (ret < 0)
-			goto dealloc_inode;
+			goto remove_new_dir_dot_entry;
 	}
 
+	inum = inode->inum;
+	inode_put(inode);
 	return inum;
+
+remove_new_dir_dot_entry:
+	if ((ret2 = remove_dir_entry(inode, ".")) <= 0)
+		panic("Removing just created directory inode #%lu dot "
+		      "entry returned -%s", inode->inum, errno(ret2));
+remove_newly_created_entry:
+	if ((ret2 = remove_dir_entry(dir, name)) <= 0)
+		panic("Removing just created directory inode #%lu entry for "
+		      "file '%s' returned -%s", dir->inum, name, errno(ret2));
 dealloc_inode:
-	inode_dealloc(inum);
+	inode_mark_delete(inode);
+	inode_put(inode);
 	return ret;
 }
 
@@ -784,18 +989,16 @@ static void indirect_block_dealloc(uint64_t block, enum indirection_level level)
 
 /*
  * File Truncate - Truncate given file to zero (0) bytes
- * @inum	: File's inode, which will map us to the data blocks
+ * @inode	: File's inode, which will map us to the data blocks
  */
-void file_truncate(uint64_t inum)
+void file_truncate(struct inode *inode)
 {
-	struct inode *inode;
+	assert(S_ISREG(inode->mode));
+	assert(inode->inum != 0);
+	assert(inode->inum >= isb.sb->first_inode);
+	assert(inode->inum <= isb.sb->inodes_count);
 
-	assert(inum != 0);
-	assert(inum >= isb.sb->first_inode);
-	assert(inum <= isb.sb->inodes_count);
-	assert(is_regular_file(inum));
-	inode = inode_get(inum);
-
+	inode->dirty = true;
 	inode->size_low = 0;
 	inode->i512_blocks = 0;
 	for (int i = 0; i < EXT2_INO_NR_DIRECT_BLKS; i++) {
@@ -823,6 +1026,7 @@ void file_truncate(uint64_t inum)
 int64_t name_i(const char *path)
 {
 	const char *p1, *p2;
+	struct inode *parent;
 	struct dir_entry *dentry;
 	int64_t inum, prev_inum, null;
 
@@ -854,8 +1058,10 @@ int64_t name_i(const char *path)
 		if (*p2 != '\0' && *p2 != '/')
 			return -ENAMETOOLONG;
 
-		assert(is_dir(prev_inum));
-		inum = find_dir_entry(prev_inum, p1, p2 - p1, &dentry, &null);
+		parent = inode_get(prev_inum);
+		assert(S_ISDIR(parent->mode));
+		inum = find_dir_entry(parent, p1, p2 - p1, &dentry, &null);
+		inode_put(parent);
 		kfree(dentry);
 	}
 
@@ -884,7 +1090,7 @@ void ext2_init(void)
 		return;
 	}
 
-	ext2_debug_init(prints);
+	ext2_debug_init(&serial_char_dumper);
 	spin_init(&isb.inode_allocation_lock);
 	spin_init(&isb.block_allocation_lock);
 
@@ -966,9 +1172,13 @@ void ext2_init(void)
 		bgd++;
 	}
 
+	/* Prepare the In-core Inodes hash repository */
+	isb.inodes_hash = hash_new(256);
+	spin_init(&isb.inodes_hash_lock);
+
 	/* Root Inode sanity checks */
 	rooti = inode_get(EXT2_ROOT_INODE);
-	if (!is_dir(EXT2_ROOT_INODE))
+	if (!S_ISDIR(rooti->mode))
 		panic("EXT2: Root inode ('/') is not a directory!");
 	if (rooti->i512_blocks == 0 || rooti->size_low == 0)
 		panic("EXT2: Root inode ('/') size = 0 bytes!");
@@ -976,7 +1186,8 @@ void ext2_init(void)
 		panic("EXT2: Corrupt root directory '.'  entry!");
 	if (name_i("/..") != EXT2_ROOT_INODE)
 		panic("EXT2: Corrupt root directory '..' entry!");
-	inode_dump(rooti, EXT2_ROOT_INODE, "/");
+	inode_dump(rooti, "/");
+	inode_put(rooti);
 
 	sb->volume_label[EXT2_LABEL_LEN - 1] = '\0';
 	printk("Ext2: Passed all sanity checks!\n");

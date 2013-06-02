@@ -27,6 +27,7 @@
 #define		ATOMIC_TESTS		0	/* Atomic-accessors */
 #define		SCHED_TESTS		0	/* Scheduler tests */
 #define		EXT2_TESTS		0	/* File System tests */
+#define		EXT2_SMP_TESTS		0	/* SMP file system tests */
 #define		FILE_TESTS		0	/* Unix file operations */
 
 #if	(SCHED_TESTS == 1) && (PIT_TESTS == 1)

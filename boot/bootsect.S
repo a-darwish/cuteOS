@@ -84,7 +84,7 @@ real_start:
 
 	/* Copy the kernel from disk to its destined starting address
 	 * at 0x10000. For simplicity, we'll copy the disk's first
-	 * 512 sectors post the mbr to ram regardless of the real
+	 * 640 sectors post the mbr to ram regardless of the real
 	 * kernel size; we may optimize later. The kernel will be in
 	 * the range (0x10000-0x50000]; sector size = 512 bytes.
 	 *
@@ -95,7 +95,7 @@ real_start:
 	 * output CF      - error flag (true = error) */
 	.equ   KERNEL_SEGMENT, 0x1000
 	.equ   KERNEL_SEGMENT_END, 0x9000
-	movw   $8, %cx			# 8 * 64 sector (32K) = 256K
+	movw   $10, %cx			# 10 * 64 sector (32K) = 320K
 	movb   (driveno), %dl
 	movw   $disk_address_packet, %si
 	movw   $KERNEL_SEGMENT, buffer_seg

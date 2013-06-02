@@ -46,6 +46,7 @@
 void __no_return secondary_start(void);	/* Silence-out GCC */
 int smpboot_get_nr_alive_cpus(void);
 void smpboot_init(void);
+void smpboot_trigger_secondary_cores_testcases(void);
 
 #endif /* !__ASSEMBLY__ */
 
