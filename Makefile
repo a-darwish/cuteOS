@@ -58,6 +58,8 @@ CMACH_FLAGS =				\
 CDIALECT_FLAGS =			\
   -std=gnu99				\
   -ffreestanding			\
+  -fno-pie				\
+  -fno-stack-protector			\
   -fno-builtin				\
   -nostdlib				\
   -nostdinc				\
